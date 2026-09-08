@@ -1,0 +1,14 @@
+{
+  "parser_id": "regex/cisco_iosxe_show_version",
+  "parser_version": "1.0.0",
+  "command": "show version",
+  "spec_trace": "§21 parser tier; allowlists/cisco_iosxe.json READ_ONLY seed",
+  "expected": [
+    { "field": "version", "parse_status": "OK", "value": "17.09.04a" },
+    { "field": "image_family", "parse_status": "OK", "value": "Cupertino" },
+    { "field": "model", "parse_status": "OK", "value": "C8300-1N-4T" },
+    { "field": "uptime", "parse_status": "OK", "value": "2 weeks, 3 days, 4 hours, 5 minutes" },
+    { "field": "serial", "parse_status": "OK", "value": "DOG2734L0XX" },
+    { "field": "config_register", "parse_status": "OK", "value": "0x2102" }
+  ]
+}

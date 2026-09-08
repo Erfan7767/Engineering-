@@ -1,0 +1,6 @@
+Hostname: srx-branch-01
+Model: srx345
+Serial number: CV4718AF0091
+Junos: 21.4R3-S5
+JUNOS Base OS boot [21.4R3-S5]
+JUNOS Base OS Software Suite [21.4R3-S5]

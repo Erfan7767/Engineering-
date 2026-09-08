@@ -1,0 +1,27 @@
+{
+  "meta": { "rc": "ok" },
+  "data": [
+    {
+      "_id": "5f9e1a2b3c4d5e6f7a8b9c01",
+      "model": "USW-24-POE",
+      "serial": "F09FC2E1B2C3",
+      "version": "6.5.55.14048",
+      "type": "usw",
+      "state": 1,
+      "adopted": true,
+      "mac": "f0:9f:c2:e1:b2:c3",
+      "ip": "10.0.0.5"
+    },
+    {
+      "_id": "5f9e1a2b3c4d5e6f7a8b9c02",
+      "model": "U6-LR",
+      "serial": "74ACB9AABBCC",
+      "version": "6.5.55.14048",
+      "type": "uap",
+      "state": 1,
+      "adopted": true,
+      "mac": "74:ac:b9:aa:bb:cc",
+      "ip": "10.0.0.6"
+    }
+  ]
+}

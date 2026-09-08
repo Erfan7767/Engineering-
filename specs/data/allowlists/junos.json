@@ -1,0 +1,30 @@
+{
+  "vendor_family": "juniper/junos",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "show version", "purpose": "identity", "fields": ["model", "junos-version"] },
+        { "template": "show chassis hardware", "purpose": "hardware inventory", "fields": ["part-number", "serial-number"] },
+        { "template": "show interfaces terse", "purpose": "L1 state", "fields": ["interface", "admin-status", "link-status"] },
+        { "template": "show interfaces detail", "purpose": "counters/errors", "fields": ["interface", "input-errors", "output-errors"] },
+        { "template": "show lldp neighbors", "purpose": "neighbor evidence", "fields": ["parent-interface", "port-id", "chassis-id", "remote-system-name"] },
+        { "template": "show vlans", "purpose": "VLAN model", "fields": ["vlan-name", "tag", "interfaces"] },
+        { "template": "show ethernet-switching table", "purpose": "MAC evidence", "fields": ["vlan", "mac-address", "interface"] },
+        { "template": "show route", "purpose": "routing state", "fields": ["protocol", "prefix", "next-hop", "interface"] },
+        { "template": "show configuration | display set", "purpose": "configuration (hash baseline)", "fields": ["__full_text_hash__"] },
+        { "template": "show system commit changes", "purpose": "config change detection", "fields": ["__commits__"] },
+        { "template": "show system uptime", "purpose": "liveness", "fields": ["current-time", "uptime"] }
+      ]
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2; all applies wrapped in 'commit confirmed' by adapter policy." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "loader-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "request system zeroize", "reason": "destructive" },
+      { "template": "request system snapshot delete", "reason": "destructive" }
+    ] }
+  }
+}

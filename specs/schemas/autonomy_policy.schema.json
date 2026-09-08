@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/autonomy_policy.schema.json",
+  "title": "AutonomyPolicy",
+  "description": "Signed policy activating an Autonomy Mode for a scoped site/set (§13, ADR-0007). The schema cannot express removing HUMAN_ONLY classes; activation of M4/M5 is refused until released.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policy_id", "mode", "scope", "allowed_gate_classes", "issued_by", "issued_at", "expires_at", "signature"],
+  "properties": {
+    "policy_id": { "type": "string", "format": "uuid" },
+    "mode": { "enum": ["M0", "M1", "M2", "M3", "M4", "M5"], "description": "M4/M5 parse but are refused at activation (ModeNotReleased) until harness criteria are met." },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["site_ids", "entity_refs"],
+      "properties": {
+        "site_ids": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Explicit sites only; global scope is unrepresentable." },
+        "entity_refs": { "type": "array", "items": { "type": "string" }, "description": "Empty = all entities within listed sites." }
+      }
+    },
+    "allowed_gate_classes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["READ_ONLY", "LOW_RISK", "HIGH_RISK"] },
+      "description": "IRREVERSIBLE/DESTRUCTIVE are intentionally NOT enum members: policies cannot authorize them (frozen HUMAN_ONLY set, ADR-0007). NOT_MODELED_HIGH_RISK can never resolve to AUTO_EXECUTE."
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maintenance_window_ref": { "type": ["string", "null"] },
+        "max_concurrent_changes": { "type": ["integer", "null"], "minimum": 1 },
+        "require_dry_run_first": { "type": "boolean", "default": true },
+        "ttl_seconds": { "type": ["integer", "null"], "minimum": 1, "description": "Mandatory concept for M5 when released." }
+      }
+    },
+    "issued_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human_id", "rbac_role", "mfa_verified"],
+      "properties": {
+        "human_id": { "type": "string", "minLength": 1 },
+        "rbac_role": { "type": "string", "minLength": 1 },
+        "mfa_verified": { "const": true }
+      }
+    },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value_b64"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "key_id": { "type": "string", "minLength": 1 },
+        "value_b64": { "type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$" }
+      }
+    }
+  }
+}

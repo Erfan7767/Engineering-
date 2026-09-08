@@ -1,0 +1,21 @@
+Cisco IOS XE Software, Version 17.09.04a
+Cisco IOS Software [Cupertino], ISR Software (ARMV8EB_LINUX_NG_ADVENTERPRISEK9-M), Version 17.9.4a, RELEASE SOFTWARE (fc2)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2023 by Cisco Systems, Inc.
+Compiled Tue 01-Aug-23 14:56 by mcpre
+
+edge-router-01 uptime is 2 weeks, 3 days, 4 hours, 5 minutes
+System image file is "bootflash:packages.conf"
+Last reload reason: PowerOn
+
+
+
+Cisco C8300-1N-4T (1RU) processor with 1401856K/6144K bytes of memory.
+Processor board ID DOG2734L0XX
+Router operating mode: Autonomous
+System serial number : DOG2734L0XX
+4 Gigabit Ethernet interfaces
+32768K bytes of non-volatile configuration memory.
+4194304K bytes of eMMC flash memory at 0x480000000.
+
+Configuration register is 0x2102

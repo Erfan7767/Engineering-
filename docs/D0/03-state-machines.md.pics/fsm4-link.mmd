@@ -1,0 +1,20 @@
+---
+title: FSM-4 Link / Physical Evidence (normative guards in docs/D0/03-state-machines.md)
+---
+stateDiagram-v2
+    [*] --> UNKNOWN
+    UNKNOWN --> INFERRED : 4.1 no LLDP/CDP, MAC/ARP co-occurrence only
+    UNKNOWN --> ONE_SIDED : 4.2 neighbor seen from one endpoint
+    UNKNOWN --> CONFLICTING : 4.3 sources disagree (never auto-resolved)
+    UNKNOWN --> INTERMEDIATE_SUSPECTED : 4.4 passive hints of unmanaged intermediary
+    ONE_SIDED --> DIRECT_NEIGHBOR_PROBABLE : 4.5 + clean MAC + port-name + time correlation
+    INFERRED --> DIRECT_NEIGHBOR_PROBABLE : 4.5 bidirectional LLDP/CDP match
+    DIRECT_NEIGHBOR_PROBABLE --> DIRECT_NEIGHBOR_CONFIRMED : 4.6 + absence-of-intermediary proven
+    DIRECT_NEIGHBOR_CONFIRMED --> PHYSICAL_PATH_VERIFIED : 4.7 gated active proof or human confirmation
+    DIRECT_NEIGHBOR_PROBABLE --> PHYSICAL_PATH_VERIFIED : 4.7 (rare, gated)
+    INFERRED --> STALE : 4.8 holdtimes exceeded without refresh
+    ONE_SIDED --> STALE : 4.8
+    DIRECT_NEIGHBOR_PROBABLE --> STALE : 4.8
+    DIRECT_NEIGHBOR_CONFIRMED --> STALE : 4.8
+    PHYSICAL_PATH_VERIFIED --> STALE : 4.8
+    STALE --> UNKNOWN : re-evaluation pending new evidence

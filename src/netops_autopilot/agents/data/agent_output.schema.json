@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/agent_output.schema.json",
+  "title": "AgentOutput (Intent Object)",
+  "description": "The ONLY shape an LLM agent (A1-A5) may emit (L17). Raw command strings are schema-invalid and quarantined. Engines respond with capability_check, readiness, gate_class, blockers[].",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent", "target_entities", "required_capabilities", "proposed_change",
+    "expected_state", "risk_hypothesis", "evidence_requirements", "rationale"
+  ],
+  "properties": {
+    "agent": { "enum": ["A1_ORCHESTRATOR", "A2_REQUIREMENTS", "A3_ARCHITECT", "A4_AUDITOR", "A5_TROUBLESHOOTER"] },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "enum": ["DISCOVER", "DESIGN", "DEPLOY", "VERIFY", "ROLLBACK", "REMEDIATE", "DOCUMENT", "DIAGNOSE", "VETO", "RECOMMEND"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "business_intent_ref": { "type": ["string", "null"] },
+        "network_intent_ref": { "type": ["string", "null"] }
+      }
+    },
+    "target_entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entity_type", "entity_ref"],
+        "properties": {
+          "entity_type": { "enum": ["DEVICE", "CHASSIS", "STACK_MEMBER", "INTERFACE", "VLAN", "LINK", "SERVICE", "POLICY", "SITE", "RACK"] },
+          "entity_ref": { "type": "string", "minLength": 1, "description": "MUST exist in Inventory; Entity Guard rejects anything else (§5)." }
+        }
+      }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domain", "feature", "operations"],
+        "properties": {
+          "domain": { "type": "string" },
+          "feature": { "type": "string" },
+          "operations": {
+            "type": "array",
+            "items": { "enum": ["discover", "configure", "validate", "rollback", "operational_test", "model_coverage"] }
+          }
+        }
+      }
+    },
+    "proposed_change": {
+      "type": "object",
+      "description": "Abstract description; NEVER raw CLI/API commands. The Config IR Generator (E09) is the only producer of executable artifacts.",
+      "additionalProperties": true
+    },
+    "expected_state": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Assertions the Verification Matrix will compile into tests."
+    },
+    "risk_hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blast_radius_guess", "worst_case"],
+      "properties": {
+        "blast_radius_guess": { "type": "string" },
+        "worst_case": { "type": "string" },
+        "touches_management_path": { "type": "boolean", "default": false },
+        "irreversible_elements": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    },
+    "evidence_requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verification_scope", "purpose"],
+        "properties": {
+          "verification_scope": { "enum": ["DEVICE_IDENTITY", "INTERFACE_EXISTENCE", "HARDWARE_INVENTORY", "DIRECT_NEIGHBOR", "PHYSICAL_PATH", "IP_ADDRESS", "ROUTING_STATE", "CONFIGURATION", "SERVICE_REACHABILITY", "POLICY_BEHAVIOR", "INTENT_COMPLIANCE"] },
+          "purpose": { "type": "string" }
+        }
+      }
+    },
+    "rationale": { "type": "string", "minLength": 1 },
+    "confidence": {
+      "type": "object",
+      "description": "METADATA ONLY (L16). Never gates any decision; never displayed as a decision justification.",
+      "additionalProperties": false,
+      "properties": {
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "note": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

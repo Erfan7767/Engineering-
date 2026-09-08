@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/state_transition.schema.json",
+  "title": "StateTransition",
+  "description": "Ledger record of an FSM transition; every Twin mutation traces to one (D0-03 runtime rules).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["transition_id", "fsm", "entity_ref", "from_state", "to_state", "guard_id", "evidence_ids", "actor", "collected_at"],
+  "properties": {
+    "transition_id": { "type": "string", "format": "uuid" },
+    "fsm": { "enum": ["FSM-1_DEVICE", "FSM-2_CHANGE", "FSM-3_ROLLBACK", "FSM-4_LINK", "FSM-5_RECOVERY", "TWIN_PROJECTION"], "description": "TWIN_PROJECTION records Digital-Twin mutations (CLAIM → STATE_TRANSITION, D0-04 §1); FSM labels cover the five normative machines." },
+    "entity_ref": { "type": "string", "minLength": 1 },
+    "from_state": { "type": "string", "minLength": 1 },
+    "to_state": { "type": "string", "minLength": 1 },
+    "guard_id": { "type": "string", "minLength": 1, "description": "e.g. 2.5 — normative table id in docs/D0/03-state-machines.md." },
+    "evidence_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["ENGINE", "HUMAN", "AGENT"] },
+        "id": { "type": "string", "minLength": 1 },
+        "rbac_role": { "type": ["string", "null"] },
+        "mfa_verified": { "type": ["boolean", "null"] }
+      }
+    },
+    "collected_at": { "type": "string", "format": "date-time" },
+    "failure": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "class": { "enum": ["RETRYABLE", "BLOCKED", "ROLLED_BACK", "PARTIAL", "MANUAL_REQUIRED", "FATAL"] },
+        "causes": { "type": "array", "items": { "type": "string" } },
+        "count": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    }
+  }
+}

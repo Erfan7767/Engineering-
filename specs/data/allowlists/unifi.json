@@ -1,0 +1,23 @@
+{
+  "vendor_family": "ubiquiti/unifi",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "api:/stat/device", "purpose": "device inventory/adoption state", "fields": ["model", "serial", "state", "version"] },
+        { "template": "api:/stat/portconf", "purpose": "port profiles", "fields": ["name", "vlan"] },
+        { "template": "api:/stat/health", "purpose": "site health baseline", "fields": ["subsystem", "status"] },
+        { "template": "api:/stat/sta", "purpose": "client evidence (wireless/wired)", "fields": ["mac", "rssi", "channel", "vlan"] }
+      ],
+      "notes": "UniFi surface is controller REST API. SSH device-direct access is OPTIONAL and never assumed. API endpoints verified against controller version in D1."
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2: provisioning via controller API; rollback = prior configuration revision (access profile)." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "physical-factory-reset", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "api:/cmd/devmgr (firmware flash paths)", "reason": "firmware flash is a Lifecycle Change (§17), never an inline action" }
+    ] }
+  }
+}

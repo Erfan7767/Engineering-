@@ -1,0 +1,33 @@
+{
+  "vendor_family": "cisco/ios-xe",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "show version", "purpose": "identity", "fields": ["version", "model", "uptime", "serial"] },
+        { "template": "show inventory", "purpose": "hardware inventory", "fields": ["pid", "vid", "sn"] },
+        { "template": "show interfaces status", "purpose": "L1/L2 port state", "fields": ["port", "status", "vlan", "duplex", "speed", "type"] },
+        { "template": "show interfaces", "purpose": "counters/errors", "fields": ["interface", "input_errors", "crc", "output_errors"] },
+        { "template": "show lldp neighbors detail", "purpose": "neighbor evidence", "fields": ["local_intf", "neighbor", "neighbor_intf", "chassis_id"] },
+        { "template": "show cdp neighbors detail", "purpose": "neighbor evidence", "fields": ["device_id", "local_interface", "platform", "port_id"] },
+        { "template": "show vlan brief", "purpose": "VLAN model", "fields": ["vlan_id", "name", "status", "ports"] },
+        { "template": "show mac address-table", "purpose": "MAC evidence", "fields": ["vlan", "mac", "type", "port"] },
+        { "template": "show ip route", "purpose": "routing state", "fields": ["protocol", "network", "next_hop", "interface"] },
+        { "template": "show running-config", "purpose": "configuration (hash baseline)", "fields": ["__full_text_hash__"] },
+        { "template": "show archive config differences", "purpose": "config change detection", "fields": ["__diff__"] },
+        { "template": "show clock detail", "purpose": "device clock (untrusted, recorded)", "fields": ["time", "timezone", "clock-source"] }
+      ]
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 with Config IR templates (archive-backed scope)." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2; mgmt-plane templates require lock-out plan artifact." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "rommon-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "erase <args>", "reason": "destructive" },
+      { "template": "write erase", "reason": "destructive" },
+      { "template": "format <args>", "reason": "destructive" },
+      { "template": "delete /force /recursive <args>", "reason": "artifact destruction" }
+    ] }
+  }
+}

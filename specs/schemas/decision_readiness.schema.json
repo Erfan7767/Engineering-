@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/decision_readiness.schema.json",
+  "title": "DecisionReadiness",
+  "description": "The ONLY readiness predicate (§13, L16). READY iff every conjunct true. LLM confidence is excluded by construction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["readiness_id", "change_id", "evaluated_at", "conjuncts", "ready"],
+  "properties": {
+    "readiness_id": { "type": "string", "format": "uuid" },
+    "change_id": { "type": "string", "format": "uuid" },
+    "evaluated_at": { "type": "string", "format": "date-time" },
+    "conjuncts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_valid", "authority_valid", "fresh_enough", "no_conflict",
+        "model_supported", "capability_confirmed", "policy_allowed",
+        "dependency_satisfied", "rollback_ready", "recovery_path_verified",
+        "blast_radius_accepted", "window_valid"
+      ],
+      "properties": {
+        "evidence_valid": { "$ref": "#/definitions/conjunct" },
+        "authority_valid": { "$ref": "#/definitions/conjunct" },
+        "fresh_enough": { "$ref": "#/definitions/conjunct" },
+        "no_conflict": { "$ref": "#/definitions/conjunct" },
+        "model_supported": { "$ref": "#/definitions/conjunct" },
+        "capability_confirmed": { "$ref": "#/definitions/conjunct" },
+        "policy_allowed": { "$ref": "#/definitions/conjunct" },
+        "dependency_satisfied": { "$ref": "#/definitions/conjunct" },
+        "rollback_ready": { "$ref": "#/definitions/conjunct" },
+        "recovery_path_verified": { "$ref": "#/definitions/conjunct" },
+        "blast_radius_accepted": { "$ref": "#/definitions/conjunct" },
+        "window_valid": { "$ref": "#/definitions/conjunct" }
+      }
+    },
+    "ready": { "type": "boolean", "description": "MUST equal the AND of all conjuncts; enforced by engine + unit test." }
+  },
+  "definitions": {
+    "conjunct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "reason"],
+      "properties": {
+        "value": { "type": "boolean" },
+        "reason": { "type": "string", "description": "Structured code or evidence summary; empty only when value=true." },
+        "evidence_ids": { "type": "array", "items": { "type": "string" } },
+        "freshness_ages": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["evidence_id", "age_seconds", "bound_seconds"],
+            "properties": {
+              "evidence_id": { "type": "string" },
+              "age_seconds": { "type": "number", "minimum": 0 },
+              "bound_seconds": { "type": ["number", "null"] }
+            }
+          },
+          "description": "Populated for fresh_enough; recorded per ADR-0010."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Runtime dependencies (D1 scope). Pinned lower bounds per ADR-0001.
+# The §20 full stack (Scrapli, Netmiko, NAPALM, pySerial, pyATS, pybatfish,
+# LangGraph, …) lands adapter-by-adapter with the phases that need them.
+pydantic>=2.5
+cryptography>=42.0
+jsonschema>=4.20
+
+# Development / harness
+pytest>=8.0

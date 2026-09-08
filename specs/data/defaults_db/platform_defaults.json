@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "spec_trace": "§12 reconciliation prerequisites; P0-19; docs/D0-08 §4",
+  "honesty_rules": [
+    "every value has source ∈ {documented, lab_verified, not_recorded}",
+    "UNKNOWN ⇔ source=not_recorded",
+    "values marked documented are vendor-documented defaults; they must be confirmed by lab evidence (lab_verified) before reconciliation may treat absence-of-config as that value"
+  ],
+  "platforms": {
+    "mikrotik/routeros": {
+      "default_bridge_ip": { "value": "192.168.88.1/24", "source": "documented" },
+      "default_admin_account": { "value": "admin", "source": "documented" },
+      "default_dns_servers": { "value": "none", "source": "documented" },
+      "default_firewall_filter": { "value": "UNKNOWN", "source": "not_recorded" },
+      "default_bandwidth_server_enabled": { "value": "UNKNOWN", "source": "not_recorded" }
+    },
+    "cisco/ios-xe": {
+      "default_vlans": { "value": {"1": {"name": "default", "state": "active"}}, "source": "documented" },
+      "default_port_mode": { "value": "access", "source": "documented" },
+      "default_native_vlan": { "value": 1, "source": "documented" },
+      "default_trunk_allowed": { "value": "all", "source": "documented" },
+      "default_stp_mode": { "value": "UNKNOWN", "source": "not_recorded" },
+      "default_http_server": { "value": "UNKNOWN", "source": "not_recorded" },
+      "default_cdp_state": { "value": "UNKNOWN", "source": "not_recorded" }
+    },
+    "juniper/junos": {
+      "default_config_mode": { "value": "candidate-commit", "source": "documented" },
+      "default_root_login": { "value": "password-less factory prompt on some platforms", "source": "documented" },
+      "default_lldp_state": { "value": "UNKNOWN", "source": "not_recorded" }
+    },
+    "fortinet/fortios": {
+      "default_mgmt_ip": { "value": "192.168.1.99/24", "source": "documented" },
+      "default_admin_account": { "value": "admin", "source": "documented" },
+      "default_admin_password": { "value": "none (blank at factory)", "source": "documented" },
+      "default_https_admin": { "value": "UNKNOWN", "source": "not_recorded" }
+    },
+    "aruba/arubaos": {
+      "default_ap_mode": { "value": "UNKNOWN", "source": "not_recorded" },
+      "default_controller_redundancy": { "value": "UNKNOWN", "source": "not_recorded" }
+    },
+    "ubiquiti/unifi": {
+      "default_adoption_protocol": { "value": "inform-http", "source": "documented" },
+      "default_inform_port": { "value": 8080, "source": "documented" },
+      "default_mgmt_vlan": { "value": 1, "source": "documented" }
+    }
+  }
+}

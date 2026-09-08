@@ -1,0 +1,23 @@
+{
+  "schema_ref": "authority_table.json",
+  "spec_trace": "§4",
+  "note": "Compiled into policy/authority.py in D1. Exactly one DECIDE cell per decision. LLM agents hold only PROPOSE cells. No authority converts UNKNOWN to any value.",
+  "decisions": [
+    { "decision": "device_identity_interface_serial_vendor_os", "propose": [], "decide": "EVIDENCE_DEVICE_INVENTORY", "veto": [] },
+    { "decision": "ip_overlap_subnetting", "propose": [], "decide": "E07_IPAM", "veto": [] },
+    { "decision": "config_syntax_semantics", "propose": [], "decide": "E10_VALIDATION_FABRIC", "veto": [] },
+    { "decision": "feature_feasibility", "propose": [], "decide": "E06_CAPABILITY_MATRIX", "veto": [] },
+    { "decision": "requirement_interpretation", "propose": ["A2_REQUIREMENTS"], "decide": "HUMAN_CONFIRMATION", "veto": ["A4_AUDITOR"] },
+    { "decision": "business_to_network_intent", "propose": ["A2_REQUIREMENTS"], "decide": ["E08_INTENT_COMPILER", "HUMAN_CONFIRMATION"], "veto": ["A4_AUDITOR"] },
+    { "decision": "architecture_design", "propose": ["A3_ARCHITECT"], "decide": ["E10_VALIDATION_FABRIC", "E24_POLICY_ENGINE"], "veto": ["A4_AUDITOR"] },
+    { "decision": "deployment_order", "propose": [], "decide": "E12_DEPENDENCY_DAG", "veto": ["E24_POLICY_ENGINE"] },
+    { "decision": "blast_radius_risk_class", "propose": [], "decide": "E13_BLAST_RADIUS", "veto": [] },
+    { "decision": "autonomy_decision", "propose": [], "decide": "E14_AUTONOMY_AUTHORITY", "veto": ["HUMAN_RBAC"] },
+    { "decision": "deployment_permission", "propose": ["A1_ORCHESTRATOR"], "decide": "GATE_PER_SECTION_13", "veto": ["E24_POLICY_ENGINE"] },
+    { "decision": "live_state_test_result", "propose": [], "decide": "LIVE_EVIDENCE_TEST_ORIGIN", "veto": [] },
+    { "decision": "failure_continuation", "propose": [], "decide": "E18_FAILURE_ORCHESTRATOR", "veto": ["HUMAN_RBAC"] },
+    { "decision": "drift_remediation", "propose": ["E22_RECONCILIATION"], "decide": "GATE_PER_SECTION_13", "veto": ["E24_POLICY_ENGINE"] },
+    { "decision": "final_documentation", "propose": [], "decide": "POST_DEPLOY_OBSERVED_STATE", "veto": [] }
+  ],
+  "human_only_set": ["IRREVERSIBLE", "DESTRUCTIVE", "MANAGEMENT_PATH_TOUCHING", "NOT_MODELED_HIGH_RISK"]
+}

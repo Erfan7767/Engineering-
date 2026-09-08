@@ -1,0 +1,29 @@
+---
+title: FSM-2 Change Lifecycle (normative guards in docs/D0/03-state-machines.md)
+---
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> VALIDATED : 2.1 full Validation Fabric pass (NOT_MODELED recorded, != PASS)
+    DRAFT --> REJECTED : 2.14 VETO / human denial
+    VALIDATED --> PLANNED : 2.2 DAG total order + permanent constraints
+    VALIDATED --> REJECTED : 2.14 VETO
+    PLANNED --> RISK_ASSESSED : 2.3 blast radius + risk_class recorded
+    RISK_ASSESSED --> AUTHORIZED : 2.4 Decision Readiness all-true + gate + identity(+MFA)
+    RISK_ASSESSED --> REJECTED : 2.14 VETO / denial
+    AUTHORIZED --> ARMED : 2.5 window + no conflict + lock + FSM-3 READY + scope lock
+    AUTHORIZED --> REJECTED : 2.14
+    ARMED --> APPLYING : 2.6 Authorized State re-check + allowlist re-check
+    ARMED --> BLOCKED : 2.5/2.6 guard fails late (reverts to RISK_ASSESSED review)
+    APPLYING --> APPLIED : 2.7 all stages acknowledged + staged verify
+    APPLYING --> FAILED : 2.8 Failure Orchestrator (typed causes/counts)
+    APPLYING --> PARTIAL : 2.8 n/N with per-device causes
+    APPLIED --> VERIFYING : 2.9 mandatory automatic
+    VERIFYING --> VERIFIED : 2.10 PASS semantics or documented human acceptance per non-PASS
+    VERIFYING --> ROLLED_BACK : 2.11 FSM-3 ROLLBACK_TRIGGERED -> success
+    VERIFYING --> RECOVERING : 2.11 rollback failed -> FSM-5
+    VERIFIED --> CLEANED : 2.12 temp resources == 0 or preserved by approval
+    CLEANED --> CLOSED : 2.13 Twin refreshed + docs emitted + audit chain complete
+    FAILED --> MANUAL_REQUIRED : 2.15 physical intervention instructions emitted
+    PARTIAL --> MANUAL_REQUIRED : 2.15
+    CLOSED --> [*]
+    REJECTED --> [*]

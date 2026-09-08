@@ -1,0 +1,27 @@
+{
+  "vendor_family": "fortinet/fortios",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "get system status", "purpose": "identity", "fields": ["version", "serial-number", "model"] },
+        { "template": "get system interface physical", "purpose": "L1 inventory", "fields": ["interface", "status", "speed"] },
+        { "template": "get system interface status", "purpose": "link state", "fields": ["interface", "link"] },
+        { "template": "get router info routing-table all", "purpose": "routing state", "fields": ["protocol", "prefix", "gateway", "interface"] },
+        { "template": "get system arp", "purpose": "ARP evidence", "fields": ["address", "mac", "interface"] },
+        { "template": "get system lldp neighbors", "purpose": "neighbor evidence", "fields": ["local-interface", "chassis-id", "port-id"] },
+        { "template": "get system performance status", "purpose": "health baseline", "fields": ["cpu", "memory", "uptime"] }
+      ],
+      "notes": "FortiOS primary surface is REST API; CLI entries are the serial fallback. API paths registered in D1 with matching field maps."
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 via REST API resource templates (backup/restore scope)." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "bios/bootmenu-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "execute factoryreset", "reason": "destructive" },
+      { "template": "execute formatlogdisk", "reason": "destructive" }
+    ] }
+  }
+}

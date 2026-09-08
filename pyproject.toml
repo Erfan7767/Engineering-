@@ -1,0 +1,30 @@
+[project]
+name = "netops-autopilot"
+version = "0.1.0.dev0"
+description = "Evidence-driven autonomous Network Engineering platform (spec P1-ARCHITECTURE-REVIEWED)."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5",
+    "cryptography>=42.0",
+    "jsonschema>=4.20",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # RefResolver is still the simplest cross-$id store for draft-07; migrate
+    # to 'referencing' when the schema suite grows (open item OI-0120).
+    "ignore:jsonschema.RefResolver is deprecated:DeprecationWarning",
+]

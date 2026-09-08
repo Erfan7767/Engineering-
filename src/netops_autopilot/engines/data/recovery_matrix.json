@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "spec_trace": "§11 Recovery Capability Matrix; §14 adapters; ADR-0009",
+  "semantics": {
+    "values": ["SUPPORTED", "NOT_SUPPORTED", "UNKNOWN"],
+    "notes_rules": [
+      "system_history (RouterOS) is session-scoped and NOT relied upon — recorded as NOT_SUPPORTED by policy, not by absence",
+      "binary backups are version-bound: restore across versions is NOT guaranteed",
+      "destructive methods are listed for completeness but are HUMAN_TASK/DESTRUCTIVE-gated (§9)"
+    ]
+  },
+  "matrix": {
+    "mikrotik/routeros": {
+      "safe_mode": { "status": "SUPPORTED", "note": "PRIMARY rollback path (§14)" },
+      "config_export_import": { "status": "SUPPORTED", "note": "text export/import; ordering-sensitive" },
+      "binary_backup": { "status": "SUPPORTED", "note": "version-bound; same-version restore only" },
+      "system_history": { "status": "NOT_SUPPORTED", "note": "session-scoped, non-persistent — policy decision, not device absence" },
+      "netinstall": { "status": "SUPPORTED", "note": "DESTRUCTIVE; human gate only (§9)" },
+      "console_recovery": { "status": "SUPPORTED", "note": "serial console" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent (ADR-0004: NOT_CONFIGURED default in v1)" }
+    },
+    "cisco/ios-xe": {
+      "archive_configure_replace": { "status": "SUPPORTED", "note": "archive + configure replace; multi-pass warning modeled (§14)" },
+      "configure_confirm_revert": { "status": "SUPPORTED", "note": "confirm/revert trigger flow" },
+      "binary_backup": { "status": "SUPPORTED", "note": "image copy; version-bound restore" },
+      "rommon_reset": { "status": "SUPPORTED", "note": "DESTRUCTIVE; human gate only" },
+      "console_recovery": { "status": "SUPPORTED", "note": "serial console" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent" }
+    },
+    "juniper/junos": {
+      "commit_confirmed": { "status": "SUPPORTED", "note": "commit confirmed + commit (§14)" },
+      "rescue_configuration": { "status": "UNKNOWN", "note": "per-device decision; recorded at bootstrap" },
+      "binary_backup": { "status": "SUPPORTED", "note": "system snapshot/VM host image; version-bound" },
+      "bootloader_recovery": { "status": "SUPPORTED", "note": "loader prompt; DESTRUCTIVE gate" },
+      "console_recovery": { "status": "SUPPORTED", "note": "serial console" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent" }
+    },
+    "fortinet/fortios": {
+      "api_backup_restore": { "status": "SUPPORTED", "note": "REST backup/restore; revision semantics recorded per version from lab (§14)" },
+      "factory_reset": { "status": "SUPPORTED", "note": "DESTRUCTIVE; human gate only" },
+      "bootloader_recovery": { "status": "SUPPORTED", "note": "BIOS/boot menu; DESTRUCTIVE gate" },
+      "console_recovery": { "status": "SUPPORTED", "note": "serial console" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent" }
+    },
+    "aruba/arubaos": {
+      "checkpoint_rollback": { "status": "UNKNOWN", "note": "availability per version must be lab-verified (access profile OI-0105)" },
+      "factory_reset": { "status": "SUPPORTED", "note": "DESTRUCTIVE; human gate only" },
+      "console_recovery": { "status": "SUPPORTED", "note": "serial console" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent" }
+    },
+    "ubiquiti/unifi": {
+      "controller_revision": { "status": "SUPPORTED", "note": "rollback = re-provision previous configuration revision via controller API" },
+      "device_local_rollback": { "status": "NOT_SUPPORTED", "note": "controller-managed model; device-local rollback absent by design" },
+      "factory_reset": { "status": "SUPPORTED", "note": "physical button; DESTRUCTIVE gate" },
+      "console_recovery": { "status": "UNKNOWN", "note": "model-dependent serial availability" },
+      "oob": { "status": "UNKNOWN", "note": "site-dependent" }
+    }
+  }
+}

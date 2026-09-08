@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "spec_trace": "P1-34 Service Dependency Graph; §10; §13 permanent constraints (AAA/NTP/PKI before dependents)",
+  "semantics": {
+    "provides": "capability tokens this service offers to dependents",
+    "depends_on": "service names required BEFORE this service may come up",
+    "growth": "additive only; changes require register entries"
+  },
+  "services": {
+    "dns": { "provides": ["name_resolution"], "depends_on": [], "note": "resolver reachability is an evidence requirement, not an assumption" },
+    "ntp": { "provides": ["time_sync"], "depends_on": [], "note": "bootstrap configures LOCAL_ONLY unless an approved source exists (§9)" },
+    "pki": { "provides": ["certificates"], "depends_on": ["ntp"], "note": "certificate validity is time-dependent; external CA via OPTIONAL connector (§19)" },
+    "radius": { "provides": ["aaa_radius"], "depends_on": ["dns", "ntp"], "note": "NAS name resolution + time-bounded shared secrets" },
+    "tacacs": { "provides": ["aaa_tacacs"], "depends_on": ["dns", "ntp"] },
+    "dot1x": { "provides": ["port_auth"], "depends_on": ["radius"], "note": "802.1X authenticator requires reachable RADIUS" },
+    "dhcp": { "provides": ["address_assignment"], "depends_on": [] },
+    "syslog": { "provides": ["log_sink"], "depends_on": ["dns"], "note": "remote collector by name" },
+    "snmp": { "provides": ["telemetry_poll"], "depends_on": [] },
+    "ssh_mgmt": { "provides": ["mgmt_access"], "depends_on": [] },
+    "https_mgmt": { "provides": ["mgmt_access_tls"], "depends_on": ["pki"] },
+    "ipsec": { "provides": ["vpn_tunnel"], "depends_on": ["pki"], "note": "cert-based IKE; PSK variants downgrade the note, not the dependency" },
+    "captive_portal": { "provides": ["guest_onboarding"], "depends_on": ["dhcp", "dns"] },
+    "internet_egress": { "provides": ["internet"], "depends_on": ["dns"] }
+  }
+}

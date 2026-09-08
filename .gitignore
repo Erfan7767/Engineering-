@@ -1,0 +1,21 @@
+# Python build/cache artifacts — never source
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment / credentials — never committed (L11)
+.env
+.netrc
+*.pem
+*.key
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store

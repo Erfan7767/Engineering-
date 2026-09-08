@@ -1,0 +1,27 @@
+{
+  "vendor_family": "mikrotik/routeros",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "/system/resource/print", "purpose": "identity/version", "fields": ["version", "board-name", "uptime"] },
+        { "template": "/system/routerboard/print", "purpose": "hardware identity", "fields": ["serial-number", "model"] },
+        { "template": "/interface/print detail", "purpose": "L1 inventory", "fields": ["name", "type", "mtu", "mac-address"] },
+        { "template": "/ip/address/print", "purpose": "L3 addresses", "fields": ["address", "interface"] },
+        { "template": "/ip/neighbor/print", "purpose": "MNDP neighbors", "fields": ["identity", "interface", "mac-address"] },
+        { "template": "/interface/monitor [find]", "purpose": "link state/rate", "fields": ["status", "rate", "auto-negotiation"] },
+        { "template": "/system/identity/print", "purpose": "hostname", "fields": ["name"] },
+        { "template": "/system/clock/print", "purpose": "device clock (untrusted, recorded)", "fields": ["time", "date"] }
+      ]
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 with Config IR templates (Safe Mode scope)." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "/system/netinstall <args>", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "/system/reset-configuration", "reason": "destructive, unscoped" },
+      { "template": "/file/remove <args>", "reason": "artifact destruction" }
+    ] }
+  }
+}

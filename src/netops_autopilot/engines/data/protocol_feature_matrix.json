@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "spec_trace": "§11 Protocol/Feature Capability Matrix; T2/L13 (UNKNOWN ⇒ feature is NOT planned)",
+  "semantics": {
+    "fields": ["discover", "configure", "validate", "rollback", "operational_test", "model_coverage"],
+    "values": ["YES", "NO", "PARTIAL", "UNKNOWN"],
+    "basis": "documented = vendor documentation only; lab_verified = confirmed on sponsor lab hardware",
+    "growth_rule": "entries start conservative; they may only be strengthened by lab evidence recorded in the Open Items Register (OI-0140 series)"
+  },
+  "matrix": {
+    "cisco/ios-xe": {
+      "version_constraint": ">=16.9",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "lacp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "stp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "static_route": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ospf":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "bgp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "nat":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "dhcp_server": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "lldp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ssh_mgmt":   { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "aaa_radius": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    },
+    "mikrotik/routeros": {
+      "version_constraint": ">=7.0",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "lacp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "stp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "static_route": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ospf":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "bgp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "nat":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "dhcp_server": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "RouterOS firewall filter model differs from ACL model; canonicalization required" },
+        "lldp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ssh_mgmt":   { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "aaa_radius": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    },
+    "juniper/junos": {
+      "version_constraint": ">=15.1",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "lacp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "stp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "static_route": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ospf":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "bgp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "nat":        { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "SRX-class NAT; EX switching platforms vary" },
+        "dhcp_server": { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "firewall filters model" },
+        "lldp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ssh_mgmt":   { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "aaa_radius": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    },
+    "fortinet/fortios": {
+      "version_constraint": ">=6.4",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "static_route": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ospf":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "bgp":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "nat":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "dhcp_server": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "firewall policy model is the native abstraction" },
+        "lldp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ssh_mgmt":   { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "aaa_radius": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ipsec":      { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    },
+    "aruba/arubaos": {
+      "version_constraint": ">=8.0",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "firewall policies/roles model" },
+        "aaa_radius": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "wireless_ssid": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "ssh_mgmt":   { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "lldp":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    },
+    "ubiquiti/unifi": {
+      "version_constraint": "UNKNOWN",
+      "features": {
+        "vlan":       { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "wireless_ssid": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" },
+        "acl":        { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "firewall rules via controller; model coverage version-dependent" },
+        "dhcp_server": { "discover": "YES", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented", "note": "controller-managed (USG/UXG class)" },
+        "lldp":       { "discover": "PARTIAL", "configure": "UNKNOWN", "validate": "UNKNOWN", "rollback": "UNKNOWN", "operational_test": "UNKNOWN", "model_coverage": "PARTIAL", "basis": "documented" }
+      }
+    }
+  }
+}

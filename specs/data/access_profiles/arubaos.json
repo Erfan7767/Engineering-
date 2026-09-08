@@ -1,0 +1,30 @@
+{
+  "$schema_ref": "../access_profiles/README.md",
+  "vendor_family": "Aruba (HPE) — ArubaOS / AOS-CX / Instant",
+  "profiles": [
+    {
+      "match": { "vendor": "aruba", "models": ["ArubaOS*controller*", "70*", "72*", "90*"] },
+      "os_hint": { "os": "arubaos", "version_constraint": ">=8.0" },
+      "console": { "present": true, "baud_candidates": [9600, 115200], "flow_control": "none" },
+      "ethernet_defaults": [
+        { "ip": null, "interface_hint": null, "verified": false,
+          "notes": "Defaults differ between controller and IAP modes; UNKNOWN until lab evidence." }
+      ],
+      "mac_layer": { "protocols": [], "enabled_default": "NOT_SUPPORTED" },
+      "controller_adopt": { "applicable": true, "notes": "APs adopt to controller (or Instant VC elects master); adoption flows are WirelessControlPlaneAdapter territory." },
+      "pnp_dhcp": { "applicable": true, "notes": "AirWave/Aruba Central/Activate provisioning paths; cloud connector OPTIONAL per §19." },
+      "auth_defaults": { "mode": "password", "default_account": "admin",
+                         "default_password_policy": "UNKNOWN" },
+      "rollback_mechanism": {
+        "kind": "checkpoint",
+        "min_version": "checkpoint availability per version = verify in lab",
+        "status": "UNKNOWN",
+        "notes": "Checkpoint/rollback where available (§14); until lab-verified per version this stays UNKNOWN ⇒ dependent features BLOCKED (T2)."
+      },
+      "day0_classifier_ref": "defaults_db/day0_classifiers.json#/aruba/arubaos",
+      "destructive_recovery": [
+        { "method": "FACTORY_RESET_BUTTON", "preconditions": ["model-specific sequence = UNKNOWN"], "gate": "DESTRUCTIVE" }
+      ]
+    }
+  ]
+}

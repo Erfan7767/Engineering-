@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/raw_artifact.schema.json",
+  "title": "RawArtifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["raw_id", "event_id", "storage_uri", "sha256", "bytes", "truncated"],
+  "properties": {
+    "raw_id": { "type": "string", "format": "uuid" },
+    "event_id": { "type": "string", "format": "uuid" },
+    "storage_uri": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
+    "budget_reason": { "type": ["string", "null"], "description": "Required when truncated=true." }
+  },
+  "allOf": [
+    { "if": { "properties": { "truncated": { "const": true } } },
+      "then": { "required": ["budget_reason"] } }
+  ]
+}

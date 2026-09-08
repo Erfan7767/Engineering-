@@ -1,0 +1,12 @@
+{
+  "parser_id": "regex/junos_show_version",
+  "parser_version": "1.0.0",
+  "command": "show version",
+  "provenance": "synthetic-representative seed (replace with lab capture, OI-0131)",
+  "expected": [
+    { "field": "hostname", "parse_status": "OK", "value": "srx-branch-01" },
+    { "field": "model", "parse_status": "OK", "value": "srx345" },
+    { "field": "serial", "parse_status": "OK", "value": "CV4718AF0091" },
+    { "field": "junos_version", "parse_status": "OK", "value": "21.4R3-S5" }
+  ]
+}

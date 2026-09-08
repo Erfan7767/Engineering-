@@ -1,0 +1,21 @@
+{
+  "parser_id": "json/unifi_stat_device",
+  "parser_version": "1.0.0",
+  "command": "api:/stat/device",
+  "provenance": "synthetic-representative seed (replace with lab capture, OI-0134)",
+  "raw_file": "stat_device.json",
+  "expected": [
+    { "field": "device[0].model", "parse_status": "OK", "value": "USW-24-POE" },
+    { "field": "device[0].serial", "parse_status": "OK", "value": "F09FC2E1B2C3" },
+    { "field": "device[0].version", "parse_status": "OK", "value": "6.5.55.14048" },
+    { "field": "device[0].type", "parse_status": "OK", "value": "usw" },
+    { "field": "device[0].state", "parse_status": "OK", "value": 1 },
+    { "field": "device[0].adopted", "parse_status": "OK", "value": true },
+    { "field": "device[0].mac", "parse_status": "OK", "value": "f0:9f:c2:e1:b2:c3" },
+    { "field": "device[0].ip", "parse_status": "OK", "value": "10.0.0.5" },
+    { "field": "device[1].model", "parse_status": "OK", "value": "U6-LR" },
+    { "field": "device[1].serial", "parse_status": "OK", "value": "74ACB9AABBCC" },
+    { "field": "device[1].type", "parse_status": "OK", "value": "uap" },
+    { "field": "device[1].ip", "parse_status": "OK", "value": "10.0.0.6" }
+  ]
+}

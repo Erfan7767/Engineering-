@@ -1,0 +1,27 @@
+---
+title: FSM-5 Recovery Hierarchy (normative guards in docs/D0/03-state-machines.md)
+---
+stateDiagram-v2
+    [*] --> NOT_NEEDED
+    NOT_NEEDED --> ESCALATING_L0 : 5.1 failure classified recoverable
+    ESCALATING_L0 --> ESCALATING_L1 : 5.2 L0 failed or NOT_SUPPORTED
+    ESCALATING_L1 --> ESCALATING_L2 : 5.2
+    ESCALATING_L2 --> ESCALATING_L3 : 5.2 (L3 often NOT_CONFIGURED in v1, ADR-0004 -> skip recorded)
+    ESCALATING_L3 --> ESCALATING_L4 : 5.2
+    ESCALATING_L4 --> ESCALATING_L5 : 5.2 + 5.4 DESTRUCTIVE gate + HUMAN decision (every mode)
+    ESCALATING_L5 --> ESCALATING_L6 : 5.2
+    ESCALATING_L6 --> ESCALATING_L7 : 5.2
+    ESCALATING_L6 --> HUMAN_REQUIRED : 5.5 instructions emitted, platform waits for evidence
+    ESCALATING_L7 --> HUMAN_REQUIRED : 5.5 instructions emitted, platform waits for evidence
+    HUMAN_REQUIRED --> RECOVERED : 5.3 human completed + reachability + identity re-confirmed
+    ESCALATING_L0 --> RECOVERED : 5.3 reachable + identity re-confirmed
+    ESCALATING_L1 --> RECOVERED : 5.3
+    ESCALATING_L2 --> RECOVERED : 5.3
+    ESCALATING_L3 --> RECOVERED : 5.3
+    ESCALATING_L4 --> RECOVERED : 5.3
+    ESCALATING_L5 --> RECOVERED : 5.3
+    ESCALATING_L5 --> LOST : 5.6 paths exhausted
+    ESCALATING_L6 --> LOST : 5.6
+    ESCALATING_L7 --> LOST : 5.6
+    RECOVERED --> [*]
+    LOST --> [*]

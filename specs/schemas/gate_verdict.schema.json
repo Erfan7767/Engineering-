@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/gate_verdict.schema.json",
+  "title": "GateVerdict",
+  "description": "Output of a §13 gate evaluation; carried on the Change. Decision Readiness evaluation is attached by reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict_id", "change_id", "gate_class", "verdict", "decided_by", "decided_at", "readiness_ref"],
+  "properties": {
+    "verdict_id": { "type": "string", "format": "uuid" },
+    "change_id": { "type": "string", "format": "uuid" },
+    "gate_class": { "enum": ["READ_ONLY", "LOW_RISK", "HIGH_RISK", "IRREVERSIBLE", "DESTRUCTIVE"] },
+    "verdict": { "enum": ["AUTO_EXECUTE", "APPROVAL_REQUIRED", "DRY_RUN_ONLY", "BLOCKED", "UNKNOWN"] },
+    "approval": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["human_id", "rbac_role", "mfa_verified"],
+      "properties": {
+        "human_id": { "type": "string", "minLength": 1 },
+        "rbac_role": { "type": "string", "minLength": 1 },
+        "mfa_verified": { "type": "boolean" },
+        "approved_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "readiness_ref": { "type": "string", "description": "decision_readiness record id; the sole readiness predicate (L16)." },
+    "blockers": { "type": "array", "items": { "type": "string" }, "description": "Structured reason codes when verdict in {APPROVAL_REQUIRED, BLOCKED, UNKNOWN}." },
+    "high_risk_artifacts": {
+      "type": ["object", "null"],
+      "description": "Mandatory set for HIGH_RISK and above (§13).",
+      "additionalProperties": false,
+      "required": ["dry_run_ref", "diff_ref", "rollback_state", "lock_out_plan_ref", "blast_radius_ref"],
+      "properties": {
+        "dry_run_ref": { "type": "string" },
+        "diff_ref": { "type": "string" },
+        "rollback_state": { "const": "READY", "description": "ARMED is impossible otherwise (ADR-0009)." },
+        "lock_out_plan_ref": { "type": "string" },
+        "blast_radius_ref": { "type": "string" }
+      }
+    },
+    "decided_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["ENGINE", "HUMAN"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "decided_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "if": { "properties": { "verdict": { "enum": ["APPROVAL_REQUIRED", "BLOCKED", "UNKNOWN"] } } },
+      "then": { "required": ["blockers"], "properties": { "blockers": { "minItems": 1 } } } },
+    { "if": { "properties": { "gate_class": { "enum": ["HIGH_RISK", "IRREVERSIBLE", "DESTRUCTIVE"] } } },
+      "then": { "required": ["high_risk_artifacts"] } }
+  ]
+}

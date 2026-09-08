@@ -1,0 +1,12 @@
+{
+  "parser_id": "regex/fortios_get_system_status",
+  "parser_version": "1.0.0",
+  "command": "get system status",
+  "provenance": "synthetic-representative seed (replace with lab capture, OI-0132)",
+  "expected": [
+    { "field": "version", "parse_status": "OK", "value": "FortiGate-80F v7.4.3,build2573,240201 (GA)" },
+    { "field": "serial", "parse_status": "OK", "value": "FGT80FTK21907431" },
+    { "field": "model", "parse_status": "OK", "value": "FortiGate-80F" },
+    { "field": "uptime", "parse_status": "OK", "value": "12 days, 3 hours, 45 minutes" }
+  ]
+}

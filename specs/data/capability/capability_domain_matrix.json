@@ -1,0 +1,32 @@
+{
+  "spec_trace": "§1, P1-26; docs/D0/09-capability-domain-matrix.md",
+  "version": "0.1.0-d0-seed",
+  "domains": ["AUTOMATED", "ASSISTED", "HUMAN_TASK"],
+  "capabilities": [
+    { "id": "C01", "name": "device_discovery_and_evidence_collection", "domain": "AUTOMATED" },
+    { "id": "C02", "name": "physical_installation", "domain": "HUMAN_TASK", "verify_after": true },
+    { "id": "C03", "name": "console_serial_hookup", "domain": "HUMAN_TASK", "verify_after": true },
+    { "id": "C04", "name": "day0_bootstrap", "domain": "AUTOMATED", "gate": "POLICY_GATED" },
+    { "id": "C05", "name": "identity_and_hardware_inventory", "domain": "AUTOMATED" },
+    { "id": "C06", "name": "vlan_l2_design_apply", "domain": "AUTOMATED", "min_mode": "M2" },
+    { "id": "C07", "name": "routing_design_apply", "domain": "AUTOMATED", "min_mode": "M2", "notes": "core-plane subsets HIGH_RISK; M3-only where policy says so" },
+    { "id": "C08", "name": "wireless_design", "domain": "ASSISTED", "human_steps": ["site_judgment_rf"] },
+    { "id": "C09", "name": "wireless_apply_controller", "domain": "AUTOMATED" },
+    { "id": "C10", "name": "firewall_policy_design_apply", "domain": "AUTOMATED", "human_steps": ["production_zone_signoff"] },
+    { "id": "C11", "name": "aaa_8021x_radius_rollout", "domain": "ASSISTED", "human_steps": ["identity_system_coordination"] },
+    { "id": "C12", "name": "isp_coordination", "domain": "HUMAN_TASK", "verify_after": true },
+    { "id": "C13", "name": "hardware_replacement", "domain": "HUMAN_TASK", "verify_after": true },
+    { "id": "C14", "name": "firmware_upgrade", "domain": "AUTOMATED", "gate": "FULL_CHANGE_LIFECYCLE" },
+    { "id": "C15", "name": "license_management", "domain": "ASSISTED", "human_steps": ["vendor_portal"] },
+    { "id": "C16", "name": "cve_assessment", "domain": "AUTOMATED" },
+    { "id": "C17", "name": "config_backup_restore", "domain": "AUTOMATED" },
+    { "id": "C18", "name": "destructive_recovery", "domain": "HUMAN_TASK", "gate": "DESTRUCTIVE", "verify_after": true },
+    { "id": "C19", "name": "monitoring_alerting", "domain": "AUTOMATED" },
+    { "id": "C20", "name": "drift_detection_classification", "domain": "AUTOMATED", "notes": "remediation gated" },
+    { "id": "C21", "name": "documentation_generation", "domain": "AUTOMATED" },
+    { "id": "C22", "name": "credential_rotation", "domain": "ASSISTED", "human_steps": ["scope_and_timing_approval"] },
+    { "id": "C23", "name": "certificate_lifecycle", "domain": "ASSISTED", "human_steps": ["external_ca_interaction"] },
+    { "id": "C24", "name": "physical_path_verification", "domain": "ASSISTED", "human_steps": ["confirm_or_authorize_active_test"] },
+    { "id": "C25", "name": "wan_failover_testing", "domain": "AUTOMATED", "gate": "PRE_PRODUCTION_GATED" }
+  ]
+}

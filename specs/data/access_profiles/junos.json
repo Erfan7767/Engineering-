@@ -1,0 +1,30 @@
+{
+  "$schema_ref": "../access_profiles/README.md",
+  "vendor_family": "Juniper Junos",
+  "profiles": [
+    {
+      "match": { "vendor": "juniper", "models": ["SRX*", "EX*", "QFX*", "MX*", "ACX*"] },
+      "os_hint": { "os": "junos", "version_constraint": ">=15.1" },
+      "console": { "present": true, "baud_candidates": [9600, 115200], "flow_control": "none" },
+      "ethernet_defaults": [
+        { "ip": null, "interface_hint": "fxp0/me0", "verified": false,
+          "notes": "Factory addressing varies by platform and config mode; UNKNOWN until lab evidence." }
+      ],
+      "mac_layer": { "protocols": [], "enabled_default": "NOT_SUPPORTED" },
+      "controller_adopt": { "applicable": false },
+      "pnp_dhcp": { "applicable": false },
+      "auth_defaults": { "mode": "password", "default_account": "root",
+                         "default_password_policy": "NONE_EXPECTED" },
+      "rollback_mechanism": {
+        "kind": "commit-confirmed",
+        "min_version": "long-standing Junos feature",
+        "status": "SUPPORTED",
+        "notes": "'commit confirmed <minutes>' then 'commit' (§14). rescue configuration usage = per-device decision, recorded."
+      },
+      "day0_classifier_ref": "defaults_db/day0_classifiers.json#/juniper/junos",
+      "destructive_recovery": [
+        { "method": "BOOTLOADER_RECOVERY", "preconditions": ["console access", "loader prompt entry"], "gate": "DESTRUCTIVE" }
+      ]
+    }
+  ]
+}

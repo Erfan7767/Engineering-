@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/rollback.schema.json",
+  "title": "RollbackObject",
+  "description": "FSM-3 entity per §14. READY requires the full conjunction (ADR-0009); deploy cannot ARM without READY.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rollback_id", "change_id", "device_id", "status", "method"],
+  "properties": {
+    "rollback_id": { "type": "string", "format": "uuid" },
+    "change_id": { "type": "string", "format": "uuid" },
+    "device_id": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["NOT_SUPPORTED", "NOT_CONFIGURED", "NOT_READY", "READY",
+               "ARMED", "CONFIRMED", "ROLLBACK_TRIGGERED",
+               "ROLLBACK_SUCCEEDED", "ROLLBACK_FAILED", "UNKNOWN"]
+    },
+    "method": {
+      "enum": ["ARCHIVE_CONFIGURE_REPLACE", "COMMIT_CONFIRMED", "SAFE_MODE",
+               "API_BACKUP_RESTORE", "CHECKPOINT_ROLLBACK",
+               "CONTROLLER_REVISION", "RELOAD_IN_LAST_RESORT", "NONE", "UNKNOWN"]
+    },
+    "artifact_id": { "type": ["string", "null"] },
+    "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "timeout_seconds": { "type": ["integer", "null"], "minimum": 1 },
+    "recovery_path_ref": { "type": ["string", "null"], "description": "FSM-5 path; must be VERIFIED for READY (L15)." },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "satisfied"],
+        "properties": {
+          "name": { "enum": ["MECHANISM_SUPPORTED_ON_VERSION", "ARTIFACT_EXISTS", "HASH_RECORDED",
+                             "FILESYSTEM_PREREQS", "TARGET_PRESERVES_MANAGEMENT_PATH",
+                             "ALL_COMMANDS_REVERSIBLE_BY_METHOD", "RECOVERY_PATH_VERIFIED"] },
+          "satisfied": { "type": "boolean" },
+          "evidence_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "multi_pass_warning": { "type": ["boolean", "null"], "description": "IOS-XE configure replace multi-pass modeling (§14)." },
+    "triggered_at": { "type": ["string", "null"] },
+    "completed_at": { "type": ["string", "null"] },
+    "post_rollback_verification": { "type": ["string", "null"], "enum": ["PASS", "FAIL", "NOT_TESTED", null] }
+  }
+}

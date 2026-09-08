@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/observation.schema.json",
+  "title": "Observation",
+  "description": "Deterministic parser output. The LLM never sees raw device text; it sees structured Observations/Claims only (§10).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["obs_id", "raw_id", "parser_id", "parser_version", "field", "parse_status"],
+  "properties": {
+    "obs_id": { "type": "string", "format": "uuid" },
+    "raw_id": { "type": "string", "format": "uuid" },
+    "parser_id": { "type": "string", "minLength": 1, "description": "e.g. textfsm/cisco_ios_show_version, genie/show_interfaces, yang/interfaces-state" },
+    "parser_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "field": { "type": "string", "minLength": 1 },
+    "value": { "description": "Absent when parse_status != OK." },
+    "parse_status": { "enum": ["OK", "MISSING", "PARSE_FAILED", "UNSUPPORTED_FIELD"] },
+    "superseded_by": { "type": ["string", "null"], "description": "obs_id of re-parse by newer parser version." }
+  },
+  "allOf": [
+    { "if": { "properties": { "parse_status": { "const": "OK" } } },
+      "then": { "required": ["value"] } }
+  ]
+}

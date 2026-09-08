@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/event.schema.json",
+  "title": "Event",
+  "description": "Signed root record of the Evidence Ledger chain (D0-04 §2).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id", "type", "device_id", "session_id", "command_or_op",
+    "operator_identity", "collector_identity", "collected_at",
+    "collector_clock_status", "signature"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": {
+      "enum": ["CLI", "NETCONF", "RESTCONF", "SNMP", "API", "SERIAL",
+               "PROBE", "USER", "SYSLOG", "TRAP", "TELEMETRY"]
+    },
+    "device_id": { "type": ["string", "null"], "description": "null only for pre-identity probes; must be backfilled or the event stays unattributed." },
+    "session_id": { "type": ["string", "null"] },
+    "command_or_op": { "type": "string", "minLength": 1 },
+    "operator_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["ENGINE", "HUMAN", "AGENT"] },
+        "id": { "type": "string", "minLength": 1 },
+        "rbac_role": { "type": ["string", "null"] },
+        "mfa_verified": { "type": ["boolean", "null"] }
+      }
+    },
+    "collector_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collector_id", "key_id"],
+      "properties": {
+        "collector_id": { "type": "string", "minLength": 1 },
+        "key_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "collected_at": { "type": "string", "format": "date-time", "description": "Collector clock. ALWAYS. Never device clock." },
+    "collector_clock_status": { "enum": ["SYNCED", "UNSYNCED", "DRIFT_SUSPECTED"] },
+    "device_clock_at_collection": { "type": ["string", "null"] },
+    "device_clock_status": { "enum": ["KNOWN", "UNSYNCED", "ABSENT", null] },
+    "signature": {
+      "type": ["object", "null"],
+      "description": "null only pre-signing; the LedgerStore refuses to append unsigned events.",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value_b64"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "key_id": { "type": "string", "minLength": 1 },
+        "value_b64": { "type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$" }
+      }
+    }
+  }
+}

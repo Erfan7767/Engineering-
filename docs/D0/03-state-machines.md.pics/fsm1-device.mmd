@@ -1,0 +1,25 @@
+---
+title: FSM-1 Device Lifecycle (normative guards in docs/D0/03-state-machines.md)
+---
+stateDiagram-v2
+    [*] --> UNKNOWN
+    UNKNOWN --> PHYSICAL_DETECTED : 1.1 carrier/COM/MAC probe evidence
+    PHYSICAL_DETECTED --> ACCESSIBLE : 1.2 session opens + classifier non-error
+    ACCESSIBLE --> IDENTIFIED : 1.3 identity claims (DEVICE_IDENTITY scope)
+    ACCESSIBLE --> ACCESS_LIMITED : 1.9 command set denied/unsupported
+    ACCESSIBLE --> PASSWORD_LOCKED : 1.10 auth rejected
+    IDENTIFIED --> BOOTSTRAP_REQUIRED : 1.4 FACTORY_DEFAULT|FACTORY_LIKE + no mgmt plane
+    BOOTSTRAP_REQUIRED --> BOOTSTRAPPED : 1.5 bootstrap change VERIFIED + baseline hashed
+    IDENTIFIED --> DISCOVERED : 1.6 all layers terminal (no silent skip)
+    IDENTIFIED --> UNSUPPORTED : 1.12 capability matrix negative
+    DISCOVERED --> MODELED : 1.7 Twin accepts claims + gaps list
+    MODELED --> MANAGED : 1.8 collectors bound + baseline + recovery path != LOST
+    MANAGED --> STALE : 1.13 freshness grace exceeded
+    ACCESS_LIMITED --> PHYSICAL_DETECTED : 1.14 condition cleared (new evidence)
+    PASSWORD_LOCKED --> PHYSICAL_DETECTED : 1.14 condition cleared (new evidence)
+    STALE --> MANAGED : 1.14 fresh evidence restores
+    UNKNOWN --> RECOVERY_REQUIRED : 1.11 unreachable + no session
+    MANAGED --> RECOVERY_REQUIRED : 1.11 unreachable + no session
+    RECOVERY_REQUIRED --> PHYSICAL_DETECTED : recovery FSM-5 RECOVERED
+    UNSUPPORTED --> [*]
+    MANAGED --> [*]

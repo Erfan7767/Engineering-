@@ -1,0 +1,18 @@
+---
+title: FSM-3 Rollback (normative guards in docs/D0/03-state-machines.md)
+---
+stateDiagram-v2
+    [*] --> NOT_SUPPORTED : 3.1 matrix: mechanism absent for model/version
+    [*] --> NOT_CONFIGURED : 3.2 mechanism supported, no artifact yet
+    NOT_CONFIGURED --> NOT_READY : 3.3 artifact exists, prereqs unverified
+    NOT_READY --> READY : 3.4 full conjunction (hash + fs + mgmt-path content + reversibility + recovery verified)
+    READY --> ARMED : 3.5 FSM-2 ARMED binds this rollback
+    ARMED --> CONFIRMED : 3.6 apply ok, verification window opened (confirm/safe-mode release)
+    ARMED --> ROLLBACK_TRIGGERED : 3.7 verify FAIL / timeout / abort
+    ROLLBACK_TRIGGERED --> ROLLBACK_SUCCEEDED : 3.8 re-apply + post-verify + mgmt path reachable
+    ROLLBACK_TRIGGERED --> ROLLBACK_FAILED : 3.9 any 3.8 conjunct fails -> FSM-5
+    ROLLBACK_SUCCEEDED --> [*]
+    ROLLBACK_FAILED --> [*]
+    NOT_SUPPORTED --> [*]
+    NOT_CONFIGURED --> UNKNOWN : 3.10 evidence vanishes
+    ARMED --> UNKNOWN : 3.10 device vanished mid-operation

@@ -1,0 +1,25 @@
+{
+  "vendor_family": "aruba/arubaos",
+  "status": "seed-verify-in-lab",
+  "classes": {
+    "READ_ONLY": {
+      "entries": [
+        { "template": "show version", "purpose": "identity", "fields": ["model", "version"] },
+        { "template": "show inventory", "purpose": "hardware inventory", "fields": ["serial", "part"] },
+        { "template": "show interfaces brief", "purpose": "L1 state", "fields": ["interface", "status"] },
+        { "template": "show ap database", "purpose": "wireless adoption state", "fields": ["ap-name", "state", "ip"] },
+        { "template": "show lldp neighbors", "purpose": "neighbor evidence", "fields": ["local-port", "chassis-id", "port-id"] },
+        { "template": "show datapath tunnel", "purpose": "AP tunneling state", "fields": ["tunnel", "state"] }
+      ],
+      "notes": "ArubaOS 8+ API (v1 REST) is the primary surface; CLI entries are console fallback. API paths registered in D1."
+    },
+    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 subject to checkpoint capability verification (currently UNKNOWN in access profile)." },
+    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "DESTRUCTIVE": { "entries": [
+      { "template": "factory-reset-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
+    ] },
+    "FORBIDDEN": { "entries": [
+      { "template": "write erase", "reason": "destructive" }
+    ] }
+  }
+}

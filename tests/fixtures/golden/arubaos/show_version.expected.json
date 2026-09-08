@@ -1,0 +1,11 @@
+{
+  "parser_id": "regex/arubaos_show_version",
+  "parser_version": "1.0.0",
+  "command": "show version",
+  "provenance": "synthetic-representative seed (replace with lab capture, OI-0133)",
+  "expected": [
+    { "field": "model", "parse_status": "OK", "value": "Aruba7205" },
+    { "field": "version", "parse_status": "OK", "value": "8.11.2.1" },
+    { "field": "rom", "parse_status": "OK", "value": "1.2.3.4" }
+  ]
+}

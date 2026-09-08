@@ -1,0 +1,10 @@
+                   uptime: 2w3d4h5m
+                  version: 7.14.3 (stable)
+              build-time: Jun/05/2024 10:11:22
+             free-memory: 850.5MiB
+            total-memory: 1024.0MiB
+                      cpu: ARM64
+                cpu-count: 4
+        architecture-name: arm64
+               board-name: RB5009UG+S+IN
+                 platform: MikroTik

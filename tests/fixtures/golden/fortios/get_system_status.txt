@@ -1,0 +1,7 @@
+Version: FortiGate-80F v7.4.3,build2573,240201 (GA)
+Serial-Number: FGT80FTK21907431
+Uptime: 12 days, 3 hours, 45 minutes
+Last Reboot Reason: Power failure
+Virus-DB: 1.00000,99-99-9999 (extended)
+IPS Malicious URL Database: 2.00815,24-08-30 03:29 (extended)
+Model name: FortiGate-80F

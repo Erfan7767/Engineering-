@@ -1,0 +1,13 @@
+{
+  "parser_id": "keyvalue/routeros_system_resource_print",
+  "parser_version": "1.0.0",
+  "command": "/system/resource/print",
+  "spec_trace": "§21 parser tier; allowlists/routeros.json READ_ONLY seed",
+  "expected": [
+    { "field": "uptime", "parse_status": "OK", "value": "2w3d4h5m" },
+    { "field": "version", "parse_status": "OK", "value": "7.14.3 (stable)" },
+    { "field": "build-time", "parse_status": "OK", "value": "Jun/05/2024 10:11:22" },
+    { "field": "cpu", "parse_status": "OK", "value": "ARM64" },
+    { "field": "board-name", "parse_status": "OK", "value": "RB5009UG+S+IN" }
+  ]
+}

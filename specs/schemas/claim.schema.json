@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://netops-autopilot.local/schemas/claim.schema.json",
+  "title": "Claim",
+  "description": "A typed statement about the network, admissible only with valid, relevant evidence (T1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "claim_id", "subject_entity", "predicate", "value", "evidence_ids",
+    "verification_scope", "status", "relevance_check"
+  ],
+  "properties": {
+    "claim_id": { "type": "string", "format": "uuid" },
+    "subject_entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_type", "entity_ref"],
+      "properties": {
+        "entity_type": { "enum": ["DEVICE", "CHASSIS", "STACK_MEMBER", "INTERFACE", "VLAN", "LINK", "SERVICE", "POLICY", "SITE", "RACK"] },
+        "entity_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "predicate": { "type": "string", "minLength": 1, "description": "Registered predicate, e.g. oper_status, native_vlan, neighbor_is, hw_serial." },
+    "value": { "description": "Typed per predicate registry." },
+    "evidence_ids": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "type": "string" },
+      "description": "Observation/Event ids. Must pass the Relevance Guard (D0-04 §5)."
+    },
+    "verification_scope": {
+      "enum": ["DEVICE_IDENTITY", "INTERFACE_EXISTENCE", "HARDWARE_INVENTORY",
+               "DIRECT_NEIGHBOR", "PHYSICAL_PATH", "IP_ADDRESS",
+               "ROUTING_STATE", "CONFIGURATION", "SERVICE_REACHABILITY",
+               "POLICY_BEHAVIOR", "INTENT_COMPLIANCE"]
+    },
+    "status": { "enum": ["CONFIRMED", "CONFLICTING", "STALE", "WITHDRAWN"] },
+    "freshness_at_use": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "decision_kind": { "enum": ["DEPLOY", "ROLLBACK", "DESIGN", "DOCUMENTATION", "MONITORING"] },
+        "age_seconds_at_decision": { "type": "number", "minimum": 0 },
+        "bound_seconds": { "type": ["number", "null"], "description": "null for Documentation (age printed instead) and config via Change Detection." }
+      }
+    },
+    "relevance_check": { "enum": ["PASS", "FAIL"] }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema_ref": "../access_profiles/README.md",
+  "vendor_family": "MikroTik RouterOS",
+  "profiles": [
+    {
+      "match": { "vendor": "mikrotik", "models": ["*"] },
+      "os_hint": { "os": "routeros", "version_constraint": ">=6.0" },
+      "console": { "present": true, "baud_candidates": [9600, 115200], "flow_control": "none" },
+      "ethernet_defaults": [
+        { "ip": "192.168.88.1/24", "interface_hint": "bridge1", "verified": false,
+          "notes": "Factory default on most RouterBOARD/CHR images; confirm from lab evidence (D1)." }
+      ],
+      "mac_layer": { "protocols": ["MNDP", "MAC_TELNET", "WINBOX"], "enabled_default": "UNKNOWN" },
+      "controller_adopt": { "applicable": false },
+      "pnp_dhcp": { "applicable": false },
+      "auth_defaults": { "mode": "password", "default_account": "admin",
+                         "default_password_policy": "NONE_EXPECTED" },
+      "rollback_mechanism": {
+        "kind": "safe-mode",
+        "min_version": "UNKNOWN",
+        "status": "SUPPORTED",
+        "notes": "Safe Mode is the PRIMARY rollback path (§14). export/import for config text; binary backup is version-bound; system history is session-scoped and NOT relied upon."
+      },
+      "day0_classifier_ref": "defaults_db/day0_classifiers.json#/mikrotik/routeros",
+      "destructive_recovery": [
+        { "method": "NETINSTALL", "preconditions": ["L2 reachability to ether1", "netinstall host prepared", "boot via reset/ether1 sequence per model"], "gate": "DESTRUCTIVE" }
+      ]
+    }
+  ]
+}
