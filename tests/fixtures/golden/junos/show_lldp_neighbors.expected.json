@@ -1,0 +1,38 @@
+{
+  "parser_id": "regex/junos_show_lldp_neighbors",
+  "parser_version": "1.0.0",
+  "command": "show lldp neighbors",
+  "spec_trace": "D5-capstone neighbor evidence; allowlists/junos.json READ_ONLY",
+  "synthetic_representative": true,
+  "expected": [
+    {
+      "field": "neighbor_count_lldp",
+      "parse_status": "OK",
+      "value": 2
+    },
+    {
+      "field": "neighbor_table_lldp",
+      "parse_status": "OK",
+      "value": [
+        {
+          "local_intf": "ge-0/0/0",
+          "neighbor_id": "CORE-SW2",
+          "neighbor_intf": "ge-0/0/1",
+          "chassis_id": "00:11:22:33:44:55",
+          "mgmt_address": null,
+          "platform": null,
+          "protocol": "LLDP"
+        },
+        {
+          "local_intf": "ge-0/0/1",
+          "neighbor_id": "ACCESS-SW1",
+          "neighbor_intf": "ge-0/0/47",
+          "chassis_id": "00:aa:bb:cc:dd:ee",
+          "mgmt_address": null,
+          "platform": null,
+          "protocol": "LLDP"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "parser_id": "regex/routeros_ip_neighbor_print",
+  "parser_version": "1.0.0",
+  "command": "/ip neighbor/print",
+  "spec_trace": "D5-capstone neighbor evidence (MNDP); allowlists/routeros.json READ_ONLY",
+  "synthetic_representative": true,
+  "expected": [
+    {
+      "field": "neighbor_count_mndp",
+      "parse_status": "OK",
+      "value": 2
+    },
+    {
+      "field": "neighbor_table_mndp",
+      "parse_status": "OK",
+      "value": [
+        {
+          "local_intf": "ether1",
+          "neighbor_id": "R2-CORE",
+          "neighbor_intf": null,
+          "chassis_id": "00:11:22:33:44:55",
+          "mgmt_address": "10.99.0.2",
+          "platform": "RouterOS",
+          "protocol": "MNDP"
+        },
+        {
+          "local_intf": "ether2",
+          "neighbor_id": "SW-ACCESS",
+          "neighbor_intf": null,
+          "chassis_id": "00:aa:bb:cc:dd:ee",
+          "mgmt_address": "10.99.0.3",
+          "platform": "RouterOS",
+          "protocol": "MNDP"
+        }
+      ]
+    }
+  ]
+}

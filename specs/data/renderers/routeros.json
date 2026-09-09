@@ -1,0 +1,12 @@
+{
+  "vendor_os": "routeros",
+  "verified": false,
+  "note": "Seed renderer templates pending lab syntax evidence (OI-0171).",
+  "wrappers": { "enter_config": [], "exit_config": [] },
+  "features": {
+    "vlan": { "commands": ["/interface/vlan/add name={name} vlan-id={vlan_id}"] },
+    "svi": { "commands": ["/ip/address/add address={address} interface={name}"] },
+    "trunk": { "commands": ["/interface/bridge/vlan/add bridge=bridge tagged={interface} vlan-ids={allowed_vlans_csv}"] },
+    "access": { "commands": ["/interface/bridge/vlan/add bridge=bridge untagged={interface} vlan-ids={vlan_id}"] }
+  }
+}

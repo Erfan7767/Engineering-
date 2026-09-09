@@ -75,6 +75,20 @@ Statuses: OPEN · DECIDED · CLOSED (evidence attached) · SUPERSEDED.
 | OI-0151 | CLOSED | D3 | `gate_class` ignored MGMT_FEATURES vocabulary | Discovered while building E13: `ConfigIR.touches_management_plane()` checked only explicit flags. Fixed: known mgmt features (frozen list, moved to `config_ir.py` as canonical owner) escalate deterministically; validation_fabric now imports the list. No prior test regressed. |
 | OI-0148 | CLOSED | D2 | Reconciliation baseline + typed drift (D2 scope of E22) | Delivered `reconcile/engine.py` + 15 tests: immutable baselines (`MappingProxyType`, `baseline_id` satisfies FSM-1 guard 1.8), deterministic ADDED/REMOVED/MODIFIED records, classification MANAGED / DEFAULT_RESTORED (known platform default only — UNKNOWN defaults never qualify, T2) / UNMANAGED_DRIFT; unmanaged drift increments `unauthorized_changes`; remediation proposed as structured hint codes only, never command text (L11). |
 
+| OI-0182 | OPEN | D5-cap | Management-path sessions (SSH transport batch) | mgmt sessions to discovered neighbors are typed-refused today (ADR-0004 direct-connect). Neighbors stay discovered-unreached — never assumed managed. |
+| OI-0183 | OPEN | D5-cap | A1–A5 PROPOSE→DECIDE wiring over the authority table | Agent plane proposes Intent Objects only (guard L17); DECIDE wiring scheduled with the LLM provider batch. |
+| OI-0173 | OPEN | D5-cap | Normalizer (E03) for canonical identity predicates (vendor/os/os_version) | Crawl claims carry parser-field predicates (T1-clean); deriving canonical identity needs a Normalizer with its own evidence chain. Downstream reads crawl-report identity meanwhile. Referenced in `engines/claim_factory.py`, `engines/discovery_crawl.py`. |
+| OI-0184 | OPEN | D5-cap | CONFIG allowlist classes empty for all six vendors ⇒ application BLOCKED (T3) | EXECUTION_GATE enforces this honestly: outputs are STAGED previews with lineage. Unblocks only with lab syntax evidence per template (D0 growth rule). |
+| OI-0170 | OPEN | D5-cap | Cisco/Junos/RouterOS/Aruba/UniFi neighbor fixtures are synthetic-representative | Same policy as OI-0131..0134: replace with lab captures before DEVICE_IDENTITY claims on hardware. |
+| OI-0172 | OPEN | D5-cap | FortiOS LLDP fixture shape pending lab capture | Parser tolerant to key spelling; fixture marked synthetic-representative. |
+| OI-0175 | CLOSED | D5-cap | Port-name normalization (D0-08 §4) absent | **Closed:** `parsers/portnames.py` (Cisco long≡short e.g. GigabitEthernet1/0/1≡Gi1/0/1, Junos unit fold ge-0/0/1.0≡ge-0/0/1; unmapped stays raw). Wired into evidence fusion + bidirectional matching. |
+| OI-0176 | CLOSED | D5-cap | LLDP+CDP neighbor tables overwrote each other in the Twin | **Closed:** protocol-suffixed predicates (`neighbor_table_lldp/cdp/mndp`) + deterministic fusion in the crawl (fixed key set, LLDP→CDP→MNDP priority, later sources only fill gaps). |
+| OI-0177 | CLOSED | D5-cap | Infrastructure port could be assigned as end-user access | **Closed:** any port carrying ANY neighbor evidence is infrastructure-reserved in the design engine (never access). |
+| OI-0178 | CLOSED | D5-cap | IPAM per-prefix index allocation could overlap across prefix lengths | **Closed:** zone packing rewritten as first-fit aligned cursor over the site block (coarsest-first; overlap impossible by construction; exhaustion ⇒ SITE_BLOCK_EXHAUSTED typed stop). |
+| OI-0180 | DECIDED | D5-cap | Simulated fabric as ADDITIONAL evaluation substrate | `tests/support/simfabric.py` — deterministic scripted consoles; registered here; the real-hardware lab gate OI-0005 stays OPEN and untouched. |
+| OI-0181 | DECIDED | D5-cap | AUTOPILOT as 7th FSM label in StateTransition | Run-machine transitions for capstone phases; validator extended (recorded deviation DEV-0002). |
+| OI-0185 | CLOSED | D4 (D5-cap exit) | Evaluation Harness full (T5 report) | **Closed:** `harness/runner.py` — known-answer scenarios replayed twice (instability = FAIL), crashes typed, NOT_TESTED visible, gate-eligible T5 counters computed from runs (no attestation), FI-detection scenarios with expected non-zero counters (`fi:ledger-tamper` proves chain verification catches forgery; RELEASE GATE: PASS at 4/4). PROPOSE→DECIDE remainder tracked as OI-0183. |
+
 ## Deviations from master specification
 
 | ID | Phase | Deviation | Cause / justification |
@@ -82,3 +96,5 @@ Statuses: OPEN · DECIDED · CLOSED (evidence attached) · SUPERSEDED.
 | DEV-0001 | D1 (Batch 5) | Added guard **4.9** (STALE → UNKNOWN) to the FSM-4 table in `docs/D0/03-state-machines.md` | The state set of §7 includes STALE but the §FSM-4 table defined no exit from it; the D0 diagram (a D0 deliverable of this build) already showed the re-evaluation edge. Codified as a numbered guard rather than an implicit behavior (L03). No semantic conflict with §7/§10. |
 
 Any future deviation is logged here with cause before it is implemented (per §24.3).
+
+| DEV-0002 | D5-capstone | `StateTransition.fsm` validator extended with label `AUTOPILOT` | The capstone run-machine (BOND→…→REPORT) records its transitions in the same append-only store; the label is new data, no semantic change to FSM-1..5. Codified in code + this register (L03). |

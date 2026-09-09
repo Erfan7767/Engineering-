@@ -223,6 +223,9 @@ class StateTransition(_LedgerModel):
         allowed = {
             "FSM-1_DEVICE", "FSM-2_CHANGE", "FSM-3_ROLLBACK", "FSM-4_LINK",
             "FSM-5_RECOVERY", "TWIN_PROJECTION",
+            # AUTOPILOT: capstone run machine (register OI-0160/D5-capstone);
+            # its guard table lives in autopilot/orchestrator.py transitions.
+            "AUTOPILOT",
         }
         if v not in allowed:
             raise ValueError(f"fsm must be one of {sorted(allowed)}")

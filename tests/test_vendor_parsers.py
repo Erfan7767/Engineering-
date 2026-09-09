@@ -80,10 +80,11 @@ def test_junos_missing_fields_typed():
     assert got["junos_version"] is ParseStatus.MISSING
 
 
-def test_catalog_registers_all_six_v1_parsers_with_unique_ids():
+def test_catalog_registers_all_v1_parsers_with_unique_ids():
     registry = default_registry()
     ids = [builder().info.parser_id for builder in CATALOG_BUILDERS]
-    assert len(ids) == 6 and len(set(ids)) == 6
+    # 6 identity parsers (D1) + 7 neighbor parsers (D5-capstone OI-0170).
+    assert len(ids) == 13 and len(set(ids)) == len(ids)
     for parser_id in ids:
         assert registry.latest(parser_id).info.parser_id == parser_id
     families = {builder().info.vendor_family for builder in CATALOG_BUILDERS}

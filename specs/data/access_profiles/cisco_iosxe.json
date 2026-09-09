@@ -3,29 +3,104 @@
   "vendor_family": "Cisco IOS / IOS-XE",
   "profiles": [
     {
-      "match": { "vendor": "cisco", "models": ["ISR*", "Catalyst 8*", "C9*", "C8*", "ASR100*"] },
-      "os_hint": { "os": "ios-xe", "version_constraint": ">=3.16" },
-      "console": { "present": true, "baud_candidates": [9600, 115200], "flow_control": "none" },
+      "match": {
+        "vendor": "cisco",
+        "models": [
+          "ISR*",
+          "Catalyst 8*",
+          "C9*",
+          "C8*",
+          "ASR100*"
+        ]
+      },
+      "os_hint": {
+        "os": "ios-xe",
+        "version_constraint": ">=3.16"
+      },
+      "console": {
+        "present": true,
+        "baud_candidates": [
+          9600,
+          115200
+        ],
+        "flow_control": "none"
+      },
       "ethernet_defaults": [
-        { "ip": null, "interface_hint": null, "verified": false,
-          "notes": "No universal factory IP across families; UNKNOWN until model-specific lab evidence (T2)." }
+        {
+          "ip": null,
+          "interface_hint": null,
+          "verified": false,
+          "notes": "No universal factory IP across families; UNKNOWN until model-specific lab evidence (T2)."
+        }
       ],
-      "mac_layer": { "protocols": [], "enabled_default": "NOT_SUPPORTED" },
-      "controller_adopt": { "applicable": false },
-      "pnp_dhcp": { "applicable": true, "notes": "PnP via DHCP option 43/DNS when configured; classified separately (PNP_DHCP)." },
-      "auth_defaults": { "mode": "password", "default_account": "UNKNOWN",
-                         "default_password_policy": "UNKNOWN" },
+      "mac_layer": {
+        "protocols": [],
+        "enabled_default": "NOT_SUPPORTED"
+      },
+      "controller_adopt": {
+        "applicable": false
+      },
+      "pnp_dhcp": {
+        "applicable": true,
+        "notes": "PnP via DHCP option 43/DNS when configured; classified separately (PNP_DHCP)."
+      },
+      "auth_defaults": {
+        "mode": "password",
+        "default_account": "UNKNOWN",
+        "default_password_policy": "UNKNOWN"
+      },
       "rollback_mechanism": {
         "kind": "archive",
         "min_version": "12.2(33)SXH-equivalent feature availability per model = UNKNOWN",
         "status": "SUPPORTED",
-        "notes": "archive config + 'configure replace <artifact> time' + revert trigger + confirm/revert flow (§14). Multi-pass replace warning applies and is modeled."
+        "notes": "archive config + 'configure replace <artifact> time' + revert trigger + confirm/revert flow (\u00a714). Multi-pass replace warning applies and is modeled."
       },
       "day0_classifier_ref": "defaults_db/day0_classifiers.json#/cisco/ios-xe",
       "destructive_recovery": [
-        { "method": "ROMMON_RESET", "preconditions": ["console physical access", "boot sequence interrupt"], "gate": "DESTRUCTIVE" },
-        { "method": "FACTORY_RESET_BUTTON", "preconditions": ["model has reset button = UNKNOWN"], "gate": "DESTRUCTIVE" }
-      ]
+        {
+          "method": "ROMMON_RESET",
+          "preconditions": [
+            "console physical access",
+            "boot sequence interrupt"
+          ],
+          "gate": "DESTRUCTIVE"
+        },
+        {
+          "method": "FACTORY_RESET_BUTTON",
+          "preconditions": [
+            "model has reset button = UNKNOWN"
+          ],
+          "gate": "DESTRUCTIVE"
+        }
+      ],
+      "bootstrap": {
+        "verified": false,
+        "note": "Seed templates pending lab evidence (register OI-0171). Each step is individually verified before the next executes; failure halts the sequence with a typed reason \u2014 never blind continuation.",
+        "steps": [
+          {
+            "step": "hostname",
+            "commands": [
+              "enable",
+              "configure terminal",
+              "hostname {hostname}",
+              "end"
+            ],
+            "verify_command": "show running-config",
+            "verify_contains": "hostname {hostname}"
+          },
+          {
+            "step": "lldp_enable",
+            "commands": [
+              "enable",
+              "configure terminal",
+              "lldp run",
+              "end"
+            ],
+            "verify_command": "show lldp neighbors detail",
+            "verify_contains": null
+          }
+        ]
+      }
     }
   ]
 }

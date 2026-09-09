@@ -3,32 +3,75 @@
   "vendor_family": "Ubiquiti UniFi",
   "profiles": [
     {
-      "match": { "vendor": "ubiquiti", "models": ["UniFi*", "UAP*", "USW*", "UXG*", "UDM*"] },
-      "os_hint": { "os": "unifi", "version_constraint": "UNKNOWN" },
-      "console": { "present": true, "baud_candidates": [115200], "flow_control": "none",
-                   "notes": "Console availability and pinout vary by model; several models need serial adapters = UNKNOWN." },
+      "match": {
+        "vendor": "ubiquiti",
+        "models": [
+          "UniFi*",
+          "UAP*",
+          "USW*",
+          "UXG*",
+          "UDM*"
+        ]
+      },
+      "os_hint": {
+        "os": "unifi",
+        "version_constraint": "UNKNOWN"
+      },
+      "console": {
+        "present": true,
+        "baud_candidates": [
+          115200
+        ],
+        "flow_control": "none",
+        "notes": "Console availability and pinout vary by model; several models need serial adapters = UNKNOWN."
+      },
       "ethernet_defaults": [
-        { "ip": null, "interface_hint": null, "verified": false,
-          "notes": "Adoption-state devices use DHCP; standalone fallback IP varies by device class. UNKNOWN until lab evidence." }
+        {
+          "ip": null,
+          "interface_hint": null,
+          "verified": false,
+          "notes": "Adoption-state devices use DHCP; standalone fallback IP varies by device class. UNKNOWN until lab evidence."
+        }
       ],
-      "mac_layer": { "protocols": [], "enabled_default": "NOT_SUPPORTED" },
+      "mac_layer": {
+        "protocols": [],
+        "enabled_default": "NOT_SUPPORTED"
+      },
       "controller_adopt": {
         "applicable": true,
-        "notes": "PRIMARY day-0 path: local UniFi Network application (controller) adopts devices over L2/L3 (inform URL). Controller runs on the engineer's PC/site server — offline-capable per §19."
+        "notes": "PRIMARY day-0 path: local UniFi Network application (controller) adopts devices over L2/L3 (inform URL). Controller runs on the engineer's PC/site server \u2014 offline-capable per \u00a719."
       },
-      "pnp_dhcp": { "applicable": true, "notes": "DHCP discovery of controller via inform URL/DNS." },
-      "auth_defaults": { "mode": "password", "default_account": "ubnt",
-                         "default_password_policy": "UNKNOWN" },
+      "pnp_dhcp": {
+        "applicable": true,
+        "notes": "DHCP discovery of controller via inform URL/DNS."
+      },
+      "auth_defaults": {
+        "mode": "password",
+        "default_account": "ubnt",
+        "default_password_policy": "UNKNOWN"
+      },
       "rollback_mechanism": {
         "kind": "controller",
         "min_version": "N/A",
         "status": "SUPPORTED",
-        "notes": "Rollback = re-adoption to previous configuration revision via controller API (§14). Device-local config rollback capability = NOT_SUPPORTED (controller-managed model)."
+        "notes": "Rollback = re-adoption to previous configuration revision via controller API (\u00a714). Device-local config rollback capability = NOT_SUPPORTED (controller-managed model)."
       },
       "day0_classifier_ref": "defaults_db/day0_classifiers.json#/ubiquiti/unifi",
       "destructive_recovery": [
-        { "method": "FACTORY_RESET_BUTTON", "preconditions": ["physical access", "model-specific hold sequence = UNKNOWN"], "gate": "DESTRUCTIVE" }
-      ]
+        {
+          "method": "FACTORY_RESET_BUTTON",
+          "preconditions": [
+            "physical access",
+            "model-specific hold sequence = UNKNOWN"
+          ],
+          "gate": "DESTRUCTIVE"
+        }
+      ],
+      "bootstrap": {
+        "verified": false,
+        "note": "Seed templates pending lab evidence (register OI-0171). Each step is individually verified before the next executes; failure halts the sequence with a typed reason \u2014 never blind continuation.",
+        "steps": []
+      }
     }
   ]
 }

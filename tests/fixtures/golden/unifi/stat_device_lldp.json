@@ -1,0 +1,19 @@
+{
+  "meta": { "rc": "ok" },
+  "data": [
+    {
+      "mac": "70:a7:41:11:22:33",
+      "name": "USW-CORE",
+      "lldp_table": [
+        { "lldp_id": 1, "local_port_idx": 1, "local_port_name": "1",
+          "chassis_id": "00:11:22:33:44:55", "port_id": "Gi0/1",
+          "lldp_port_desc": "GigabitEthernet0/1", "lldp_system_name": "CORE-SW2",
+          "lldp_mgmt_address": "10.99.0.2", "is_wired": true },
+        { "lldp_id": 2, "local_port_idx": 2, "local_port_name": "2",
+          "chassis_id": "00:aa:bb:cc:dd:ee", "port_id": "Gi0/2",
+          "lldp_port_desc": "GigabitEthernet0/2", "lldp_system_name": "ACCESS-SW1",
+          "lldp_mgmt_address": "10.99.0.3", "is_wired": true }
+      ]
+    }
+  ]
+}

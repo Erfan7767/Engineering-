@@ -1,0 +1,38 @@
+{
+  "parser_id": "regex/cisco_iosxe_show_lldp_neighbors_detail",
+  "parser_version": "1.0.0",
+  "command": "show lldp neighbors detail",
+  "spec_trace": "D5-capstone neighbor evidence; allowlists/cisco_iosxe.json READ_ONLY",
+  "synthetic_representative": true,
+  "expected": [
+    {
+      "field": "neighbor_count_lldp",
+      "parse_status": "OK",
+      "value": 2
+    },
+    {
+      "field": "neighbor_table_lldp",
+      "parse_status": "OK",
+      "value": [
+        {
+          "local_intf": "Gi1/0/1",
+          "neighbor_id": "CORE-SW2.lab",
+          "neighbor_intf": "Gi0/1",
+          "chassis_id": "0011.2233.4455",
+          "mgmt_address": "10.99.0.2",
+          "platform": null,
+          "protocol": "LLDP"
+        },
+        {
+          "local_intf": "Gi1/0/2",
+          "neighbor_id": "ACCESS-SW1.lab",
+          "neighbor_intf": "Gi1/0/24",
+          "chassis_id": "aabb.ccdd.eeff",
+          "mgmt_address": "10.99.0.3",
+          "platform": null,
+          "protocol": "LLDP"
+        }
+      ]
+    }
+  ]
+}

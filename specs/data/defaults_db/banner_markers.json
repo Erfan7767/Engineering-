@@ -1,0 +1,12 @@
+{
+  "$schema_ref": "../../../docs/D0/07-day0-access-and-bootstrap.md",
+  "description": "Vendor-family detection from console banner/probe text. Data-driven; unmarked output yields ZERO candidates (UNKNOWN), never the first family.",
+  "markers": {
+    "cisco/ios-xe": ["cisco ios", "ios xe software", "ios-xe", "copyright (c) 1986", "catalyst", "cisco(n)"],
+    "routeros": ["mikrotik", "routeros", "mmm      mmm"],
+    "junos": ["juniper networks", "junos", " amnesiac (ttyu0)"],
+    "fortios": ["fortigate", "fortios", "fortinet"],
+    "arubaos": ["aruba", "aos-cx", "aos-s", "arubaos"],
+    "unifi": ["ubiquiti", "unifi", "bz.v"]
+  }
+}

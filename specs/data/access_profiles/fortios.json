@@ -3,29 +3,91 @@
   "vendor_family": "Fortinet FortiOS",
   "profiles": [
     {
-      "match": { "vendor": "fortinet", "models": ["FortiGate*", "FortiSwitch*", "FortiAP*"] },
-      "os_hint": { "os": "fortios", "version_constraint": ">=6.4" },
-      "console": { "present": true, "baud_candidates": [9600, 115200], "flow_control": "none" },
+      "match": {
+        "vendor": "fortinet",
+        "models": [
+          "FortiGate*",
+          "FortiSwitch*",
+          "FortiAP*"
+        ]
+      },
+      "os_hint": {
+        "os": "fortios",
+        "version_constraint": ">=6.4"
+      },
+      "console": {
+        "present": true,
+        "baud_candidates": [
+          9600,
+          115200
+        ],
+        "flow_control": "none"
+      },
       "ethernet_defaults": [
-        { "ip": "192.168.1.99/24", "interface_hint": "port1 (internal/mgmt per model)", "verified": false,
-          "notes": "Common factory default on many FortiGate models; model-specific confirmation required in lab (marked unverified until then)." }
+        {
+          "ip": "192.168.1.99/24",
+          "interface_hint": "port1 (internal/mgmt per model)",
+          "verified": false,
+          "notes": "Common factory default on many FortiGate models; model-specific confirmation required in lab (marked unverified until then)."
+        }
       ],
-      "mac_layer": { "protocols": [], "enabled_default": "NOT_SUPPORTED" },
-      "controller_adopt": { "applicable": true, "notes": "FortiGate-managed FortiAP/FortiSwitch adoption (FortiLink/AP-adopt) — controller role played by the FortiGate itself." },
-      "pnp_dhcp": { "applicable": false },
-      "auth_defaults": { "mode": "password", "default_account": "admin",
-                         "default_password_policy": "NONE_EXPECTED" },
+      "mac_layer": {
+        "protocols": [],
+        "enabled_default": "NOT_SUPPORTED"
+      },
+      "controller_adopt": {
+        "applicable": true,
+        "notes": "FortiGate-managed FortiAP/FortiSwitch adoption (FortiLink/AP-adopt) \u2014 controller role played by the FortiGate itself."
+      },
+      "pnp_dhcp": {
+        "applicable": false
+      },
+      "auth_defaults": {
+        "mode": "password",
+        "default_account": "admin",
+        "default_password_policy": "NONE_EXPECTED"
+      },
       "rollback_mechanism": {
         "kind": "api-backup",
         "min_version": "REST API availability per version = verify in lab",
         "status": "SUPPORTED",
-        "notes": "Configuration backup/restore via REST API (§14). Revision-based restore semantics recorded per version from lab evidence."
+        "notes": "Configuration backup/restore via REST API (\u00a714). Revision-based restore semantics recorded per version from lab evidence."
       },
       "day0_classifier_ref": "defaults_db/day0_classifiers.json#/fortinet/fortios",
       "destructive_recovery": [
-        { "method": "FACTORY_RESET_BUTTON", "preconditions": ["model has reset button = UNKNOWN", "physical access"], "gate": "DESTRUCTIVE" },
-        { "method": "BOOTLOADER_RECOVERY", "preconditions": ["console access", "BIOS/boot menu entry"], "gate": "DESTRUCTIVE" }
-      ]
+        {
+          "method": "FACTORY_RESET_BUTTON",
+          "preconditions": [
+            "model has reset button = UNKNOWN",
+            "physical access"
+          ],
+          "gate": "DESTRUCTIVE"
+        },
+        {
+          "method": "BOOTLOADER_RECOVERY",
+          "preconditions": [
+            "console access",
+            "BIOS/boot menu entry"
+          ],
+          "gate": "DESTRUCTIVE"
+        }
+      ],
+      "bootstrap": {
+        "verified": false,
+        "note": "Seed templates pending lab evidence (register OI-0171). Each step is individually verified before the next executes; failure halts the sequence with a typed reason \u2014 never blind continuation.",
+        "steps": [
+          {
+            "step": "hostname",
+            "commands": [
+              "config system global",
+              "set hostname {hostname}",
+              "end"
+            ],
+            "verify_command": "get system status",
+            "verify_contains": "{hostname}"
+          }
+        ]
+      }
     }
   ]
 }

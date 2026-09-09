@@ -36,7 +36,8 @@ announces the classification of every task.
 | **D1** | Core: Ledger + FSMs + Policy + Access Layer + Collector/Parsers + Twin + Adapter Interfaces (lab-verified) | **CODE-COMPLETE, lab verification pending** — Batches 1–5 delivered: core/ledger/fsm/policy, adapter layer + allowlist + E02 Collector + E03 Parsers (6 vendor golden fixtures), Digital Twin (E05), deterministic serial console transport, **all five FSMs as code (93 guarded transitions)**, canonicalization + Platform Defaults DB. 195 passing tests. Remaining for phase exit: first lab-hardware evidence run (needs sponsor device + console port). |
 | **D2** | Capability Matrices + IPAM + Intent Compiler + Config IR + Validation Fabric + Preflight + Reconciliation + Service Dependency Graph | **COMPLETE (code-level)** — all eight components delivered in 4 batches: E06 Capability Engine, E07 IPAM Engine, E08 Intent Compiler (§12 guest-isolation golden: 4 mandated decisions, complete zone×zone matrix, blocking questions), E09 Config IR (reversibility tags, gate derivation), E10 Validation Fabric (nine-stage pipeline), E11 Preflight Engine (Twin×AdapterRegistry modeling assessment, wired as `PreflightFn`), E22 Reconciliation D2 scope (immutable baselines + typed drift classification), P1-34 Service Dependency Graph (deterministic ordering). 306 tests total. Lab-evidence gates remain as open items: OI-0140 (capability operational fields), OI-0141 (ArubaOS checkpoint/rollback), OI-0142 (DHCPv6/SLAAC NOT_MODELED). |
 | **D3** | DAG + Blast Radius + Autonomy Authority + Change Engine + Rollback Adapters + Recovery Hierarchy/OOB + Failure Orchestrator + Test/Probe + Cleanup | **COMPLETE (code-level)** — all nine components delivered in 4 batches: E12 Dependency DAG, E13 Blast Radius, E14 Autonomy Authority (M3-locked), E15 Change Engine (FSM-2 spine 2.1→2.4 + veto), E16 Rollback Engine (FSM-3, artifact-hash honesty), E17 Recovery Engine (FSM-5, ADR-0004 OOB skip, L5 human gate), E18 Failure Orchestrator (guard 2.8 decisions with T4 n/N), E19 Verification Engine (intent-derived test matrix, guards 2.9/2.10), Temporary Resource Manager (guard 2.12). 409 tests total. Hardware-touching execution (adapters applying to real devices) awaits the physical lab per OI-0005. |
-| **D4** | Agents A1–A5 + Boundaries + Claim/Relevance Verifier + Evaluation Harness (T5 report) | **IN PROGRESS** — Batches 1–2 delivered: Agent Boundary Guard (L01/L02/L11/L17), Agent Context Builder (secret redaction), Claim/Relevance Verifier (D0-04 §5 three rules, fail-closed, ledger read accessors added), Link Evidence Engine (FSM-4 per-link ladder, passive ceilings, terminal CONFLICTING). 452 tests total. Next batch: Evaluation Harness full (T5 report) + agent PROPOSE→DECIDE wiring over the authority table. |
+| **D4** | Agents A1–A5 + Boundaries + Claim/Relevance Verifier + Evaluation Harness (T5 report) | **COMPLETE (code-level)** — Batches 1–2 delivered the guard/context/verifier/link engines; the **full Evaluation Harness (E30)** landed with the D5-capstone: known-answer scenario runner, replay duplication, NOT_TESTED-visible, gate-eligible T5 counters computed from runs (no attestation), FI-detection scenarios (`fi:ledger-tamper` proves chain verification catches forgery). RELEASE GATE: PASS at 4/4 scenarios. Agent PROPOSE→DECIDE wiring tracked as OI-0183. |
+| **D5-capstone** | The operator's end-to-end scenario mechanized | **DELIVERED (code-level)** — five batches: **E31 Discovery Crawl Engine** (catalog∩allowlist plans, sorted frontier, T4 n/N per device, FSM-4 ladder, LLDP/CDP/MNDP fusion), **Topology Map Engine** (deterministic ASCII, evidence-graded, Gaps List), **Blueprints + Elicitation** (6 blueprints, bilingual deterministic classification, UNKNOWN/BLOCKED never a guess), **Design Engine** (blueprint × topology × IPAM ⇒ per-device IR with lineage, first-fit non-overlapping packing, infrastructure-port reservation), **Day-0 Bootstrap (E01) + ACCESS_LIMITED advisor**, **Cisco IOS-XE serial adapter** (real hardware path), **Autopilot orchestrator + CLI** (`python -m netops_autopilot demo|autopilot`), **E30 Evaluation Harness**. EXECUTION GATE honestly BLOCKED by law (empty CONFIG allowlist classes ⇒ T3): outputs are STAGED previews with full lineage — never claimed applied. 512 tests total. |
 | D5 | Monitoring + Drift + Lifecycle + Runbooks + Scheduler + Documentation | NOT STARTED |
 | D6 | UI (Tauri) + Packaging (MSI first) + Manuals + Shadow Mode tooling | NOT STARTED |
 
@@ -75,12 +76,23 @@ netops-autopilot/
 └── open_items_register.md         ← the ONLY place items open/close (with recorded decisions)
 ```
 
-## Running the tests (D1 onward)
+## Running the platform (D5-capstone onward)
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest tests/
+python -m pytest tests/                              # 512 tests green
+
+# The operator's scenario, on the simulated fabric (deterministic, no hardware):
+python -m netops_autopilot demo
+
+# On real hardware (console cable to the SEED device — the only cable needed):
+python -m netops_autopilot autopilot --port COM5
 ```
+
+The autopilot then runs BOND → BOOT_PROBE → DISCOVERY_A → TOPOLOGY_MAP →
+INTENT_ELICITATION (asks you, in words — Arabic or English) → DESIGN →
+RENDER → EXECUTION_GATE → REPORT. Every fact printed is ledger evidence;
+every unknown is a typed state, never a guess.
 
 Dependency policy: `requirements.txt` lists exactly what the current phase
 imports; §20 libraries (Scrapli, Netmiko, pySerial, pyATS, pybatfish, …) are

@@ -1,0 +1,13 @@
+{
+  "$schema_ref": "../../../docs/D0/06-architecture-overview.md",
+  "vendor_os": "ios-xe",
+  "verified": false,
+  "note": "Seed renderer templates pending lab syntax evidence (OI-0171). Generated output is a PREVIEW until the CONFIG allowlist class is populated — the platform's law currently blocks application (empty class ⇒ BLOCKED, T3).",
+  "wrappers": { "enter_config": ["enable", "configure terminal"], "exit_config": ["end"] },
+  "features": {
+    "vlan": { "commands": ["vlan {vlan_id}", " name {name}"] },
+    "svi": { "commands": ["interface Vlan{vlan_id}", " ip address {address}"], "prelude": ["ip routing"] },
+    "trunk": { "commands": ["interface {interface}", " switchport trunk encapsulation dot1q", " switchport mode trunk", " switchport trunk allowed vlan {allowed_vlans_csv}"] },
+    "access": { "commands": ["interface {interface}", " switchport mode access", " switchport access vlan {vlan_id}"] }
+  }
+}

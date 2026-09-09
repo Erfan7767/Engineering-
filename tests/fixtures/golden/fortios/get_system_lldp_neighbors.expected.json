@@ -1,0 +1,38 @@
+{
+  "parser_id": "regex/fortios_get_system_lldp_neighbors",
+  "parser_version": "1.0.0",
+  "command": "get system lldp neighbors",
+  "spec_trace": "D5-capstone neighbor evidence; allowlists/fortios.json READ_ONLY",
+  "synthetic_representative": true,
+  "expected": [
+    {
+      "field": "neighbor_count_lldp",
+      "parse_status": "OK",
+      "value": 2
+    },
+    {
+      "field": "neighbor_table_lldp",
+      "parse_status": "OK",
+      "value": [
+        {
+          "local_intf": "port1",
+          "neighbor_id": "CORE-SW2",
+          "neighbor_intf": "Gi0/1",
+          "chassis_id": "00:11:22:33:44:55",
+          "mgmt_address": "10.99.0.2",
+          "platform": null,
+          "protocol": "LLDP"
+        },
+        {
+          "local_intf": "port2",
+          "neighbor_id": "ACCESS-SW1",
+          "neighbor_intf": "Gi0/2",
+          "chassis_id": "00:aa:bb:cc:dd:ee",
+          "mgmt_address": "10.99.0.3",
+          "platform": null,
+          "protocol": "LLDP"
+        }
+      ]
+    }
+  ]
+}

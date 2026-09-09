@@ -1,0 +1,81 @@
+{
+  "$schema_ref": "../../../../../docs/D0/07-day0-access-and-bootstrap.md",
+  "description": "Day-0 state classifier criteria per vendor family (D0-07 §4). Grown ONLY from lab evidence; unmatched output is UNKNOWN, never assumed factory (T2).",
+  "families": {
+    "cisco/ios-xe": {
+      "verified": false,
+      "note": "Seed criteria pending lab evidence (register OI-0102). Conservative: only positively-identifying markers classify; anything else is UNKNOWN.",
+      "classes": {
+        "RECOVERY_REQUIRED": {
+          "priority": 90,
+          "markers_any": ["rommon 1 >", "rommon 2 >", "switch: %s"]
+        },
+        "PASSWORD_LOCKED": {
+          "priority": 80,
+          "markers_any": ["login incorrect", "% login invalid", "bad secrets"]
+        },
+        "FACTORY_DEFAULT": {
+          "priority": 60,
+          "markers_all": ["--- System Configuration Dialog ---"]
+        },
+        "CONFIGURED": {
+          "priority": 40,
+          "markers_any": ["% Please answer 'yes' or 'no'."]
+        }
+      }
+    },
+    "routeros": {
+      "verified": false,
+      "note": "Seed criteria pending lab evidence (register OI-0101).",
+      "classes": {
+        "FACTORY_DEFAULT": {
+          "priority": 60,
+          "markers_any": ["do you want to keep the current configuration? [Y/n]", "press any key within 2 seconds"]
+        },
+        "PASSWORD_LOCKED": {
+          "priority": 80,
+          "markers_any": ["login failed: incorrect password"]
+        }
+      }
+    },
+    "junos": {
+      "verified": false,
+      "note": "Seed criteria pending lab evidence (register OI-0103).",
+      "classes": {
+        "RECOVERY_REQUIRED": {
+          "priority": 90,
+          "markers_any": ["loader>", "can't load kernel"]
+        },
+        "PASSWORD_LOCKED": {
+          "priority": 80,
+          "markers_any": ["Login incorrect"]
+        }
+      }
+    },
+    "fortios": {
+      "verified": false,
+      "note": "Seed criteria pending lab evidence (register OI-0104).",
+      "classes": {
+        "PASSWORD_LOCKED": {
+          "priority": 80,
+          "markers_any": ["Login failed", "Please login again"]
+        }
+      }
+    },
+    "arubaos": {
+      "verified": false,
+      "note": "Seed criteria pending lab evidence (register OI-0105).",
+      "classes": {
+        "PASSWORD_LOCKED": {
+          "priority": 80,
+          "markers_any": ["Authentication failed", "Login incorrect"]
+        }
+      }
+    },
+    "unifi": {
+      "verified": false,
+      "note": "UniFi platform access is controller-mediated; device-classification markers are UNKNOWN until lab evidence (register OI-0106).",
+      "classes": {}
+    }
+  }
+}

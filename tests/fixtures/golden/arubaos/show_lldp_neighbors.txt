@@ -1,0 +1,28 @@
+LLDP Neighbor Information
+==============================
+
+Total Neighbor Entries          : 2
+Total Neighbor Entries Deleted  : 0
+Total Neighbor Entries Dropped  : 0
+Total Neighbor Entries Aged-Out : 0
+
+Neighbor Entries
+----------------
+
+Local Port  : 1/1/1
+Neighbor Chassis-Name     : CORE-SW2
+Neighbor Chassis-Description : Aruba CX 8325
+Neighbor Chassis-ID       : 00:11:22:33:44:55
+Neighbor Management-Address : 10.99.0.2
+Neighbor Port-ID          : 1/1/48
+Neighbor Port-Desc        :
+TTL                       : 120
+
+Local Port  : 1/1/2
+Neighbor Chassis-Name     : ACCESS-SW1
+Neighbor Chassis-Description : Aruba CX 6200
+Neighbor Chassis-ID       : 00:aa:bb:cc:dd:ee
+Neighbor Management-Address : 10.99.0.3
+Neighbor Port-ID          : 1/1/1
+Neighbor Port-Desc        :
+TTL                       : 118

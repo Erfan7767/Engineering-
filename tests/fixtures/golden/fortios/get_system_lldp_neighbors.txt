@@ -1,0 +1,16 @@
+== entry: port1 @ index 1
+Chassis ID: 00:11:22:33:44:55
+Port ID: Gi0/1
+Port description: GigabitEthernet0/1
+System name: CORE-SW2
+System description: Cisco Catalyst 9300
+Management address: 10.99.0.2
+TTL: 120
+
+== entry: port2 @ index 2
+Chassis ID: 00:aa:bb:cc:dd:ee
+Port ID: Gi0/2
+Port description: GigabitEthernet0/2
+System name: ACCESS-SW1
+Management address: 10.99.0.3
+TTL: 118

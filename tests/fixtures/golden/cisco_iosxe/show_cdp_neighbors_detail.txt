@@ -1,0 +1,16 @@
+-------------------------
+Device ID: CORE-SW2.lab
+Entry address(es):
+  IP address: 10.99.0.2
+  IPv6 address: fe80::211:22ff:fe33:4455  (link-local)
+Platform: cisco C9300-48P,  Capabilities: Switch IGMP
+Interface: GigabitEthernet1/0/1,  Port ID (outgoing port): GigabitEthernet0/1
+Holdtime : 149 sec
+
+-------------------------
+Device ID: ACCESS-SW1.lab
+Entry address(es):
+  IP address: 10.99.0.3
+Platform: cisco C9200L-24P-4G,  Capabilities: Switch IGMP
+Interface: GigabitEthernet1/0/2,  Port ID (outgoing port): GigabitEthernet1/0/24
+Holdtime : 135 sec

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .cisco_show_version import CiscoIosXeShowVersionParser
 from .keyvalue import routeros_system_resource
+from .neighbor_parsers import NEIGHBOR_CATALOG_BUILDERS
 from .registry import ParserRegistry
 from .vendor_parsers import (
     UnifiDeviceJsonParser,
@@ -24,7 +25,26 @@ CATALOG_BUILDERS = (
     fortios_get_system_status,
     arubaos_show_version,
     UnifiDeviceJsonParser,
+    *NEIGHBOR_CATALOG_BUILDERS,
 )
+
+
+#: Family vocabulary aliases (outer data vocabulary → canonical parser
+#: families). The platform's two namings (access-profile style vs parser
+#: style) meet HERE, as data — never as conditionals scattered in engines.
+FAMILY_ALIASES: dict[str, tuple[str, ...]] = {
+    "cisco/ios-xe": ("cisco/ios-xe",),
+    "routeros": ("mikrotik/routeros",),
+    "junos": ("juniper/junos",),
+    "fortios": ("fortinet/fortios",),
+    "arubaos": ("aruba/arubaos",),
+    "unifi": ("ubiquiti/unifi",),
+}
+
+
+def canonical_families(family: str) -> tuple[str, ...]:
+    """Alias resolution; unknown family ⇒ its own name only (no guessing)."""
+    return FAMILY_ALIASES.get(family, (family,))
 
 
 def default_registry() -> ParserRegistry:
