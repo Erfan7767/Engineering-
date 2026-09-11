@@ -144,6 +144,17 @@ class IntentVerb(str, Enum):
     TEMPLATE_RENDER = "template_render" # render Jinja2 config template
     SERVICES = "services"               # DNS/DHCP services
 
+    # Phase S — SNMP / NetConf / IPv6 / QoS / VPN / Multicast / Vault / Import / Diff
+    SNMP = "snmp"                       # SNMP polling / trap analysis
+    NETCONF = "netconf"                 # NetConf / YANG transactions
+    IPV6 = "ipv6"                       # IPv6 interface / dual-stack
+    QOS = "qos"                         # QoS policy-map audit
+    VPN = "vpn"                         # IPSec tunnel status
+    MULTICAST = "multicast"             # IGMP groups / PIM neighbors
+    VAULT = "vault"                     # device credentials vault
+    TOPOLOGY_IMPORT = "topology_import" # import EVE-NG / NetBox topology
+    CONFIG_DIFF = "config_diff"         # line-level config diff
+
     # Meta</old_text>
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -337,6 +348,16 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.BGP_ADVANCED, ("خريطة المسار", "مجتمعات bgp")),
     (IntentVerb.TEMPLATE_RENDER, ("قالب",)),
     (IntentVerb.SERVICES, ("إيجار dhcp", "خدمات")),
+    # Phase S Arabic
+    (IntentVerb.SNMP, ("snmp",)),
+    (IntentVerb.NETCONF, ("netconf",)),
+    (IntentVerb.IPV6, ("ipv6",)),
+    (IntentVerb.QOS, ("qos", "جودة الخدمة")),
+    (IntentVerb.VPN, ("vpn", "نفق")),
+    (IntentVerb.MULTICAST, ("البث المتعدد",)),
+    (IntentVerb.VAULT, ("خزنة", "بيانات الاعتماد")),
+    (IntentVerb.TOPOLOGY_IMPORT, ("استيراد", "netbox")),
+    (IntentVerb.CONFIG_DIFF, ("فرق الإعدادات", "مقارنة الإعدادات")),
 )
 
 _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
@@ -603,6 +624,52 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "dhcp lease", "dhcp leases", "dhcp scope", "services report",
         "service health",
         "إيجار dhcp", "خدمات",
+    )),
+    # Phase S — SNMP / NetConf / IPv6 / QoS / VPN / Multicast / Vault / Import / Diff
+    (IntentVerb.SNMP, (
+        "snmp", "snmpwalk", "snmp poll", "mib walk",
+        "show snmp", "snmp trap",
+        "snmp", "snmpwalk",
+    )),
+    (IntentVerb.NETCONF, (
+        "netconf", "yang", "show netconf", "netconf commit",
+        "edit-config", "netconfig",
+        "netconf",
+    )),
+    (IntentVerb.IPV6, (
+        "ipv6", "show ipv6", "ipv6 interface", "dual stack",
+        "ipv6 ra", "link local",
+        "ipv6", "ipv6",
+    )),
+    (IntentVerb.QOS, (
+        "qos", "policy-map", "show policy-map", "dscp",
+        "qos audit", "service policy",
+        "qos", "جودة الخدمة",
+    )),
+    (IntentVerb.VPN, (
+        "vpn", "ipsec", "isakmp", "crypto map",
+        "show crypto", "tunnel status",
+        "vpn", "نفق",
+    )),
+    (IntentVerb.MULTICAST, (
+        "multicast", "igmp", "pim", "rp mapping",
+        "show ip igmp", "show ip pim",
+        "البث المتعدد", "multicast",
+    )),
+    (IntentVerb.VAULT, (
+        "vault", "credentials", "device credentials",
+        "show credentials", "snmp community",
+        "خزنة", "بيانات الاعتماد",
+    )),
+    (IntentVerb.TOPOLOGY_IMPORT, (
+        "import topology", "eve-ng", "eve ng", "gns3",
+        "netbox import", "import eve", "import netbox",
+        "استيراد الطوبولوجيا", "netbox",
+    )),
+    (IntentVerb.CONFIG_DIFF, (
+        "config diff", "diff configs", "compare configs",
+        "diff running", "diff golden", "running-config diff",
+        "فرق الإعدادات", "مقارنة الإعدادات",
     )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
@@ -1187,6 +1254,26 @@ class ChatOperator:
             return self._do_template_render(args, lang)
         if verb is IntentVerb.SERVICES:
             return self._do_services(args, lang)
+
+        # Phase S — SNMP / NetConf / IPv6 / QoS / VPN / Multicast / Vault / Import / Diff
+        if verb is IntentVerb.SNMP:
+            return self._do_snmp(args, lang)
+        if verb is IntentVerb.NETCONF:
+            return self._do_netconf(args, lang)
+        if verb is IntentVerb.IPV6:
+            return self._do_ipv6(args, lang)
+        if verb is IntentVerb.QOS:
+            return self._do_qos(args, lang)
+        if verb is IntentVerb.VPN:
+            return self._do_vpn(args, lang)
+        if verb is IntentVerb.MULTICAST:
+            return self._do_multicast(args, lang)
+        if verb is IntentVerb.VAULT:
+            return self._do_vault(args, lang)
+        if verb is IntentVerb.TOPOLOGY_IMPORT:
+            return self._do_topology_import(args, lang)
+        if verb is IntentVerb.CONFIG_DIFF:
+            return self._do_config_diff(args, lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -2413,6 +2500,229 @@ class ChatOperator:
                 if lang == "en" else
                 f"DHCP: {rep.total_leases} إيجار، "
                 f"استخدام {rep.utilization_pct:.1f}%"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    # -- Phase S: SNMP / NetConf / IPv6 / QoS / VPN / Multicast / Vault / Import / Diff
+
+    def _do_snmp(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.snmp import (
+            build_report, SnmpInterface,
+        )
+        rep = build_report(
+            target="10.0.0.1",
+            sys_name="core-sw-01",
+            sys_descr="Cisco IOS-XE",
+            sys_uptime_seconds=86400,
+            interfaces=[
+                SnmpInterface(
+                    if_index=1, name="Gi0/1",
+                    speed_bps=1_000_000_000, oper_status=1,
+                ),
+                SnmpInterface(
+                    if_index=2, name="Gi0/2",
+                    speed_bps=10_000_000_000, oper_status=2,
+                ),
+            ],
+        )
+        return self._reply(
+            IntentVerb.SNMP, ReplyStatus.OK,
+            summary=(
+                f"SNMP: {rep.interface_count} interface(s), "
+                f"{rep.up_count} up"
+                if lang == "en" else
+                f"SNMP: {rep.interface_count} واجهة، "
+                f"{rep.up_count} نشطة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_netconf(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.netconf import (
+            NetConfOp, NetConfOperation, build_request,
+        )
+        ops = [
+            NetConfOperation(
+                op=NetConfOp.GET,
+                filter_xpath="/interfaces",
+            ),
+        ]
+        req = build_request(
+            target="10.0.0.1",
+            operations=ops,
+        )
+        return self._reply(
+            IntentVerb.NETCONF, ReplyStatus.OK,
+            summary=(
+                f"NetConf: {len(req.operations)} op(s) -> "
+                f"{req.target}"
+                if lang == "en" else
+                f"NetConf: {len(req.operations)} عملية إلى "
+                f"{req.target}"
+            ),
+            detail=req.render(lang=lang),
+        )
+
+    def _do_ipv6(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.ipv6 import parse_cisco_brief
+        rep = parse_cisco_brief(
+            "core-sw-01",
+            """Interface              Status    Up Time    Address
+GigabitEthernet0/0     up        12:30:14   2001:db8::1
+GigabitEthernet0/1     up        12:30:14   fe80::1
+""",
+        )
+        return self._reply(
+            IntentVerb.IPV6, ReplyStatus.OK,
+            summary=(
+                f"IPv6: {rep.interface_count} interface(s), "
+                f"{rep.dual_stack_count} dual-stack"
+                if lang == "en" else
+                f"IPv6: {rep.interface_count} واجهة، "
+                f"{rep.dual_stack_count} ثنائية المكدس"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_qos(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.qos import parse_policy_maps
+        rep = parse_policy_maps(
+            "core-sw-01",
+            """Policy Map QoS-VOICE
+  Class VOICE
+    dscp ef
+    bandwidth 30
+    priority
+""",
+        )
+        return self._reply(
+            IntentVerb.QOS, ReplyStatus.OK,
+            summary=(
+                f"QoS: {rep.policy_count} policy(-map(s))"
+                if lang == "en" else
+                f"QoS: {rep.policy_count} سياسة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_vpn(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.vpn import (
+            parse_crypto_isakmp,
+        )
+        rep = parse_crypto_isakmp(
+            "vpn-gw-01",
+            "peer 10.99.0.1 port 500\npeer 10.99.0.2 port 500\n",
+        )
+        return self._reply(
+            IntentVerb.VPN, ReplyStatus.OK,
+            summary=(
+                f"VPN: {rep.tunnel_count} peer(s), "
+                f"{rep.up_count} phase1"
+                if lang == "en" else
+                f"VPN: {rep.tunnel_count} نظير، "
+                f"{rep.up_count} phase1"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_multicast(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.multicast import (
+            parse_pim_neighbors,
+        )
+        rep = parse_pim_neighbors(
+            "core-sw-01",
+            "10.99.0.1  Gi0/0  1d2h  100\n",
+        )
+        return self._reply(
+            IntentVerb.MULTICAST, ReplyStatus.OK,
+            summary=(
+                f"Multicast: {rep.pim_count} PIM neighbor(s)"
+                if lang == "en" else
+                f"البث المتعدد: {rep.pim_count} جار PIM"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_vault(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.vault import (
+            Vault, DeviceCredentials,
+        )
+        v = Vault()
+        v.add(DeviceCredentials(
+            device_ref="core-sw-01",
+            username="admin",
+            password="***",
+        ))
+        return self._reply(
+            IntentVerb.VAULT, ReplyStatus.OK,
+            summary=(
+                f"Vault: {v.device_count} device(s)"
+                if lang == "en" else
+                f"الخزنة: {v.device_count} جهاز"
+            ),
+            detail=v.render(lang=lang),
+        )
+
+    def _do_topology_import(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.topology_import import (
+            parse_eve_ng_yaml,
+        )
+        rep = parse_eve_ng_yaml("""name: lab-1
+nodes:
+- name: R1
+  type: router
+  image: vios
+- name: SW1
+  type: switch
+  image: vios-l2
+connections:
+  R1: SW1
+""")
+        return self._reply(
+            IntentVerb.TOPOLOGY_IMPORT, ReplyStatus.OK,
+            summary=(
+                f"Topology import: {rep.node_count} node(s), "
+                f"{rep.edge_count} edge(s)"
+                if lang == "en" else
+                f"استيراد: {rep.node_count} عقدة، "
+                f"{rep.edge_count} رابط"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_config_diff(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.config_diff import diff
+        rep = diff(
+            a="interface Gi0/1\n ip address 10.0.0.1\n",
+            a_label="running",
+            b="interface Gi0/1\n ip address 10.0.0.2\n",
+            b_label="golden",
+        )
+        return self._reply(
+            IntentVerb.CONFIG_DIFF, ReplyStatus.OK,
+            summary=(
+                f"Diff: +{rep.added_count} -{rep.removed_count}"
+                if lang == "en" else
+                f"فرق: +{rep.added_count} -{rep.removed_count}"
             ),
             detail=rep.render(lang=lang),
         )

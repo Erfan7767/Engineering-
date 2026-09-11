@@ -1027,6 +1027,17 @@ const COMMANDS = [
   { num: "",  verb: "route map",         en: "BGP route-maps + communities",       ar: "خريطة المسار" },
   { num: "",  verb: "render template",   en: "Render Jinja2 config template",      ar: "إنشاء قالب" },
   { num: "",  verb: "dhcp lease",        en: "DHCP lease / scope health",          ar: "إيجارات DHCP" },
+
+  // Phase S — SNMP / NetConf / IPv6 / QoS / VPN / Multicast / Vault / Import / Diff
+  { num: "",  verb: "snmp poll",         en: "SNMP polling + MIB walk",            ar: "استطلاع SNMP" },
+  { num: "",  verb: "netconf",           en: "NetConf / YANG transactions",        ar: "NetConf" },
+  { num: "",  verb: "ipv6",              en: "IPv6 interface / dual-stack",        ar: "IPv6" },
+  { num: "",  verb: "qos audit",         en: "QoS policy-map audit",               ar: "تدقيق QoS" },
+  { num: "",  verb: "ipsec",             en: "IPSec VPN tunnel status",            ar: "نفق VPN" },
+  { num: "",  verb: "multicast pim",     en: "IGMP groups + PIM neighbors",        ar: "البث المتعدد" },
+  { num: "",  verb: "vault",             en: "Device credentials vault",           ar: "الخزنة" },
+  { num: "",  verb: "import topology",   en: "Import EVE-NG / NetBox topology",    ar: "استيراد الطوبولوجيا" },
+  { num: "",  verb: "config diff",       en: "Config line-level diff",             ar: "فرق الإعدادات" },
 ];
 
 const $ = sel => document.querySelector(sel);
