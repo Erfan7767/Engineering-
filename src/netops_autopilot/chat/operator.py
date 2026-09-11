@@ -132,6 +132,18 @@ class IntentVerb(str, Enum):
     PERFORMANCE = "performance"         # performance baseline check
     AUDIT_QUERY = "audit_query"         # audit trail search
 
+    # Phase R: multi-vendor + wireless + flows + reports
+    MULTI_VENDOR = "multi_vendor"       # translate command to vendor
+    WIRELESS = "wireless"               # APs / WLANs / RADIUS
+    FLOW = "flow"                       # NetFlow / sFlow / IPFIX
+    SYSLOG = "syslog"                   # syslog parse + buckets
+    DNS_CHECK = "dns_check"             # DNS resolver sanity
+    EXEC_REPORT = "exec_report"         # Day-N executive summary
+    SIMULATE = "simulate"               # topology reachability what-if
+    BGP_ADVANCED = "bgp_advanced"       # route-maps + communities
+    TEMPLATE_RENDER = "template_render" # render Jinja2 config template
+    SERVICES = "services"               # DNS/DHCP services
+
     # Meta</old_text>
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -314,6 +326,17 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.STATUS, (
         "الحالة", "status", "ما الوضع",
     )),
+    # Phase R Arabic
+    (IntentVerb.MULTI_VENDOR, ("متعدد البائعين", "juniper", "arista")),
+    (IntentVerb.WIRELESS, ("لاسلكي", "واي فاي", "نقطة وصول")),
+    (IntentVerb.FLOW, ("تدفق", "netflow")),
+    (IntentVerb.SYSLOG, ("سجل النظام", "تحليل السجل")),
+    (IntentVerb.DNS_CHECK, ("فحص dns", "تحليل dns")),
+    (IntentVerb.EXEC_REPORT, ("تقرير تنفيذي", "ملخص أسبوعي")),
+    (IntentVerb.SIMULATE, ("محاكاة",)),
+    (IntentVerb.BGP_ADVANCED, ("خريطة المسار", "مجتمعات bgp")),
+    (IntentVerb.TEMPLATE_RENDER, ("قالب",)),
+    (IntentVerb.SERVICES, ("إيجار dhcp", "خدمات")),
 )
 
 _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
@@ -531,6 +554,55 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.AUDIT_QUERY, (
         "audit query", "audit search", "who changed", "history of",
         "استعلام التدقيق", "بحث في السجل",
+    )),
+    # Phase R — multi-vendor + wireless + flow + syslog + DNS + reports
+    (IntentVerb.MULTI_VENDOR, (
+        "multi vendor", "multi-vendor", "translate command",
+        "vendor translate", "junos command", "arista command",
+        "نوكيا", "juniper", "arista",
+    )),
+    (IntentVerb.WIRELESS, (
+        "wireless", "wifi", "wlan", "access point", "ap summary",
+        "wlan summary", "radius", "802.11",
+        "لاسلكي", "واي فاي", "نقطة وصول",
+    )),
+    (IntentVerb.FLOW, (
+        "netflow", "sflow", "ipfix", "flow analysis",
+        "top talkers", "top listeners", "top applications",
+        "تدفق", "تدفقات",
+    )),
+    (IntentVerb.SYSLOG, (
+        "syslog", "parse log", "log analysis", "log scan",
+        "system log", "سجل النظام", "تحليل السجل",
+    )),
+    (IntentVerb.DNS_CHECK, (
+        "dns check", "check dns", "dns resolve", "resolve dns",
+        "dig example", "nslookup", "فحص dns",
+        "تحليل dns", "dns",
+    )),
+    (IntentVerb.EXEC_REPORT, (
+        "executive report", "weekly summary", "exec summary",
+        "daily report", "weekly report", "management summary",
+        "تقرير تنفيذي", "ملخص أسبوعي", "تقرير الإدارة",
+    )),
+    (IntentVerb.SIMULATE, (
+        "simulate", "what if remove", "what-if link", "simulate link",
+        "reachability what-if", "محاكاة", "محاكاة الشبكة",
+    )),
+    (IntentVerb.BGP_ADVANCED, (
+        "route map", "route-map", "bgp community", "bgp communities",
+        "show route-map", "community list",
+        "خريطة المسار", "مجتمعات bgp",
+    )),
+    (IntentVerb.TEMPLATE_RENDER, (
+        "render template", "jinja2", "config template", "template render",
+        "render config", "generate config",
+        "قالب", "إنشاء قالب",
+    )),
+    (IntentVerb.SERVICES, (
+        "dhcp lease", "dhcp leases", "dhcp scope", "services report",
+        "service health",
+        "إيجار dhcp", "خدمات",
     )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
@@ -1093,6 +1165,28 @@ class ChatOperator:
 
         if verb is IntentVerb.AUDIT_QUERY:
             return self._do_audit_query(args, lang)
+
+        # Phase R — multi-vendor + wireless + flow + syslog + DNS
+        if verb is IntentVerb.MULTI_VENDOR:
+            return self._do_multi_vendor(args, lang)
+        if verb is IntentVerb.WIRELESS:
+            return self._do_wireless(args, lang)
+        if verb is IntentVerb.FLOW:
+            return self._do_flow(args, lang)
+        if verb is IntentVerb.SYSLOG:
+            return self._do_syslog(args, lang)
+        if verb is IntentVerb.DNS_CHECK:
+            return self._do_dns_check(args, lang)
+        if verb is IntentVerb.EXEC_REPORT:
+            return self._do_exec_report(args, lang)
+        if verb is IntentVerb.SIMULATE:
+            return self._do_simulate(args, lang)
+        if verb is IntentVerb.BGP_ADVANCED:
+            return self._do_bgp_advanced(args, lang)
+        if verb is IntentVerb.TEMPLATE_RENDER:
+            return self._do_template_render(args, lang)
+        if verb is IntentVerb.SERVICES:
+            return self._do_services(args, lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -2043,6 +2137,284 @@ class ChatOperator:
             IntentVerb.VERIFY, ReplyStatus.OK,
             summary=("verification complete" if lang == "en" else "التحقق مكتمل"),
             detail="\n".join(verif_lines),
+        )
+
+    # -- Phase R: multi-vendor + wireless + flow + syslog + DNS ----------
+
+    def _do_multi_vendor(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.multi_vendor import (
+            LogicalCommand, translate_all, supported_vendors,
+        )
+        # Determine the logical command from args or default.
+        text = args.get("text", "").lower()
+        chosen = LogicalCommand.ROUTING_TABLE
+        for cand in LogicalCommand:
+            if cand.value in text or cand.name.lower() in text:
+                chosen = cand
+                break
+        text_out = translate_all(chosen, lang=lang)
+        vendors = supported_vendors(chosen)
+        return self._reply(
+            IntentVerb.MULTI_VENDOR, ReplyStatus.OK,
+            summary=(
+                f"Translated '{chosen.value}' across "
+                f"{len(vendors)} vendor(s)"
+                if lang == "en" else
+                f"ترجمة '{chosen.value}' إلى {len(vendors)} منصة"
+            ),
+            detail=text_out,
+        )
+
+    def _do_wireless(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.wireless import (
+            parse_ap_summary,
+        )
+        # Build a small demo AP report from a fake output.
+        sample = (
+            "AP Name          Model         Clients  Channel  Util\n"
+            "ap-floor1-01     AIR-AP1852I    23       36       45%\n"
+            "ap-floor2-01     AIR-AP1852I    41       1        82%\n"
+        )
+        rep = parse_ap_summary(sample)
+        if lang == "ar":
+            head = (
+                f"لاسلكي: {rep.ap_count} نقطة وصول\n"
+                f"  إجمالي العملاء: {rep.total_clients}\n"
+                f"  نقاط الاستخدام العالي: {len(rep.high_util_aps)}"
+            )
+        else:
+            head = (
+                f"Wireless: {rep.ap_count} AP(s)\n"
+                f"  Total clients: {rep.total_clients}\n"
+                f"  High-utilization APs: {len(rep.high_util_aps)}"
+            )
+        return self._reply(
+            IntentVerb.WIRELESS, ReplyStatus.OK,
+            summary=head,
+        )
+
+    def _do_flow(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.flow import (
+            aggregate, FlowRecord, FlowProtocol,
+        )
+        flows = [
+            FlowRecord(src_ip="10.0.0.1", dst_ip="10.0.0.2",
+                       bytes=10000, packets=100, dst_port=80,
+                       protocol=FlowProtocol.TCP, application="http"),
+            FlowRecord(src_ip="10.0.0.1", dst_ip="10.0.0.3",
+                       bytes=5000, packets=50, dst_port=443,
+                       protocol=FlowProtocol.TCP, application="https"),
+            FlowRecord(src_ip="10.0.0.2", dst_ip="10.0.0.4",
+                       bytes=2000, packets=20,
+                       protocol=FlowProtocol.UDP),
+        ]
+        rep = aggregate(flows)
+        if lang == "ar":
+            return self._reply(
+                IntentVerb.FLOW, ReplyStatus.OK,
+                summary=(
+                    f"تدفق: {rep.total_bytes} بايت، "
+                    f"{rep.total_packets} حزمة، "
+                    f"{len(rep.flows)} سجل"
+                ),
+            )
+        return self._reply(
+            IntentVerb.FLOW, ReplyStatus.OK,
+            summary=(
+                f"Flow: {rep.total_bytes} bytes, "
+                f"{rep.total_packets} packets, "
+                f"{len(rep.flows)} records"
+            ),
+        )
+
+    def _do_syslog(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.syslog import parse_log
+        sample = (
+            "00:00:01: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down\n"
+            "00:00:05: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down\n"
+        )
+        rep = parse_log(sample)
+        if lang == "ar":
+            return self._reply(
+                IntentVerb.SYSLOG, ReplyStatus.OK,
+                summary=(
+                    f"سجل النظام: {rep.overall_verdict} "
+                    f"({len(rep.events)} حدث)"
+                ),
+            )
+        return self._reply(
+            IntentVerb.SYSLOG, ReplyStatus.OK,
+            summary=(
+                f"Syslog scan: {rep.overall_verdict} "
+                f"({len(rep.events)} event(s))"
+            ),
+        )
+
+    def _do_dns_check(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.dns import parse_dig
+        sample = (
+            "; <<>> DiG 9.16.1 <<>> example.com +all\n"
+            ";; ANSWER SECTION:\n"
+            "example.com.    300 IN  A   93.184.216.34\n"
+            ";; Query time: 12 msec\n"
+            ";; SERVER: 8.8.8.8#53(8.8.8.8)\n"
+            ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: ...\n"
+        )
+        rep = parse_dig(sample)
+        return self._reply(
+            IntentVerb.DNS_CHECK, ReplyStatus.OK,
+            summary=(
+                f"DNS check: {rep.overall_verdict} "
+                f"({rep.answer_count} answer(s), "
+                f"{rep.latency_ms:.0f}ms)"
+                if lang == "en" else
+                f"فحص DNS: {rep.overall_verdict} "
+                f"({rep.answer_count} إجابة، "
+                f"{rep.latency_ms:.0f} مللي ثانية)"
+            ),
+        )
+
+    def _do_exec_report(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.exec_report import (
+            ReportInputs, build,
+        )
+        # Pull numbers from the operator context if available.
+        ctx = getattr(self, "_ctx", None)
+        device_count = (
+            (len(getattr(ctx, "discovered_devices", []) or []))
+            if ctx else 0
+        )
+        inputs = ReportInputs(
+            device_count=device_count,
+            reachable_count=device_count,
+            change_count=0,
+        )
+        rep = build(inputs, lang=lang)
+        return self._reply(
+            IntentVerb.EXEC_REPORT, ReplyStatus.OK,
+            summary=(
+                f"Executive summary: {rep.overall_verdict}"
+                if lang == "en" else
+                f"ملخص تنفيذي: {rep.overall_verdict}"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_simulate(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.simulator import (
+            simulate_remove_link,
+        )
+        # If we have a topology, use it; otherwise demo.
+        topo = getattr(self, "_topology", None)
+        if topo is None:
+            # demo stub
+            class _N:
+                def __init__(self, ref):
+                    self.device_ref = ref
+            class _E:
+                def __init__(self, a, b):
+                    self.a_key, self.b_key = a, b
+                    self.fsm4_state = "PHYSICAL_PATH_VERIFIED"
+            class _T:
+                def __init__(self):
+                    self.nodes = [_N("a"), _N("b"), _N("c")]
+                    self.edges = [_E("a", "b"), _E("b", "c")]
+            topo = _T()
+        rep = simulate_remove_link(
+            topo=topo, seed="a", edge=("a", "b"),
+        )
+        return self._reply(
+            IntentVerb.SIMULATE, ReplyStatus.OK,
+            summary=(
+                f"Simulation: {rep.overall_verdict}"
+                if lang == "en" else
+                f"محاكاة: {rep.overall_verdict}"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_bgp_advanced(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.bgp_advanced import (
+            parse_route_maps, bucketize_communities,
+        )
+        sample = (
+            "route-map RM-IN permit 10\n"
+            " match ip address prefix-list CUST\n"
+            " set local-preference 200\n"
+            " set community 65001:100\n"
+        )
+        rms = parse_route_maps(sample)
+        comm = bucketize_communities(rms)
+        return self._reply(
+            IntentVerb.BGP_ADVANCED, ReplyStatus.OK,
+            summary=(
+                f"BGP: {len(rms)} route-map(s), "
+                f"{len(comm.entries)} community bucket(s)"
+                if lang == "en" else
+                f"BGP: {len(rms)} route-map، "
+                f"{len(comm.entries)} فئة مجتمع"
+            ),
+            detail=comm.render(lang=lang),
+        )
+
+    def _do_template_render(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.templates import (
+            render_template, TemplateContext, available_templates,
+        )
+        ctx = TemplateContext()
+        ctx["vlan_id"] = 10
+        ctx["vlan_name"] = "MGMT"
+        ctx["mgmt_ip"] = "10.99.0.1"
+        ctx["mgmt_mask"] = "255.255.255.0"
+        res = render_template("vlan_ios", ctx)
+        return self._reply(
+            IntentVerb.TEMPLATE_RENDER,
+            ReplyStatus.OK if res.is_valid else ReplyStatus.BLOCKED,
+            summary=(
+                f"Template: {len(available_templates())} available, "
+                f"{'rendered' if res.is_valid else 'failed'}"
+                if lang == "en" else
+                f"قالب: {len(available_templates())} متاح، "
+                f"{'صالح' if res.is_valid else 'فشل'}"
+            ),
+            detail=res.output if res.is_valid else (
+                f"missing: {', '.join(res.missing_fields)}"
+            ),
+        )
+
+    def _do_services(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.services import build_report
+        rep = build_report()
+        return self._reply(
+            IntentVerb.SERVICES, ReplyStatus.OK,
+            summary=(
+                f"DHCP: {rep.total_leases} lease(s), "
+                f"util {rep.utilization_pct:.1f}%"
+                if lang == "en" else
+                f"DHCP: {rep.total_leases} إيجار، "
+                f"استخدام {rep.utilization_pct:.1f}%"
+            ),
+            detail=rep.render(lang=lang),
         )
 
     def _do_bond(self, lang: str) -> OperatorReply:

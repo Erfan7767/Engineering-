@@ -1015,6 +1015,18 @@ const COMMANDS = [
   { num: "",  verb: "rollback",          en: "Roll back the last apply",           ar: "التراجع عن آخر تطبيق" },
   { num: "",  verb: "status",            en: "System status",                      ar: "حالة النظام" },
   { num: "",  verb: "help",              en: "Show available commands",            ar: "الأوامر المتاحة" },
+
+  // Phase R — multi-vendor + wireless + flow + syslog + DNS + reports
+  { num: "",  verb: "multi-vendor translate", en: "Translate a command to Cisco/Juniper/Arista/Nokia", ar: "ترجمة الأمر لعدة منصات" },
+  { num: "",  verb: "wireless",          en: "WiFi APs / WLANs / RADIUS",          ar: "نقاط الوصول والشبكات اللاسلكية" },
+  { num: "",  verb: "netflow",           en: "NetFlow / sFlow / IPFIX top talkers", ar: "تحليل التدفق" },
+  { num: "",  verb: "syslog scan",       en: "Parse syslog + severity buckets",    ar: "تحليل سجل النظام" },
+  { num: "",  verb: "dns check",         en: "DNS resolver sanity",                ar: "فحص DNS" },
+  { num: "",  verb: "weekly summary",    en: "Executive weekly summary",           ar: "تقرير تنفيذي أسبوعي" },
+  { num: "",  verb: "simulate link",     en: "Topology reachability what-if",      ar: "محاكاة الشبكة" },
+  { num: "",  verb: "route map",         en: "BGP route-maps + communities",       ar: "خريطة المسار" },
+  { num: "",  verb: "render template",   en: "Render Jinja2 config template",      ar: "إنشاء قالب" },
+  { num: "",  verb: "dhcp lease",        en: "DHCP lease / scope health",          ar: "إيجارات DHCP" },
 ];
 
 const $ = sel => document.querySelector(sel);

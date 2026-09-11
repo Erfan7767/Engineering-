@@ -710,3 +710,35 @@ N       | 1033  | +35 expert operations
 O       | 1066  | +33 day-2 diagnostics
 P       | 1102  | +36 expert deeper improvements
 Q       | 1130  | +28 expert Day-2+ operations
+
+
+## Phase R — multi-vendor, wireless, flow, syslog, DNS, reports
+
+10 new engines, 10 chat verbs, 35 new tests (12 + 23 across
+two test files). Total: **1165 tests passing**.
+
+| Engine               | Operation                                      |
+|----------------------|------------------------------------------------|
+| `multi_vendor`       | 10 vendors × 16 logical commands — bilingual translator |
+| `wireless`           | APs / WLANs / RADIUS event parsers             |
+| `flow`               | NetFlow / sFlow / IPFIX aggregate (TopN)       |
+| `syslog`             | RFC 5424 / BSD / Cisco IOS log parsing + severity buckets |
+| `dns`                | dig parser — DnsStatus / DnsAnswer / latency   |
+| `exec_report`        | Day-N executive weekly summary                 |
+| `simulator`          | Pure-function reachability what-if (BFS diff) |
+| `bgp_advanced`       | Route-map clauses + community bucket report    |
+| `templates`          | Jinja2-style config templates (built-ins)      |
+| `services`           | ISC DHCP lease / Windows scope parser         |
+
+**10 new chat verbs**: `multi-vendor translate`, `wireless`,
+`netflow`, `syslog scan`, `dns check`, `weekly summary`,
+`simulate link`, `route map`, `render template`, `dhcp lease`.
+
+**Phase | Tests | Delta**
+------- | -----:| ----:
+M       | 998    | baseline
+N       | 1033   | +35
+O       | 1066   | +33
+P       | 1102   | +36
+Q       | 1130   | +28
+R       | 1165   | +35

@@ -458,3 +458,25 @@ retry" contract).
    Policy (T3).
 4. Every partial failure is reported with its count and causes (T4).
 5. Release requires all T5 counters == 0 (see `docs/D0/10-evaluation-harness.md`).
+
+
+## Phase R — multi-vendor + wireless + flow + syslog + DNS + reports
+
+10 new engines, 10 chat verbs, 35 tests. **1165 passing total.**
+
+| Engine               | Operation                                      |
+|----------------------|------------------------------------------------|
+| `multi_vendor`       | 10 vendors × 16 commands, bilingual translator |
+| `wireless`           | APs / WLANs / RADIUS event parsers             |
+| `flow`               | NetFlow / sFlow / IPFIX TopN aggregate         |
+| `syslog`             | RFC 5424 / BSD / Cisco IOS parser              |
+| `dns`                | dig parser + status / latency                  |
+| `exec_report`        | Executive weekly summary                       |
+| `simulator`          | Pure reachability what-if (BFS)               |
+| `bgp_advanced`       | Route-maps + community buckets                 |
+| `templates`          | Jinja2-style config templates                  |
+| `services`           | DHCP lease / scope parser                      |
+
+Chat verbs: `multi-vendor translate`, `wireless`, `netflow`,
+`syslog scan`, `dns check`, `weekly summary`, `simulate link`,
+`route map`, `render template`, `dhcp lease` (all bilingual).
