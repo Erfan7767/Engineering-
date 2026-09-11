@@ -1049,6 +1049,17 @@ const COMMANDS = [
   { num: "",  verb: "compliance baseline", en: "CIS/PCI/HIPAA rule packs",         ar: "قواعد الامتثال" },
   { num: "",  verb: "network diff",      en: "Cross-device config diff",           ar: "فرق الأجهزة" },
   { num: "",  verb: "console server",    en: "Out-of-band console paths",          ar: "خادم وحدة التحكم" },
+
+  // Phase U — DNS zone / DHCPv6 / AAA / STP guard / Port-sec / Chassis / DDoS / RPKI / NTP
+  { num: "",  verb: "dns zone",          en: "DNS zone transfer / AXFR audit",     ar: "تدقيق DNS" },
+  { num: "",  verb: "dhcpv6",            en: "IPv6 SLAAC + DHCPv6 bindings",       ar: "DHCPv6" },
+  { num: "",  verb: "aaa audit",         en: "TACACS+/RADIUS AAA audit",           ar: "تدقيق AAA" },
+  { num: "",  verb: "stp guard",         en: "BPDU/root guard audit",              ar: "حماية STP" },
+  { num: "",  verb: "port security",     en: "Port security + 802.1X",             ar: "أمان المنافذ" },
+  { num: "",  verb: "chassis health",    en: "Stack / modular chassis health",     ar: "صحة الهيكل" },
+  { num: "",  verb: "ddos detect",       en: "NetFlow DDoS detection",             ar: "كشف DDoS" },
+  { num: "",  verb: "rpki",              en: "BGP RPKI / ROA validation",          ar: "تدقيق RPKI" },
+  { num: "",  verb: "ntp audit",         en: "NTP peer sync + skew",               ar: "تزامن الوقت" },
 ];
 
 const $ = sel => document.querySelector(sel);

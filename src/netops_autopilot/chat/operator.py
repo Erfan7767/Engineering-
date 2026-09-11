@@ -166,6 +166,17 @@ class IntentVerb(str, Enum):
     NETWORK_DIFF = "network_diff"       # network-wide config diff
     CONSOLE_SERVER = "console_server"   # OOB console server paths
 
+    # Phase U — DNS zone / DHCPv6 / AAA / STP guard / Port-sec / Chassis / DDoS / RPKI / NTP
+    DNS_ZONE = "dns_zone"               # DNS zone transfer / AXFR audit
+    DHCPV6 = "dhcpv6"                   # IPv6 SLAAC + DHCPv6 bindings
+    AAA_AUDIT = "aaa_audit"             # TACACS+/RADIUS AAA audit
+    STP_GUARD = "stp_guard"             # BPDU/root guard audit
+    PORT_SECURITY = "port_security"     # port-security + 802.1X
+    CHASSIS_HEALTH = "chassis_health"   # stack / modular chassis
+    DDOS_DETECT = "ddos_detect"         # flow-based DDoS detection
+    RPKI = "rpki"                       # BGP RPKI / ROA validation
+    NTP_AUDIT = "ntp_audit"             # NTP peer sync + skew
+
     # Meta</old_text>
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -379,6 +390,16 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.COMPLIANCE_BASELINE, ("baseline",)),
     (IntentVerb.NETWORK_DIFF, ("مقارنة الأجهزة", "فرق الشبكة")),
     (IntentVerb.CONSOLE_SERVER, ("خادم وحدة التحكم", "الوصول البديل")),
+    # Phase U Arabic
+    (IntentVerb.DNS_ZONE, ("نقل المنطقة",)),
+    (IntentVerb.DHCPV6, ("ipv6",)),
+    (IntentVerb.AAA_AUDIT, ("tacacs", "aaa")),
+    (IntentVerb.STP_GUARD, ("حماية stp",)),
+    (IntentVerb.PORT_SECURITY, ("أمان المنفذ",)),
+    (IntentVerb.CHASSIS_HEALTH, ("chassis",)),
+    (IntentVerb.DDOS_DETECT, ("هجوم الحرمان", "ddos")),
+    (IntentVerb.RPKI, ("rpki",)),
+    (IntentVerb.NTP_AUDIT, ("ntp", "تزامن الوقت")),
 )
 
 _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
@@ -737,6 +758,52 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "console server", "terminal server", "out-of-band",
         "oob path", "console path",
         "خادم وحدة التحكم", "الوصول البديل",
+    )),
+    # Phase U EN
+    (IntentVerb.DNS_ZONE, (
+        "dns zone", "zone transfer", "axfr", "bind audit",
+        "zone file", "dns audit",
+        "نقل المنطقة",
+    )),
+    (IntentVerb.DHCPV6, (
+        "dhcpv6", "ipv6 slaac", "slaac", "ipv6 assignment",
+        "show ipv6 nd",
+        "ipv6",
+    )),
+    (IntentVerb.AAA_AUDIT, (
+        "aaa audit", "tacacs audit", "radius audit",
+        "show tacacs", "show aaa",
+        "tacacs", "aaa",
+    )),
+    (IntentVerb.STP_GUARD, (
+        "stp guard", "bpdu guard", "root guard",
+        "spanning-tree guard", "stp audit",
+        "حماية stp",
+    )),
+    (IntentVerb.PORT_SECURITY, (
+        "port security", "show port-security",
+        "802.1x", "dot1x",
+        "أمان المنفذ",
+    )),
+    (IntentVerb.CHASSIS_HEALTH, (
+        "chassis", "show switch", "stack health",
+        "show module", "stack member",
+        "chassis",
+    )),
+    (IntentVerb.DDOS_DETECT, (
+        "ddos", "ddos detect", "ddos check",
+        "syn flood", "udp flood",
+        "هجوم الحرمان", "ddos",
+    )),
+    (IntentVerb.RPKI, (
+        "rpki", "roa", "bgp validation",
+        "prefix validation", "rpki check",
+        "rpki",
+    )),
+    (IntentVerb.NTP_AUDIT, (
+        "ntp audit", "ntp peer", "ntp skew",
+        "show ntp", "time sync",
+        "ntp", "تزامن الوقت",
     )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
@@ -1361,6 +1428,26 @@ class ChatOperator:
             return self._do_network_diff(args, lang)
         if verb is IntentVerb.CONSOLE_SERVER:
             return self._do_console_server(args, lang)
+
+        # Phase U — DNS zone / DHCPv6 / AAA / STP guard / Port-sec / Chassis / DDoS / RPKI / NTP
+        if verb is IntentVerb.DNS_ZONE:
+            return self._do_dns_zone(args, lang)
+        if verb is IntentVerb.DHCPV6:
+            return self._do_dhcpv6(args, lang)
+        if verb is IntentVerb.AAA_AUDIT:
+            return self._do_aaa_audit(args, lang)
+        if verb is IntentVerb.STP_GUARD:
+            return self._do_stp_guard(args, lang)
+        if verb is IntentVerb.PORT_SECURITY:
+            return self._do_port_security(args, lang)
+        if verb is IntentVerb.CHASSIS_HEALTH:
+            return self._do_chassis_health(args, lang)
+        if verb is IntentVerb.DDOS_DETECT:
+            return self._do_ddos_detect(args, lang)
+        if verb is IntentVerb.RPKI:
+            return self._do_rpki(args, lang)
+        if verb is IntentVerb.NTP_AUDIT:
+            return self._do_ntp_audit(args, lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -3028,6 +3115,211 @@ B1:1 -> IDF-1-sm-fc1 sm 50m
                 f"Console: {rep.path_count} OOB port(s)"
                 if lang == "en" else
                 f"وحدة التحكم: {rep.path_count} منفذ"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    # -- Phase U: DNS zone / DHCPv6 / AAA / STP guard / Port-sec / Chassis / DDoS / RPKI / NTP
+
+    def _do_dns_zone(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.dns_zone import (
+            parse_zone_file,
+        )
+        rep = parse_zone_file(
+            "example.com",
+            """@ 3600 IN NS ns1.example.com.
+@ 3600 IN A  192.0.2.1
+allow-transfer { any; };
+""",
+        )
+        return self._reply(
+            IntentVerb.DNS_ZONE, ReplyStatus.OK,
+            summary=(
+                f"Zone: {rep.record_count} record(s), "
+                f"{rep.finding_count} finding(s)"
+                if lang == "en" else
+                f"المنطقة: {rep.record_count} سجل، "
+                f"{rep.finding_count} مشكلة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_dhcpv6(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.dhcpv6 import parse_ipv6_nd
+        rep = parse_ipv6_nd(
+            "core-sw-01",
+            "2001:db8::1 Gi0/0 valid 3600s preferred 1800s\n",
+        )
+        return self._reply(
+            IntentVerb.DHCPV6, ReplyStatus.OK,
+            summary=(
+                f"IPv6: {rep.slaac_count} SLAAC, "
+                f"{rep.dhcpv6_count} DHCPv6"
+                if lang == "en" else
+                f"IPv6: {rep.slaac_count} SLAAC، "
+                f"{rep.dhcpv6_count} DHCPv6"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_aaa_audit(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.aaa import parse_cisco_aaa
+        rep = parse_cisco_aaa(
+            "core-sw-01",
+            "10.99.0.10 { 49 cisco 5 }\naaa new-model\n",
+        )
+        return self._reply(
+            IntentVerb.AAA_AUDIT, ReplyStatus.OK,
+            summary=(
+                f"AAA: {rep.server_count} server(s), "
+                f"{rep.finding_count} finding(s)"
+                if lang == "en" else
+                f"AAA: {rep.server_count} خادم، "
+                f"{rep.finding_count} مشكلة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_stp_guard(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.spanning_tree import (
+            parse_stp_interfaces,
+        )
+        rep = parse_stp_interfaces(
+            "core-sw-01",
+            "Gi0/1 Desg Edge disabled disabled disabled\n",
+        )
+        return self._reply(
+            IntentVerb.STP_GUARD, ReplyStatus.OK,
+            summary=(
+                f"STP guard: {rep.interface_count} iface(s), "
+                f"{rep.finding_count} finding(s)"
+                if lang == "en" else
+                f"حماية STP: {rep.interface_count} واجهة، "
+                f"{rep.finding_count} مشكلة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_port_security(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.port_security import (
+            parse_port_security,
+        )
+        rep = parse_port_security(
+            "edge-sw-01",
+            "Gi0/1 enabled 2 1 shutdown 300\n",
+        )
+        return self._reply(
+            IntentVerb.PORT_SECURITY, ReplyStatus.OK,
+            summary=(
+                f"Port-sec: {rep.port_count} port(s), "
+                f"{rep.enabled_count} enabled"
+                if lang == "en" else
+                f"أمان المنافذ: {rep.port_count} منفذ، "
+                f"{rep.enabled_count} مفعّل"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_chassis_health(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.chassis import parse_stack
+        rep = parse_stack(
+            "stack-sw-01",
+            "1 Active aa:bb:cc:dd:ee:01 Ready 15\n",
+        )
+        return self._reply(
+            IntentVerb.CHASSIS_HEALTH, ReplyStatus.OK,
+            summary=(
+                f"Chassis: {rep.stack_size} stack member(s)"
+                if lang == "en" else
+                f"Chassis: {rep.stack_size} عضو"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_ddos_detect(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.flow import (
+            FlowRecord, FlowProtocol,
+        )
+        from netops_autopilot.engines.ddos_detect import (
+            detect as detect_ddos,
+        )
+        flows = [
+            FlowRecord(
+                src_ip="10.0.0.100", dst_ip="10.0.0.1",
+                bytes=100, packets=2000,
+                protocol=FlowProtocol.UDP,
+            ),
+        ]
+        rep = detect_ddos(flows, syn_threshold=1000)
+        return self._reply(
+            IntentVerb.DDOS_DETECT,
+            ReplyStatus.OK if not rep.has_signal else ReplyStatus.BLOCKED,
+            summary=(
+                f"DDoS: {rep.signal_count} signal(s)"
+                if lang == "en" else
+                f"DDoS: {rep.signal_count} إشارة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_rpki(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.rpki import (
+            RpkiValidation, RpkiState, evaluate,
+        )
+        rep = evaluate([
+            RpkiValidation(
+                prefix="10.0.0.0/8", origin_asn=65001,
+                state=RpkiState.VALID,
+            ),
+            RpkiValidation(
+                prefix="172.16.0.0/12", origin_asn=65002,
+                state=RpkiState.INVALID,
+            ),
+        ])
+        return self._reply(
+            IntentVerb.RPKI, ReplyStatus.OK,
+            summary=(
+                f"RPKI: {rep.valid_count} valid, "
+                f"{rep.invalid_count} invalid"
+                if lang == "en" else
+                f"RPKI: {rep.valid_count} صالح، "
+                f"{rep.invalid_count} غير صالح"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_ntp_audit(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.ntp import parse_cisco_ntp
+        rep = parse_cisco_ntp(
+            "core-sw-01",
+            "*10.99.0.1 .GPS. 1 100 64 377 1.234 0.567 0.890\n",
+        )
+        return self._reply(
+            IntentVerb.NTP_AUDIT, ReplyStatus.OK,
+            summary=(
+                f"NTP: {rep.peer_count} peer(s), "
+                f"{rep.synced_count} synced"
+                if lang == "en" else
+                f"NTP: {rep.peer_count} نظير، "
+                f"{rep.synced_count} متزامن"
             ),
             detail=rep.render(lang=lang),
         )
