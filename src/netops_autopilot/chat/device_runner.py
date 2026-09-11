@@ -225,23 +225,19 @@ class DeviceCommandRunner:
             )
 
     def _classify_with_prefix(self, command: str) -> str | None:
-        """Match ``ping <args>`` against the ``ping`` allowlist entry.
+        """Classify a live command the operator typed in chat.
 
-        The base ``CommandAllowlist.classify`` only does exact match.
-        We extend it here so the chat can run ``ping 10.0.0.1`` and
-        have it classified under the ``ping`` template. The match
-        is anchored on the first word of the command.
+        Phase V: this used to fall back to the command's *first word* so
+        ``ping 10.0.0.1`` would classify under the ``ping`` template. That is
+        the same shortcut that let ``ip http server`` through because
+        ``ip routing`` was registered. The data now carries proper
+        placeholders (``ping <target>``), so the structural gate answers
+        directly and nothing has to be guessed from a prefix.
         """
         direct = self._allowlist.classify(command)
         if direct:
             return direct
-        # Try the first word (e.g. "ping" out of "ping 10.0.0.1 repeat 5").
-        head = command.strip().split(None, 1)[0] if command.strip() else ""
-        if head:
-            head_cls = self._allowlist.classify(head)
-            if head_cls:
-                return head_cls
-        return None
+        return self._allowlist.gate(command)
 
     def _execute(
         self, device_ref: str, command: str, timeout_s: float,

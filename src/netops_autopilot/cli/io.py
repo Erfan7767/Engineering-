@@ -44,6 +44,11 @@ class ScriptedIO:
         print(f"Q: {question.splitlines()[-1]}\nA: {answer}")
         return answer
 
+    def append_answers(self, answers: list[str]) -> None:
+        """Queue further deterministic answers (e.g. the typed BOND at the
+        apply gate) without rebuilding the whole script."""
+        self._answers.extend(answers)
+
     def confirm(self, question: str) -> bool:
         answer = self._answers.pop(0) if self._answers else "y"
         print(f"Q: {question}\nA: {answer}")

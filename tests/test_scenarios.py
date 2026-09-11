@@ -55,10 +55,38 @@ def test_scenario_io_consumes_answers_in_order():
     assert bond is True
     # Layout: [bond_confirm="y", blueprint_hint, router, wan, avail, growth]
     assert intent == SCENARIOS["hotel"].blueprint_hint
-    assert router == "hotel-rtr"
+    # Phase V: answers[1] is the ROUTER DEVICE, i.e. a device ref the
+    # simulated fabric actually reports. It used to hold a site name
+    # ("hotel-rtr"), which the orchestrator then fed to the WAN question and
+    # every answer after it landed one slot late.
+    assert router == "seed-01"
     assert wan == "ISP fiber, static IP /30"
     assert avail == "HIGH"
     assert growth == "+40% in 24 months"
+
+
+def test_every_blueprint_hint_is_unambiguous():
+    """A hint that matches two blueprints triggers a disambiguation question
+    the script does not answer, shifting every later answer by one slot.
+
+    This is the regression that made the demo print nonsense Q&A while still
+    reporting success, so it is asserted for every scenario, not just hotel.
+    """
+    from netops_autopilot.engines.blueprints import elicit
+    for sid, sc in SCENARIOS.items():
+        result = elicit(sc.blueprint_hint)
+        assert result.status == "MATCHED", (
+            f"scenario {sid!r} hint {sc.blueprint_hint!r} elicited "
+            f"{result.status} (candidates={result.candidates}); the scripted "
+            f"answers would desynchronise")
+
+
+def test_every_router_answer_is_a_real_device_ref():
+    """answers[1] must name a device the simulated fabric discovers."""
+    for sid, sc in SCENARIOS.items():
+        assert sc.answers[1] == "seed-01", (
+            f"scenario {sid!r} router answer {sc.answers[1]!r} is not a device "
+            f"the simulated fabric reports")
 
 
 def test_scenario_io_is_independent():

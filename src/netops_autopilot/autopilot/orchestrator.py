@@ -96,7 +96,6 @@ class AutopilotEngine:
         self.counters = CounterCollector()
         self.time = time_authority or TimeAuthority(clock=lambda: datetime.now(timezone.utc))
         self.registry = default_registry()
-        self.time = time_authority or self.time
         self.locks = SessionLockManager()
         self.twin = DigitalTwin(store, self.counters)
         self.links = LinkEvidenceEngine(
@@ -128,7 +127,11 @@ class AutopilotEngine:
                     entries.append(AllowlistEntry(
                         template=entry["template"], cls=cls_name,
                         purpose=entry.get("purpose", ""), notes=entry.get("reason", ""),
-                        rollback=entry.get("rollback", "")))
+                        rollback=entry.get("rollback", ""),
+                        # Phase V: `enters_mode` drives the executor's CLI mode
+                        # stack. Dropping it made every rollback plan land in
+                        # the wrong mode, so it must be carried through.
+                        enters_mode=bool(entry.get("enters_mode", False))))
             out[family] = CommandAllowlist(tuple(entries))
         return out
 
@@ -167,6 +170,7 @@ class AutopilotEngine:
                 self.report.final = "BLOCKED-DESIGN"
                 return self.report
             self._phase_render(design)
+            self._bind_mgmt_context(mgmt_session_factory, session)
             self._phase_execution_gate(design, execute, mgmt_session_factory)
         except Failure as exc:
             self._phase(Phase.REPORT, "TYPED_STOP", "; ".join(exc.causes))
@@ -449,7 +453,13 @@ class AutopilotEngine:
             if not allowlist:
                 continue
             ex = ConfigExecutor(allowlist=allowlist, store=self.store,
-                                run_id=f"{self._run_id_safe()}-{ref}")
+                                run_id=f"{self._run_id_safe()}-{ref}",
+                                key_id=self.key_id,
+                                collector_id=f"config-executor:{ref}",
+                                time_authority=self.time)
+            # CONFIG_HIGH_RISK (routing daemons, credentials) is unlocked by
+            # the operator's BOND, never by the engine on its own.
+            ex.arm_high_risk()
             # Open a real management session for this device. The
             # family is REACHABLE because it was discovered. In sim
             # mode this is the SimFabric's per-device session; on
@@ -462,8 +472,7 @@ class AutopilotEngine:
                 # so the apply still records a change record. The
                 # outcome below will reflect this.
                 record = ex.apply(
-                    ref, _NullSession(), rendered.blocks[0].commands
-                    if rendered.blocks else (),
+                    ref, _NullSession(), _all_commands(rendered),
                     dry_run=True,
                     wrappers=rendered.wrappers,
                 )
@@ -474,8 +483,7 @@ class AutopilotEngine:
                 continue
             if session is None:
                 record = ex.apply(
-                    ref, _NullSession(), rendered.blocks[0].commands
-                    if rendered.blocks else (),
+                    ref, _NullSession(), _all_commands(rendered),
                     dry_run=True,
                     wrappers=rendered.wrappers,
                 )
@@ -487,20 +495,28 @@ class AutopilotEngine:
             # gate runs FIRST, so an unsupported line is rejected
             # without ever reaching the wire.
             record = ex.apply(
-                ref, session, rendered.blocks[0].commands
-                if rendered.blocks else (),
+                ref, session, _all_commands(rendered),
                 dry_run=False,
                 wrappers=rendered.wrappers,
             )
             records.append(record.to_dict())
 
         outcomes = [r["outcome"] for r in records]
-        if all(o == "APPLIED" for o in outcomes):
+        if "ROLLBACK_FAILED" in outcomes:
+            # A device we could not restore is the loudest possible outcome.
+            # It must outrank everything else so a run can never be reported
+            # as COMPLETE while a device sits in a partial state.
+            verdict = "ROLLBACK_FAILED"
+            self.report.final = "BLOCKED-ROLLBACK-FAILED"
+        elif all(o == "APPLIED" for o in outcomes):
             verdict = "APPLIED"
             self.report.final = "COMPLETE-APPLIED"
         elif "REJECTED" in outcomes:
             verdict = "REJECTED"
             self.report.final = "BLOCKED-APPLY"
+        elif all(o == "ROLLED_BACK" for o in outcomes):
+            verdict = "ROLLED_BACK"
+            self.report.final = "BLOCKED-ROLLED-BACK"
         else:
             verdict = "PARTIAL"
             self.report.final = "COMPLETE-PARTIAL"
@@ -516,6 +532,23 @@ class AutopilotEngine:
                     f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(outcomes)} device(s)")
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
 
+    def _bind_mgmt_context(self, mgmt_session_factory, console_session) -> None:
+        """Hand the discovery evidence to the management-session factory.
+
+        A real management factory must reach a device at an address discovery
+        *observed*, and must prove the session is the device the plan was
+        built for (serial confirmation) before any configuration is sent. It
+        also reuses the already-open console session for the seed device —
+        opening a second handle on the same serial port would fail.
+
+        Duck-typed: the simulated fabric factory has no such need, so only
+        factories that declare ``bind_crawl`` receive it.
+        """
+        binder = getattr(mgmt_session_factory, "bind_crawl", None)
+        if binder is None:
+            return
+        binder(self.report.crawl, console_session=console_session, seed_ref="seed-01")
+
     def _family_of(self, device_ref: str) -> Optional[str]:
         if not self.report.crawl:
             return None
@@ -526,6 +559,21 @@ class AutopilotEngine:
 
     def _run_id_safe(self) -> str:
         return f"run-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+
+
+def _all_commands(rendered) -> tuple[str, ...]:
+    """Every command of a render, in order, across **all** blocks.
+
+    Phase V: the executor used to apply ``rendered.blocks[0].commands`` only,
+    while ``RenderedConfig.to_text()`` — the preview the human approves —
+    prints every block. The operator therefore approved more than the engine
+    applied, and the difference was silent. Preview and apply now share one
+    source of truth.
+    """
+    out: list[str] = []
+    for block in rendered.blocks:
+        out.extend(block.commands)
+    return tuple(out)
 
 
 class _NullSession:

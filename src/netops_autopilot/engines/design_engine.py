@@ -382,12 +382,26 @@ class DesignEngine:
                 parameters={"vlan_id": zone.vlan_id, "name": zone.zone, "reason": zone.reason},
                 reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
                 provides=(f"vlan:{zone.zone}",)))
+            svi_params = {
+                "vlan_id": zone.vlan_id,
+                # CIDR form — the syntax Junos/RouterOS renderers require.
+                "address": f"{zone.gateway}/{zone.subnet.split('/')[1]}",
+                # Split form — IOS/IOS-XE `ip address <ip> <dotted-mask>`
+                # rejects CIDR, so the renderer must not have to guess.
+                "address_ip": zone.gateway,
+                "address_mask": _prefix_to_mask(zone.subnet.split("/")[1]),
+                "address_prefix": zone.subnet.split("/")[1],
+                "zone": zone.zone, "reason": f"gateway={zone.gateway} (IPAM first usable)",
+            }
+            # An unrepresentable value is omitted, never stringified: the
+            # renderer then reports NOT_MODELED for the node (T2) instead of
+            # emitting a line the device would reject.
+            svi_params = {k: v for k, v in svi_params.items() if v is not None}
             nodes.append(IRNode(
                 node_id=f"svi-{zone.zone}",
                 target=_REF(target),
                 operation=Operation.CREATE, feature="svi", vendor_os=os_name,
-                parameters={"vlan_id": zone.vlan_id, "address": f"{zone.gateway}/{zone.subnet.split('/')[1]}",
-                            "zone": zone.zone, "reason": f"gateway={zone.gateway} (IPAM first usable)"},
+                parameters=svi_params,
                 reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
                 requires=(f"vlan:{zone.zone}",),
                 provides=(f"l3:{zone.zone}",)))
@@ -420,6 +434,26 @@ class DesignEngine:
                 requires=(f"vlan:{acc.zone}",),)]
             out[ref] = _IR(ref, os_name, tuple(nodes))
         return {ref: ir for ref, ir in sorted(out.items()) if ir.nodes}
+
+
+def _prefix_to_mask(prefix: str) -> Optional[str]:
+    """Dotted-quad netmask for an IPv4 prefix length.
+
+    IOS/IOS-XE ``ip address`` requires ``<ip> <dotted-mask>`` and rejects the
+    CIDR form, so the IR carries both spellings and the renderer picks the one
+    its vendor needs.
+
+    Returns ``None`` for IPv6: IPv6 has no dotted mask, and silently emitting
+    one would be a guess. The parameter is then left unbound, which makes the
+    renderer mark that node NOT_MODELED (T2) — visible, never invented.
+    """
+    try:
+        prefix_len = int(prefix)
+    except (TypeError, ValueError):
+        return None
+    if not 0 <= prefix_len <= 32:
+        return None
+    return str(ipaddress.IPv4Network(f"0.0.0.0/{prefix_len}").netmask)
 
 
 def _REF(device_ref: str):

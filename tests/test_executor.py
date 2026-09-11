@@ -33,10 +33,13 @@ from netops_autopilot.access.executor import (
 
 
 class _FakeSession:
-    """An in-memory ExecSession — every execute() returns canned bytes.
+    """An in-memory ExecSession that models the device's configuration state.
 
-    The executor calls ``show running-config`` to compute hashes; we use
-    a counter on the session to know which call we are on.
+    Phase V: the previous version returned a *different* running-config on
+    every read, so a correctly restored device looked unrestored. A real
+    device's ``show running-config`` reflects what is configured, so this
+    fake accumulates applied commands and renders them back. ``fail_on``
+    still lets a test force a transport-level failure on a chosen line.
     """
 
     def __init__(
@@ -47,8 +50,28 @@ class _FakeSession:
         self._responses = responses or {}
         self._fail_on = fail_on or set()
         self.sent: List[str] = []
+        self.state: set = set()
         self.read_running_count = 0
         self.lock = threading.Lock()
+
+    # ---- the device's configuration model
+    def _negate(self, cmd: str) -> None:
+        body = cmd[3:].strip()
+        if body in self.state:
+            self.state.discard(body)
+            return
+        head = body.split()[0] if body.split() else ""
+        for existing in list(self.state):
+            if existing.split()[0] == head:
+                self.state.discard(existing)
+
+    def _mutate(self, cmd: str) -> None:
+        if cmd.startswith("no "):
+            self._negate(cmd)
+        elif cmd.startswith("default "):
+            self._negate(cmd[len("default "):])
+        else:
+            self.state.add(cmd)
 
     def execute(self, command: str, timeout_s: Optional[float] = None) -> bytes:
         with self.lock:
@@ -56,9 +79,17 @@ class _FakeSession:
             if command.strip() in self._fail_on:
                 raise RuntimeError(f"transient failure: {command}")
             if command.strip() == "show running-config":
-                # Cycle through two baseline hashes so before/after differ.
                 self.read_running_count += 1
-                return f"hash-{self.read_running_count}".encode("utf-8")
+                # Cisco header noise included on purpose: the executor must
+                # normalize it away instead of seeing a phantom change.
+                body = "\n".join(sorted(self.state))
+                return (f"Building configuration...\n\n"
+                        f"Current configuration : {len(body)} bytes\n!\n"
+                        f"{body}\nend\n").encode("utf-8")
+            if command.strip() in ("conf t", "configure terminal", "end",
+                                   "exit", "enable"):
+                return b""                       # mode transition, no output
+            self._mutate(command.strip())
             return self._responses.get(
                 command.strip(), f"% applied: {command}".encode("utf-8"),
             )
@@ -68,14 +99,26 @@ class _FakeSession:
 
 
 def _build_allowlist() -> CommandAllowlist:
-    """A minimal allowlist that approves 'hostname X' and 'vlan N'."""
+    """A minimal allowlist that approves 'hostname X' and 'vlan N'.
+
+    Phase V: templates carry their placeholders and their inverse, exactly as
+    the shipped vendor data does. The previous fixture registered bare heads
+    ("hostname", "vlan"), which only ever matched under first-token matching —
+    the defect that let ``ip http server`` through because ``ip routing`` was
+    registered.
+    """
     entries = (
-        AllowlistEntry(template="hostname", cls="CONFIG_REVERSIBLE",
-                       purpose="set hostname", notes="no hostname"),
-        AllowlistEntry(template="vlan", cls="CONFIG_REVERSIBLE",
-                       purpose="create vlan", notes="no vlan"),
+        AllowlistEntry(template="hostname <hostname>", cls="CONFIG_REVERSIBLE",
+                       purpose="set hostname", rollback="no hostname"),
+        AllowlistEntry(template="vlan <vlan_id>", cls="CONFIG_REVERSIBLE",
+                       purpose="create vlan", rollback="no vlan <vlan_id>",
+                       enters_mode=True),
+        AllowlistEntry(template="name <name>", cls="CONFIG_REVERSIBLE",
+                       purpose="vlan name", rollback="no name"),
         AllowlistEntry(template="show running-config", cls="READ_ONLY",
                        purpose="hash baseline", notes=""),
+        AllowlistEntry(template="write erase", cls="FORBIDDEN",
+                       purpose="never", notes="destroys the device"),
     )
     return CommandAllowlist(entries)
 
@@ -121,11 +164,19 @@ def test_failure_mid_stream_triggers_rollback():
     sess = _FakeSession(fail_on={"vlan 10"})
     ex = ConfigExecutor(allowlist=al, run_id="t3")
     rec = ex.apply("dev1", sess, ["hostname router-a", "vlan 10", "vlan 20"])
-    # The change is partial: hostname applied, vlan 10 failed, vlan 20 never sent.
-    assert rec.outcome in (ChangeOutcome.APPLIED_PARTIAL, ChangeOutcome.ROLLED_BACK)
+    # hostname applied, vlan 10 failed, vlan 20 never sent, hostname undone.
+    assert rec.outcome is ChangeOutcome.ROLLED_BACK
     assert "COMMAND_FAILED" in " ".join(rec.failure_causes)
-    # The rollback plan was recorded (typed, never silent).
-    assert any("ROLLBACK" in rb for rb in rec.rollback_commands)
+    # Phase V: the plan is built from the allowlist's declared inverses and is
+    # ACTUALLY ISSUED. The old assertion looked for the "ROLLBACK" marker text,
+    # which only ever appears when a template declares no inverse at all —
+    # i.e. it passed while the rollback silently did nothing.
+    assert rec.rollback_commands == ["no hostname", "no vlan 10", "no vlan 20"]
+    assert rec.rollback_issued >= 1
+    assert "no hostname" in sess.sent
+    # The device is provably back at the baseline it started from.
+    assert sess.state == set()
+    assert rec.rollback_hash == rec.before_hash
     # The failed command was not silently retried.
     assert "vlan 20" not in sess.sent
 
@@ -210,7 +261,14 @@ def test_dry_run_still_rejects_unknown_commands():
 # ---------------- wrappers ----------------
 
 
-def test_wrappers_are_recorded_in_classification():
+def test_wrappers_are_issued_as_mode_transitions():
+    """Phase V: mode-transition wrappers MUST reach the device.
+
+    The previous behaviour recorded ``conf t`` as a comment and never sent it,
+    so on real hardware every config line was typed in user EXEC mode and
+    rejected. Wrappers are now issued, but only from a closed set — anything
+    else is refused so configuration cannot be smuggled through them.
+    """
     al = _build_allowlist()
     sess = _FakeSession()
     ex = ConfigExecutor(allowlist=al, run_id="t9")
@@ -218,14 +276,26 @@ def test_wrappers_are_recorded_in_classification():
         "dev1", sess, ["vlan 10"],
         wrappers=(["conf t"], ["end"]),
     )
-    # Wrappers (conf t, end) are vendor-mode transitions; the executor
-    # records them on the change but does not issue them to the device
-    # (the device's own prompt cycle handles the mode change).
     classifications = [c.classification for c in rec.commands]
-    assert "COMMENT" in classifications
-    # The actual command was sent and applied.
+    assert "MODE_TRANSITION" in classifications
+    # The wrapper actually reached the device, before the config line.
+    assert "conf t" in sess.sent
+    assert sess.sent.index("conf t") < sess.sent.index("vlan 10")
+    assert "end" in sess.sent
     assert "vlan 10" in sess.sent
     assert rec.outcome is ChangeOutcome.APPLIED
+
+
+def test_unsafe_wrapper_is_refused():
+    """A wrapper outside the known mode-transition set is never issued."""
+    al = _build_allowlist()
+    sess = _FakeSession()
+    ex = ConfigExecutor(allowlist=al, run_id="t9b")
+    rec = ex.apply("dev1", sess, ["vlan 10"],
+                   wrappers=(["conf t", "ip http server"], ["end"]))
+    assert rec.outcome is ChangeOutcome.REJECTED
+    assert any("UNSAFE_WRAPPER" in c for c in rec.failure_causes)
+    assert sess.sent == []          # nothing at all reached the device
 
 
 # ---------------- change record shape ----------------

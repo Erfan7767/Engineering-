@@ -38,12 +38,12 @@ SCENARIOS: dict[str, Scenario] = {
         description="Small branch: 1 router, 1 LAN, 1 guest VLAN, ISP DHCP.",
         answers=(
             "y",
-            "branch-01",
+            "seed-01",
             "ISP fiber DHCP handoff",
             "STANDARD",
             "+25% in 12 months",
         ),
-        blueprint_hint="small branch office with guest WiFi",
+        blueprint_hint="branch office with VoIP",
         expected_outcome="COMPLETE-STAGED",
     ),
     "leaf-spine": Scenario(
@@ -51,7 +51,7 @@ SCENARIOS: dict[str, Scenario] = {
         description="2-spine, 4-leaf fabric; L3 boundary at the spine; HA enabled.",
         answers=(
             "y",
-            "spine-01",
+            "seed-01",
             "Two uplinks, BGP to upstream AS",
             "HIGH",
             "+50% in 18 months",
@@ -64,7 +64,7 @@ SCENARIOS: dict[str, Scenario] = {
         description="Hotel: 1 router, staff VLAN + guest VLAN, captive portal, HIGH availability.",
         answers=(
             "y",
-            "hotel-rtr",
+            "seed-01",
             "ISP fiber, static IP /30",
             "HIGH",
             "+40% in 24 months",
@@ -77,7 +77,7 @@ SCENARIOS: dict[str, Scenario] = {
         description="Retail store: 1 router, POS VLAN + back-office VLAN + guest, PCI isolation.",
         answers=(
             "y",
-            "retail-01",
+            "seed-01",
             "ISP cable modem DHCP",
             "STANDARD",
             "+15% in 12 months",

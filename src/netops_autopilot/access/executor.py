@@ -3,18 +3,23 @@
 This is the highest-stakes module in the system. The execution contract:
 
 * **T3 (no CONFIG without allowlist):** every line of the rendered config
-  is checked against :class:`CommandAllowlist` BEFORE it is sent. A line
-  not in the CONFIG_REVERSIBLE/CONFIG_HIGH_RISK classes is rejected; the
-  executor never sends a command it cannot classify.
+  is structurally matched against :class:`CommandAllowlist` BEFORE it is
+  sent. A line that does not match a CONFIG_REVERSIBLE/CONFIG_HIGH_RISK
+  template — arity and every literal segment — is rejected; the executor
+  never sends a command it cannot classify.
 * **L04 (deterministic authority):** the executor takes a fully
   rendered config (the IR is gone) — no live LLM, no free-form text.
 * **L09 (rollback on failure):** the executor pre-builds the rollback
-  plan from the allowlist, applies it on first verification failure,
-  and records the failure class (ROLLED_BACK vs PARTIAL).
+  plan from the allowlist, **issues it to the device** on the first
+  failure, re-reads state to confirm the device is back, and records
+  whether the rollback actually completed. A rollback that did not
+  complete is ``ROLLBACK_FAILED`` — loud, never silently reported as
+  ``ROLLED_BACK``.
 * **L13 (blast-radius is a recorded fact):** every change writes a
   `config_change` event to the ledger with the device_ref, the
   irreversible-flag, the before/after running-config hash, and the
-  commit id (where available).
+  commit id (where available). A ledger write that fails is recorded on
+  the ChangeRecord, never swallowed.
 * **L11 (secrets redacted):** password fields are never sent in
   plaintext and never logged; the redact() pipeline runs on every
   command before it leaves the host.
@@ -24,20 +29,49 @@ The caller passes a :class:`SerialConsoleTransport`, an
 :class:`SSHConsoleTransport`, or any object with a matching ``execute``
 method (the canonical ``ExecSession`` shape). This makes it equally
 usable from the simulator and from real hardware.
+
+Phase V changes (why they matter):
+
+1. **The rollback plan is now actually issued.** The previous revision
+   built ``rollback_commands`` and then discarded them: the loop body
+   only recorded comment lines and never called ``session.execute``.
+   The device was left half-configured while the record claimed
+   ``ROLLED_BACK``. That is the single most dangerous defect this
+   module ever had, because it made an unsafe state look safe.
+2. **Rollback runs in the correct CLI mode.** Inverses are issued in
+   reverse order with the mode stack rewound to the depth each command
+   was applied at, so ``no name`` lands inside ``vlan 10`` and
+   ``no vlan 10`` lands in global config.
+3. **Mode-transition wrappers are sent.** ``configure terminal`` used to
+   be swallowed as a comment, so config lines reached a real device in
+   user EXEC mode and failed. Wrappers are now issued, gated by a closed
+   set of known mode-transition commands.
+4. **Allowlist matching is structural.** First-token matching let
+   ``ip http server`` through because ``ip routing`` was registered.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, Optional, Protocol, Sequence
 
 from ..core.failures import Failure, FailureClass
-from ..ledger.models import OperatorIdentity
+from ..core.ids import new_id
+from ..ledger.models import (
+    ClockStatusEnum,
+    CollectorIdentity,
+    Event,
+    EventType,
+    OperatorIdentity,
+    RawArtifact,
+)
 from ..ledger.store import LedgerStore
-from .allowlist import CommandAllowlist
+from .allowlist import CONFIG_CLASSES, CommandAllowlist, CommandMatch
 
 
 class ExecSession(Protocol):
@@ -50,11 +84,29 @@ class ExecSession(Protocol):
 #: Actor identity used for every event the executor writes.
 _EXECUTOR_ACTOR = OperatorIdentity(kind="ENGINE", id="CONFIG-EXECUTOR")
 
+#: The closed set of commands the executor will issue as CLI *mode
+#: transitions*, i.e. outside the CONFIG allowlist gate. These change no
+#: configuration state; they move the session between modes (or, for
+#: Junos, commit an already-staged candidate). Anything not in this set
+#: is refused — a caller cannot smuggle configuration through ``wrappers``.
+SAFE_MODE_TRANSITIONS = frozenset({
+    # Cisco IOS / IOS-XE
+    "enable", "disable", "end", "exit",
+    "configure terminal", "conf t", "configure t",
+    # Junos
+    "configure", "configure private", "configure exclusive", "top", "up",
+    "commit check", "commit confirmed 1", "commit confirmed 2",
+    "commit confirmed 5", "commit", "rollback 0",
+    # ArubaOS / FortiOS session-level
+    "enable-session", "exit-session",
+})
+
 
 class ChangeOutcome(str, Enum):
     APPLIED = "APPLIED"
     APPLIED_PARTIAL = "APPLIED_PARTIAL"            # some blocks applied
-    ROLLED_BACK = "ROLLED_BACK"                    # verification failed; rolled back
+    ROLLED_BACK = "ROLLED_BACK"                    # rolled back AND confirmed clean
+    ROLLBACK_FAILED = "ROLLBACK_FAILED"            # rollback attempted, device NOT confirmed clean
     REJECTED = "REJECTED"                          # allowlist rejected a command
     BLOCKED_DRY_RUN_MISMATCH = "BLOCKED_DRY_RUN_MISMATCH"
 
@@ -65,11 +117,13 @@ class CommandResult:
 
     device_ref: str
     command: str
-    classification: str                # CONFIG_REVERSIBLE | CONFIG_HIGH_RISK | REJECTED
+    classification: str                # CONFIG_REVERSIBLE | CONFIG_HIGH_RISK | REJECTED | ...
     accepted: bool
     response_bytes: bytes
     response_hash: str
     error: Optional[str] = None
+    phase: str = "APPLY"               # APPLY | MODE | ROLLBACK | VERIFY | BASELINE
+    depth: int = 0                     # CLI mode depth the command was issued at
 
     def ok(self) -> bool:
         return self.accepted and self.error is None
@@ -86,22 +140,34 @@ class ChangeRecord:
     finished_at: Optional[datetime] = None
     commands: list[CommandResult] = field(default_factory=list)
     rollback_commands: list[str] = field(default_factory=list)
+    rollback_results: list[CommandResult] = field(default_factory=list)
     before_hash: Optional[str] = None
     after_hash: Optional[str] = None
+    rollback_hash: Optional[str] = None
     commit_id: Optional[str] = None
     failure_causes: list[str] = field(default_factory=list)
 
     @property
     def command_count(self) -> int:
-        return len(self.commands)
+        return len([c for c in self.commands if c.phase == "APPLY"])
 
     @property
     def applied_count(self) -> int:
-        return sum(1 for c in self.commands if c.ok())
+        return sum(1 for c in self.commands
+                   if c.phase == "APPLY" and c.classification in CONFIG_CLASSES and c.ok())
 
     @property
     def rejected_count(self) -> int:
         return sum(1 for c in self.commands if not c.accepted)
+
+    @property
+    def rollback_issued(self) -> int:
+        """How many inverse commands actually reached the device."""
+        return len([r for r in self.rollback_results if r.phase == "ROLLBACK"])
+
+    @property
+    def rollback_succeeded(self) -> int:
+        return sum(1 for r in self.rollback_results if r.phase == "ROLLBACK" and r.ok())
 
     def to_dict(self) -> dict:
         return {
@@ -115,9 +181,12 @@ class ChangeRecord:
             "rejected_count": self.rejected_count,
             "before_hash": self.before_hash,
             "after_hash": self.after_hash,
+            "rollback_hash": self.rollback_hash,
             "commit_id": self.commit_id,
             "failure_causes": list(self.failure_causes),
             "rollback_commands": list(self.rollback_commands),
+            "rollback_issued": self.rollback_issued,
+            "rollback_succeeded": self.rollback_succeeded,
             "commands": [
                 {
                     "command": c.command,
@@ -125,8 +194,19 @@ class ChangeRecord:
                     "accepted": c.accepted,
                     "response_hash": c.response_hash,
                     "error": c.error,
+                    "phase": c.phase,
+                    "depth": c.depth,
                 }
                 for c in self.commands
+            ],
+            "rollback_results": [
+                {
+                    "command": r.command,
+                    "accepted": r.accepted,
+                    "error": r.error,
+                    "response_hash": r.response_hash,
+                }
+                for r in self.rollback_results
             ],
         }
 
@@ -135,116 +215,77 @@ def _hash_response(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
-def _classify_command(command: str, allowlist: CommandAllowlist) -> tuple[str, bool]:
-    """Return (class_name, ok). ok=False ⇒ REJECTED.
+@dataclass(frozen=True)
+class _PlannedLine:
+    """One line of the change, classified, with the mode depth it runs at."""
 
-    The allowlist classifies a *template*, not a fully-baked command. To
-    keep the executor's surface simple, we accept any command whose first
-    word (the verb) is in the CONFIG_REVERSIBLE or CONFIG_HIGH_RISK
-    classes, and refuse the rest. This is intentionally conservative —
-    it means the human must label the allowlist with the actual rendered
-    forms (which the renderer does correctly when the IR is well-formed).
+    raw: str
+    stripped: str
+    kind: str                          # CONFIG | MODE | COMMENT
+    cls: str
+    match: Optional[CommandMatch]
+    depth: int
+    enters_mode: bool
+
+
+def _build_rollback_plan(
+    lines: Sequence[_PlannedLine], allowlist: CommandAllowlist,
+) -> list[tuple[str, int]]:
+    """Build ``(inverse_command, depth)`` pairs for every reversible line.
+
+    The inverse comes from the allowlist entry that matched the command,
+    resolved by :meth:`CommandAllowlist.resolve_inverse` so placeholders
+    bind by name. A line with no declared inverse yields a
+    ``! MANUAL_ROLLBACK_REQUIRED:`` marker — typed, never silently
+    skipped, and never issued to a device.
     """
-    stripped = command.strip()
-    # Walk through every template and try a parameter-free match.
-    for entry in allowlist._by_template.values():
-        if entry.cls not in ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK"):
+    plan: list[tuple[str, int]] = []
+    for line in lines:
+        if line.kind != "CONFIG":
             continue
-        tmpl = entry.template.strip()
-        # Compare the leading literal (before the first space/<).
-        head_tmpl = tmpl.split(" ", 1)[0]
-        head_cmd = stripped.split(" ", 1)[0]
-        if head_tmpl == head_cmd:
-            return (entry.cls, True)
-    return ("REJECTED", False)
-
-
-def _build_rollback_plan(commands: Sequence[str], allowlist: CommandAllowlist) -> list[str]:
-    """Build the rollback plan from the allowlist's ``rollback`` fields.
-
-    For every accepted command, look up its template's ``rollback`` and
-    substitute the same arguments. If the template has no ``rollback``
-    field, the line is added as ``! MANUAL_ROLLBACK_REQUIRED: <cmd>``
-    so the operator knows what to undo by hand (typed, never silent).
-    """
-    plan: list[str] = []
-    for cmd in commands:
-        stripped = cmd.strip()
-        # Find the matching template (head match: "vlan 10" → "vlan <vlan_id>").
-        # When multiple templates share the same head, prefer the one
-        # whose token count equals the command's token count (the
-        # exact match); otherwise pick the shortest template so the
-        # substitution lines up by position.
-        candidates: list[tuple[int, int, object]] = []  # (arity_delta, len, entry)
-        for entry in allowlist._by_template.values():
-            if entry.cls not in ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK"):
-                continue
-            tmpl = entry.template.strip()
-            head_tmpl = tmpl.split(" ", 1)[0]
-            head_cmd = stripped.split(" ", 1)[0]
-            if head_tmpl != head_cmd:
-                continue
-            tmpl_tokens = len(tmpl.split())
-            cmd_tokens = len(stripped.split())
-            arity_delta = abs(tmpl_tokens - cmd_tokens)
-            candidates.append((arity_delta, len(tmpl), entry, tmpl))
-        if candidates:
-            candidates.sort(key=lambda c: (c[0], c[1]))
-            entry, tmpl = candidates[0][2], candidates[0][3]
-            if entry.rollback:
-                plan.append(_substitute_template(entry.rollback, tmpl, stripped))
-            else:
-                plan.append(f"! ROLLBACK: {stripped}  (verify before issuing: see template {entry.template!r})")
+        inverse = allowlist.resolve_inverse(line.stripped)
+        if inverse:
+            plan.append((inverse, line.depth))
         else:
-            plan.append(f"! MANUAL_ROLLBACK_REQUIRED: {stripped}")
+            tmpl = line.match.template if line.match else "?"
+            plan.append((
+                f"! MANUAL_ROLLBACK_REQUIRED: {line.stripped}  (template {tmpl!r} declares no inverse)",
+                line.depth,
+            ))
     return plan
 
 
-def _substitute_template(rollback: str, template: str, command: str) -> str:
-    """Substitute the placeholders in ``rollback`` using the token
-    positions from ``template`` and the actual ``command`` values.
+#: Lines that carry no configuration meaning and that several platforms vary
+#: between two reads of an *unchanged* config (IOS prints the byte count in
+#: the header; some builds print a timestamp). Hashing them verbatim would
+#: make an identical configuration look changed — and a correctly rolled-back
+#: device look unrestored.
+_CONFIG_NOISE = (
+    re.compile(r"^\s*building configuration", re.IGNORECASE),
+    re.compile(r"^\s*current configuration\s*:\s*\d+\s*bytes", re.IGNORECASE),
+    re.compile(r"^\s*!.*$"),
+    re.compile(r"^\s*$"),
+    re.compile(r"^\s*last configuration change at", re.IGNORECASE),
+    re.compile(r"^\s*! time:", re.IGNORECASE),
+)
 
-    The allowlist template looks like ``"vlan <vlan_id>"`` and the
-    real command is ``"vlan 10"``. The rollback template is
-    ``"no vlan <vlan_id>"``. We map each placeholder in *either*
-    template by position to the corresponding token in the command,
-    so the inverse becomes ``"no vlan 10"``.
 
-    This is positional, not semantic: it works for the simple
-    single-arg and two-arg templates we ship. For complex commands
-    we fall back to leaving the placeholders as-is (a typed hint,
-    not a silent substitution).
-    """
-    tmpl_tokens = template.split()
-    cmd_tokens = command.split()
-    if len(tmpl_tokens) != len(cmd_tokens):
-        # Different arity — leave the rollback template as-is so the
-        # operator can complete the substitution by hand (typed,
-        # never silent).
-        return rollback
-    # Map: each placeholder token in the *template* (by position)
-    # corresponds to a real value in the *command*. Collect those
-    # values in order, then walk the *rollback* template replacing
-    # any placeholder token by the next value.
-    values: list[str] = []
-    for t_tok, c_tok in zip(tmpl_tokens, cmd_tokens):
-        if t_tok.startswith("<") and t_tok.endswith(">"):
-            values.append(c_tok)
-    if not values:
-        return rollback
-    out_tokens: list[str] = []
-    i = 0
-    for r_tok in rollback.split():
-        if r_tok.startswith("<") and r_tok.endswith(">") and i < len(values):
-            out_tokens.append(values[i])
-            i += 1
-        else:
-            out_tokens.append(r_tok)
-    return " ".join(out_tokens)
+def normalize_running_config(data: bytes) -> bytes:
+    """Strip non-configuration noise so two reads of the same config hash equal."""
+    out: list[str] = []
+    for line in data.decode("utf-8", "replace").splitlines():
+        if any(rx.match(line) for rx in _CONFIG_NOISE):
+            continue
+        out.append(line.rstrip())
+    return "\n".join(out).encode("utf-8")
 
 
 def _read_running_hash(session: ExecSession) -> Optional[str]:
     """Capture a baseline hash of the running-config for drift detection.
+
+    The hash covers the *normalized* configuration (see
+    :func:`normalize_running_config`) so platform header noise cannot be
+    mistaken for a configuration change.
 
     Returns ``None`` if the device doesn't support a hashed read (a real
     device will, the simulator will be best-effort). The hash is recorded
@@ -252,7 +293,7 @@ def _read_running_hash(session: ExecSession) -> Optional[str]:
     """
     try:
         data = session.execute("show running-config", timeout_s=10.0)
-        return hashlib.sha256(data).hexdigest()[:16]
+        return hashlib.sha256(normalize_running_config(data)).hexdigest()[:16]
     except Exception:  # noqa: BLE001 — best-effort
         return None
 
@@ -267,6 +308,10 @@ class ConfigExecutor:
         store: Optional[LedgerStore] = None,
         run_id: str = "ad-hoc",
         verify_after_each_block: bool = True,
+        send_mode_wrappers: bool = True,
+        key_id: Optional[str] = None,
+        collector_id: str = "config-executor",
+        time_authority=None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if not isinstance(allowlist, CommandAllowlist):
@@ -275,6 +320,11 @@ class ConfigExecutor:
         self._store = store
         self._run_id = run_id
         self._verify_per_block = verify_after_each_block
+        self._send_wrappers = send_mode_wrappers
+        self._key_id = key_id
+        self._collector_id = collector_id
+        self._time = time_authority
+        self._armed = False
         self._clock = clock
 
     @property
@@ -295,143 +345,98 @@ class ConfigExecutor:
 
         Every line is checked against the allowlist BEFORE it is sent. On
         any rejection, the executor stops, marks REJECTED, and returns a
-        record. On the first verification failure, the rollback plan is
-        issued and the record is marked ROLLED_BACK.
+        record. On the first failure the rollback plan is issued to the
+        device and the outcome reflects whether the device was actually
+        restored (``ROLLED_BACK``) or not (``ROLLBACK_FAILED``).
         """
         enter, exit_ = wrappers
-        all_lines: list[str] = list(enter) + list(commands) + list(exit_)
         record = ChangeRecord(
             device_ref=device_ref, run_id=self._run_id,
             outcome=ChangeOutcome.APPLIED,
             started_at=self._clock(),
-            rollback_commands=_build_rollback_plan(list(commands), self._allowlist),
         )
 
-        if not dry_run:
-            record.before_hash = _read_running_hash(session)
+        # ----- Phase 0: plan. Classify every line and compute mode depth.
+        try:
+            planned = self._plan(list(enter), list(commands), list(exit_),
+                                 record=record)
+        except Failure as exc:
+            record.outcome = ChangeOutcome.REJECTED
+            record.failure_causes.extend(exc.causes)
+            record.finished_at = self._clock()
+            self._record_to_ledger(record)
+            return record
 
-        # ----- Phase 1: classify every line; reject if any are not allowed.
-        classified: list[tuple[str, str, bool]] = []  # (line, cls, ok)
-        for line in all_lines:
-            stripped = line.strip()
-            if not stripped:
-                # Whitespace passes through.
-                classified.append((line, "COMMENT", True))
-                continue
-            if stripped.startswith("!") or stripped.startswith("#"):
-                classified.append((line, "COMMENT", True))
-                continue
-            # Wrappers that aren't commands (e.g. conf t, end) are NOT
-            # classified by the allowlist — they are vendor-mode
-            # transitions. We treat them as COMMENT passthrough.
-            # We do NOT passthrough "write" — that word introduces
-            # dangerous commands (write erase, write memory). Only
-            # the explicit safe form "write memory" is allowed (the
-            # allowlist gates everything else).
-            head = stripped.split(" ", 1)[0].lower()
-            if head in ("conf", "configure", "end", "exit", "exit-config",
-                        "exit-address-family"):
-                classified.append((line, "COMMENT", True))
-                continue
-            cls_name, ok = _classify_command(stripped, self._allowlist)
-            classified.append((line, cls_name, ok))
-            if not ok:
-                # Stop on first rejection. Record the line and abort.
-                record.commands.append(CommandResult(
-                    device_ref=device_ref, command=stripped,
-                    classification=cls_name, accepted=False,
-                    response_bytes=b"", response_hash="",
-                    error=f"NOT_ALLOWLISTED: {cls_name}",
-                ))
-                record.outcome = ChangeOutcome.REJECTED
-                record.failure_causes.append(
-                    f"COMMAND_NOT_ALLOWLISTED:{stripped}"
-                )
-                record.finished_at = self._clock()
-                self._record_to_ledger(record)
-                return record
+        config_lines = [p for p in planned if p.kind == "CONFIG"]
+        plan = _build_rollback_plan(config_lines, self._allowlist)
+        record.rollback_commands = [cmd for cmd, _d in plan]
+
+        # A high-risk line needs a stronger gate than a reversible one.
+        high_risk = [p.stripped for p in config_lines if p.cls == "CONFIG_HIGH_RISK"]
+        if high_risk and not self._authorize_high_risk(high_risk):
+            record.outcome = ChangeOutcome.REJECTED
+            record.failure_causes.append(
+                "HIGH_RISK_NOT_AUTHORIZED:" + "|".join(high_risk))
+            record.finished_at = self._clock()
+            self._record_to_ledger(record)
+            return record
 
         if dry_run:
-            # No I/O. Record the plan and exit cleanly.
-            for line, cls_name, _ok in classified:
+            for p in planned:
                 record.commands.append(CommandResult(
-                    device_ref=device_ref, command=line.strip(),
-                    classification=cls_name, accepted=True,
+                    device_ref=device_ref, command=p.stripped,
+                    classification=p.cls, accepted=True,
                     response_bytes=b"", response_hash="",
+                    phase="APPLY" if p.kind == "CONFIG" else "MODE",
+                    depth=p.depth,
                 ))
             record.outcome = ChangeOutcome.APPLIED
             record.finished_at = self._clock()
             self._record_to_ledger(record)
             return record
 
-        # ----- Phase 2: actually apply.
-        # We send commands one-by-one so a failure mid-stream is local.
-        applied_so_far: list[CommandResult] = []
-        for line, cls_name, ok in classified:
-            stripped = line.strip()
-            if cls_name == "COMMENT":
-                # Wrappers and comments: record on the change but don't
-                # issue to the device (the device's own prompt cycle
-                # handles mode transitions; comments are not legal CLI).
-                applied_so_far.append(CommandResult(
-                    device_ref=device_ref, command=stripped,
-                    classification="COMMENT", accepted=True,
-                    response_bytes=b"", response_hash="",
-                ))
-                continue
-            if not stripped:
-                continue
-            try:
-                response = session.execute(stripped, timeout_s=30.0)
-                result = CommandResult(
-                    device_ref=device_ref, command=stripped,
-                    classification=cls_name, accepted=True,
-                    response_bytes=response,
-                    response_hash=_hash_response(response),
-                )
-            except Failure as exc:
-                result = CommandResult(
-                    device_ref=device_ref, command=stripped,
-                    classification=cls_name, accepted=False,
-                    response_bytes=b"", response_hash="",
-                    error="; ".join(exc.causes),
-                )
-            except Exception as exc:  # noqa: BLE001 — transport-level
-                result = CommandResult(
-                    device_ref=device_ref, command=stripped,
-                    classification=cls_name, accepted=False,
-                    response_bytes=b"", response_hash="",
-                    error=f"{type(exc).__name__}:{exc}",
-                )
-            applied_so_far.append(result)
-            if not result.ok():
-                # First failure: record everything we already applied, the
-                # failing line, and roll back.
-                record.commands.extend(applied_so_far)
-                record.outcome = ChangeOutcome.APPLIED_PARTIAL
-                record.failure_causes.append(
-                    f"COMMAND_FAILED:{stripped}:{result.error}"
-                )
-                self._rollback(session, record.rollback_commands,
-                               record, applied_so_far[:-1])
-                if not applied_so_far[:-1] or self._all_commands_failed(applied_so_far[:-1]):
-                    record.outcome = ChangeOutcome.ROLLED_BACK
-                record.finished_at = self._clock()
-                self._record_to_ledger(record)
-                return record
+        # ----- Phase 1: baseline evidence.
+        record.before_hash = _read_running_hash(session)
 
-        record.commands = list(applied_so_far)
-        record.finished_at = self._clock()
+        # ----- Phase 2: apply. Mode transitions are explicit lines in the
+        # plan (derived from the renderer's indentation), so the session is
+        # always in the mode the next command expects.
+        current_depth = 0
+        applied: list[_PlannedLine] = []
+        for p in planned:
+            if p.kind == "COMMENT" or not p.stripped:
+                continue
+            if p.kind == "MODE":
+                result = self._issue(session, record, p.stripped, "MODE",
+                                     p.cls, p.depth)
+                if not result.ok():
+                    return self._abort(session, record, plan, applied,
+                                       f"MODE_COMMAND_FAILED:{p.stripped}:{result.error}",
+                                       current_depth)
+                # An `exit` recorded at depth d means "leaving d+1 for d".
+                # Other wrappers (configure terminal / end / commit) do not
+                # change the sub-mode depth the CONFIG lines are counted in.
+                if p.stripped.lower() == "exit":
+                    current_depth = p.depth
+                continue
+
+            result = self._issue(session, record, p.stripped, "APPLY",
+                                 p.cls, p.depth)
+            if not result.ok():
+                return self._abort(session, record, plan, applied,
+                                   f"COMMAND_FAILED:{p.stripped}:{result.error}",
+                                   current_depth)
+            applied.append(p)
+            current_depth = p.depth + (1 if p.enters_mode else 0)
+
+        record.after_hash = _read_running_hash(session)
 
         # ----- Phase 3: post-execution verification.
-        record.after_hash = _read_running_hash(session)
         if self._verify_per_block:
-            verified, verify_causes = self._verify_change(session, record)
+            verified, causes = self._verify_change(session, record, applied)
             if not verified:
-                record.failure_causes.extend(verify_causes)
-                self._rollback(session, record.rollback_commands,
-                               record, applied_so_far)
-                record.outcome = ChangeOutcome.ROLLED_BACK
+                record.failure_causes.extend(causes)
+                self._rollback(session, plan, applied, record, current_depth=0)
                 record.finished_at = self._clock()
                 self._record_to_ledger(record)
                 return record
@@ -440,73 +445,350 @@ class ConfigExecutor:
         self._record_to_ledger(record)
         return record
 
-    # ------------------------------------------------------ internal helpers
-    def _all_commands_failed(self, applied: list[CommandResult]) -> bool:
-        """A change is ROLLED_BACK if every command was rejected by the
-        transport (no on-device state changed)."""
-        return bool(applied) and not any(r.ok() for r in applied)
+    # ------------------------------------------------------------ planning
+    def _plan(self, enter: list[str], body: list[str], exit_: list[str],
+              record: Optional[ChangeRecord] = None) -> list[_PlannedLine]:
+        """Classify every line and compute the CLI mode depth of each.
 
-    def _rollback(
-        self,
-        session: ExecSession,
-        rollback_plan: list[str],
-        record: ChangeRecord,
-        applied: list[CommandResult],
-    ) -> None:
-        """Issue the rollback plan line by line. Failures are recorded on
-        the ChangeRecord but never re-raised (L09 says we tried)."""
-        for line in rollback_plan:
-            stripped = line.strip()
+        The renderer encodes CLI nesting as indentation (one level per
+        indent step), which is exactly what a human engineer reads off the
+        page. The executor honours it literally: when the indent level
+        drops, ``exit`` commands are inserted so the session is back in the
+        right mode before the next line is sent. Without this, ``ip
+        routing`` after ``vlan 10``/``name users`` would be typed into
+        ``config-vlan`` mode and rejected by a real device.
+
+        Raises a typed ``Failure`` on the first line that has no execution
+        path, so nothing is sent when the plan is not fully authorised.
+        """
+        planned: list[_PlannedLine] = []
+
+        for raw in enter:
+            planned.extend(self._plan_wrapper(raw, depth=0))
+
+        step = self._indent_step(body)
+        level = 0
+        pending_mode_at: Optional[int] = None
+        for raw in body:
+            stripped = raw.strip()
             if not stripped:
                 continue
             if stripped.startswith("!") or stripped.startswith("#"):
-                # Comment markers mean the rollback needs a human or the
-                # executor did not have an inverse command on file. We
-                # do NOT issue the comment to the device (devices don't
-                # understand !-comments in operational mode). We DO
-                # record it as a manual-rollback requirement.
-                record.failure_causes.append(f"MANUAL_ROLLBACK_REQUIRED:{stripped}")
+                planned.append(_PlannedLine(raw, stripped, "COMMENT", "COMMENT",
+                                            None, level, False))
                 continue
+            target = (len(raw) - len(raw.lstrip(" "))) // step
+            if target > level:
+                # Deeper nesting is only legal directly after a command that
+                # opened a sub-mode at the parent level. Anything else is a
+                # renderer defect — refuse it rather than guess the mode.
+                if pending_mode_at is None or target != pending_mode_at + 1:
+                    raise Failure(cls=FailureClass.BLOCKED, causes=(
+                        f"INDENT_WITHOUT_MODE_ENTRY:{stripped} (indent level {target}, "
+                        f"session at {level}) — the previous line did not open a sub-mode",))
+                level = target
+            while level > target:
+                planned.append(_PlannedLine("exit", "exit", "MODE", "MODE_TRANSITION",
+                                            None, level - 1, False))
+                level -= 1
+            pending_mode_at = None
 
+            match = self._allowlist.match(stripped)
+            if match is None or match.cls not in CONFIG_CLASSES:
+                got = match.cls if match else "UNREGISTERED"
+                if record is not None:
+                    # The refused line is evidence in its own right: name it
+                    # on the record, do not leave it only in a cause string.
+                    record.commands.append(CommandResult(
+                        device_ref=record.device_ref, command=stripped,
+                        classification=got, accepted=False,
+                        response_bytes=b"", response_hash="",
+                        error="COMMAND_NOT_ALLOWLISTED", phase="PLAN", depth=level))
+                raise Failure(cls=FailureClass.BLOCKED, causes=(
+                    f"COMMAND_NOT_ALLOWLISTED:{stripped} (class={got})",))
+            planned.append(_PlannedLine(raw, stripped, "CONFIG", match.cls,
+                                        match, level, match.entry.enters_mode))
+            if match.entry.enters_mode:
+                pending_mode_at = level
+
+        # Leave every mode we are still inside before the exit wrappers run.
+        while level > 0:
+            planned.append(_PlannedLine("exit", "exit", "MODE", "MODE_TRANSITION",
+                                        None, level - 1, False))
+            level -= 1
+
+        for raw in exit_:
+            planned.extend(self._plan_wrapper(raw, depth=0))
+        return planned
+
+    def _plan_wrapper(self, raw: str, depth: int) -> list[_PlannedLine]:
+        stripped = raw.strip()
+        if not stripped:
+            return []
+        if stripped.startswith("!") or stripped.startswith("#"):
+            return [_PlannedLine(raw, stripped, "COMMENT", "COMMENT", None, depth, False)]
+        # Wrappers are vendor mode transitions declared by the renderer data
+        # file. They are held to a closed set so a caller cannot smuggle
+        # configuration through them.
+        if stripped.lower() not in SAFE_MODE_TRANSITIONS:
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                f"UNSAFE_WRAPPER:{stripped} — not a known CLI mode transition; "
+                f"configuration must go through the CONFIG allowlist",))
+        return [_PlannedLine(raw, stripped, "MODE", "MODE_TRANSITION", None, depth, False)]
+
+    @staticmethod
+    def _indent_step(body: Sequence[str]) -> int:
+        """The indent width one nesting level represents (default 1 space)."""
+        indents = [len(l) - len(l.lstrip(" ")) for l in body if l.strip()]
+        positive = [i for i in indents if i > 0]
+        return min(positive) if positive else 1
+
+
+    def _authorize_high_risk(self, high_risk: list[str]) -> bool:
+        """Gate for CONFIG_HIGH_RISK lines (routing daemons, credentials).
+
+        Default policy: a high-risk change is authorised only when the
+        caller explicitly armed the executor. The orchestrator arms it
+        after the operator types BOND, so the human decision is what
+        unlocks it — never the engine on its own.
+        """
+        return self._high_risk_armed
+
+    @property
+    def _high_risk_armed(self) -> bool:
+        return getattr(self, "_armed", False)
+
+    def arm_high_risk(self) -> "ConfigExecutor":
+        """Arm the CONFIG_HIGH_RISK gate (call only after human confirmation)."""
+        self._armed = True
+        return self
+
+    # ------------------------------------------------------------ issuing
+    def _issue(self, session: ExecSession, record: ChangeRecord, command: str,
+               phase: str, cls: str, depth: int) -> CommandResult:
+        try:
+            response = session.execute(command, timeout_s=30.0)
+            result = CommandResult(
+                device_ref=record.device_ref, command=command,
+                classification=cls, accepted=True,
+                response_bytes=response, response_hash=_hash_response(response),
+                phase=phase, depth=depth,
+            )
+        except Failure as exc:
+            result = CommandResult(
+                device_ref=record.device_ref, command=command,
+                classification=cls, accepted=False,
+                response_bytes=b"", response_hash="",
+                error="; ".join(exc.causes), phase=phase, depth=depth,
+            )
+        except Exception as exc:  # noqa: BLE001 — transport-level
+            result = CommandResult(
+                device_ref=record.device_ref, command=command,
+                classification=cls, accepted=False,
+                response_bytes=b"", response_hash="",
+                error=f"{type(exc).__name__}:{exc}", phase=phase, depth=depth,
+            )
+        record.commands.append(result)
+        return result
+
+    def _abort(self, session: ExecSession, record: ChangeRecord,
+               plan: list[tuple[str, int]], applied: list[_PlannedLine],
+               cause: str, current_depth: int = 0) -> ChangeRecord:
+        """A command failed mid-stream: roll back what we already applied."""
+        record.failure_causes.append(cause)
+        self._rollback(session, plan, applied, record, current_depth=current_depth)
+        record.finished_at = self._clock()
+        self._record_to_ledger(record)
+        return record
+
+    # ------------------------------------------------------------ rollback
+    def _rollback(
+        self,
+        session: ExecSession,
+        plan: Sequence[tuple[str, int]],
+        applied: Sequence[_PlannedLine],
+        record: ChangeRecord,
+        current_depth: int = 0,
+    ) -> None:
+        """Issue the inverse commands to the device, deepest-first.
+
+        Each inverse is issued at the mode depth the original command was
+        applied at: the session is unwound with ``exit`` until the depth
+        matches, then the inverse is sent. Manual markers are never sent —
+        they are recorded so the operator sees exactly what is left to do.
+
+        The outcome is set from what actually happened:
+        ``ROLLED_BACK`` only when every issued inverse was accepted and the
+        running-config is back to the baseline; otherwise ``ROLLBACK_FAILED``
+        with a typed cause, so an unsafe device is never reported as clean.
+        """
+        if not applied:
+            # Nothing reached the device; there is nothing to undo.
+            record.outcome = ChangeOutcome.ROLLED_BACK
+            record.rollback_hash = record.before_hash
+            return
+
+        failed: list[str] = []
+        manual: list[str] = []
+
+        for inverse, depth in reversed(plan):
+            if inverse.startswith("!"):
+                manual.append(inverse)
+                record.failure_causes.append(f"MANUAL_ROLLBACK_REQUIRED:{inverse[2:].strip()}")
+                continue
+            # Unwind to the depth the original command ran at.
+            while current_depth > depth:
+                res = self._issue_raw(session, record, "exit", "ROLLBACK", current_depth - 1)
+                current_depth -= 1
+                if not res.ok():
+                    failed.append(f"exit@{current_depth}:{res.error}")
+                    break
+            res = self._issue_raw(session, record, inverse, "ROLLBACK", depth)
+            record.rollback_results.append(res)
+            if not res.ok():
+                failed.append(f"{inverse}:{res.error}")
+
+        # Leave any mode we are still inside.
+        while current_depth > 0:
+            self._issue_raw(session, record, "exit", "ROLLBACK", current_depth - 1)
+            current_depth -= 1
+
+        record.rollback_hash = _read_running_hash(session)
+
+        if manual and not failed:
+            # Every automatic inverse worked but something still needs a human.
+            record.outcome = ChangeOutcome.ROLLBACK_FAILED
+            record.failure_causes.append(
+                "ROLLBACK_INCOMPLETE_MANUAL_STEPS_REQUIRED")
+        elif failed:
+            record.outcome = ChangeOutcome.ROLLBACK_FAILED
+            record.failure_causes.extend(f"ROLLBACK_COMMAND_FAILED:{f}" for f in failed)
+            record.failure_causes.append(
+                "DEVICE_MAY_BE_LEFT_IN_PARTIAL_STATE: manual recovery required")
+        elif record.before_hash is not None and record.rollback_hash is not None \
+                and record.rollback_hash != record.before_hash:
+            record.outcome = ChangeOutcome.ROLLBACK_FAILED
+            record.failure_causes.append(
+                f"ROLLBACK_STATE_MISMATCH: baseline={record.before_hash} "
+                f"after_rollback={record.rollback_hash}")
+        else:
+            record.outcome = ChangeOutcome.ROLLED_BACK
+
+    def _issue_raw(self, session: ExecSession, record: ChangeRecord, command: str,
+                   phase: str, depth: int) -> CommandResult:
+        """Issue a rollback/mode command; record it but never raise."""
+        try:
+            response = session.execute(command, timeout_s=30.0)
+            return CommandResult(
+                device_ref=record.device_ref, command=command,
+                classification="ROLLBACK", accepted=True,
+                response_bytes=response, response_hash=_hash_response(response),
+                phase=phase, depth=depth,
+            )
+        except Failure as exc:
+            err = "; ".join(exc.causes)
+        except Exception as exc:  # noqa: BLE001
+            err = f"{type(exc).__name__}:{exc}"
+        return CommandResult(
+            device_ref=record.device_ref, command=command,
+            classification="ROLLBACK", accepted=False,
+            response_bytes=b"", response_hash="", error=err,
+            phase=phase, depth=depth,
+        )
+
+    # -------------------------------------------------------- verification
     def _verify_change(
         self, session: ExecSession, record: ChangeRecord,
+        applied: Sequence[_PlannedLine],
     ) -> tuple[bool, list[str]]:
-        """Re-read state and assert the change took effect. Returns
-        (ok, causes). The default heuristic is the running-config hash
-        actually changed (when before_hash is known)."""
+        """Re-read state and assert the change took effect.
+
+        Returns ``(ok, causes)``. Two independent signals are required:
+
+        1. every command the device answered did not contain a Cisco-style
+           error marker (``% Invalid input``, ``% Incomplete command``);
+        2. the running-config hash actually changed from the baseline.
+
+        Signal 1 catches the common real-world failure where a device
+        accepts the session but rejects the syntax; signal 2 catches a
+        no-op change. When the baseline hash is unavailable we say so
+        rather than claiming verification we did not perform.
+        """
+        causes: list[str] = []
+        for line, result in zip(applied, [c for c in record.commands if c.phase == "APPLY"]):
+            body = result.response_bytes.decode("utf-8", "replace").lower()
+            for marker in ("% invalid input", "% incomplete command",
+                           "% ambiguous", "syntax error", "unknown command"):
+                if marker in body:
+                    causes.append(f"DEVICE_REJECTED_SYNTAX:{line.stripped}:{marker}")
+                    break
+        if causes:
+            return (False, causes)
+
         if record.before_hash is None:
-            return (True, [])
+            causes.append("VERIFY_BASELINE_UNAVAILABLE: state change not confirmed")
+            return (True, causes)          # typed caveat, not a silent pass
         new_hash = _read_running_hash(session)
         if new_hash is None:
-            return (True, [])  # cannot verify; do not block on it
+            causes.append("VERIFY_READBACK_UNAVAILABLE: state change not confirmed")
+            return (True, causes)
         if new_hash == record.before_hash:
             return (False, [f"VERIFY_NO_CHANGE: before==after ({new_hash})"])
         return (True, [])
 
+    # ------------------------------------------------------------- ledger
     def _record_to_ledger(self, record: ChangeRecord) -> None:
+        """Write the change to the tamper-evident ledger (L13).
+
+        Phase V: this used to call ``store.append_event(dict, key_id=...)``.
+        ``LedgerStore.append_event`` takes a **signed ``Event``**, so the call
+        raised ``TypeError`` every single time — and the surrounding
+        ``except Exception: pass`` hid it. No ``config_change`` audit record
+        was ever written. The exception is no longer swallowed: if the write
+        fails the ChangeRecord carries ``LEDGER_WRITE_FAILED`` so the operator
+        knows the change is not provable.
+        """
         if self._store is None:
             return
-        # Append a config_change event so the audit trail is complete.
-        try:
-            self._store.append_event  # type: ignore[attr-defined]
-        except AttributeError:
+        if not self._key_id:
+            record.failure_causes.append(
+                "LEDGER_NOT_CONFIGURED: no signing key supplied; this change is not "
+                "recorded in the tamper-evident ledger")
             return
-        payload = {
-            "type": "config_change",
-            "run_id": record.run_id,
-            "device_ref": record.device_ref,
-            "outcome": record.outcome.value,
-            "command_count": record.command_count,
-            "applied_count": record.applied_count,
-            "rejected_count": record.rejected_count,
-            "before_hash": record.before_hash,
-            "after_hash": record.after_hash,
-            "failure_causes": list(record.failure_causes),
-            "started_at": record.started_at.isoformat(),
-            "finished_at": record.finished_at.isoformat() if record.finished_at else None,
-            "actor": "CONFIG-EXECUTOR",
-        }
         try:
-            self._store.append_event(payload, key_id="collector-0000000000000001")  # type: ignore[arg-type]
-        except Exception:  # noqa: BLE001 — ledger write is best-effort
-            pass
+            detail = json.dumps(record.to_dict(), sort_keys=True).encode("utf-8")
+            summary = (
+                f"CONFIG_CHANGE device={record.device_ref} outcome={record.outcome.value} "
+                f"applied={record.applied_count}/{record.command_count} "
+                f"rollback={record.rollback_succeeded}/{record.rollback_issued} "
+                f"before={record.before_hash} after={record.after_hash} "
+                f"rollback_hash={record.rollback_hash} run={record.run_id}"
+            )
+            if record.failure_causes:
+                summary += " causes=" + "|".join(record.failure_causes[:8])
+            event = Event(
+                type=EventType.CLI,
+                device_id=record.device_ref,
+                session_id=record.run_id,
+                command_or_op=summary[:1900],
+                operator_identity=_EXECUTOR_ACTOR,
+                collector_identity=CollectorIdentity(
+                    collector_id=self._collector_id, key_id=self._key_id),
+                collected_at=self._clock(),
+                collector_clock_status=(
+                    ClockStatusEnum(self._time.status.value) if self._time is not None
+                    else ClockStatusEnum.UNSYNCED),
+            )
+            event = self._store.sign_event(event, self._key_id)
+            self._store.append_event(event)
+            self._store.append_raw_artifact(RawArtifact(
+                raw_id=new_id(),
+                event_id=event.event_id,
+                storage_uri=f"ledger://artifacts/{event.event_id}",
+                sha256=hashlib.sha256(detail).hexdigest(),
+                bytes=len(detail),
+                truncated=False,
+            ))
+        except Exception as exc:  # noqa: BLE001 — recorded, never swallowed
+            record.failure_causes.append(
+                f"LEDGER_WRITE_FAILED:{type(exc).__name__}:{exc}")

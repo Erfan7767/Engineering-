@@ -28,6 +28,7 @@ where the law requires a human (binding, credentials, intent, HUMAN_ONLY).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Any, Optional
 
@@ -53,17 +54,90 @@ def _real_session_factory(port: str):
     return (transport, banner)
 
 
-def _refused_mgmt_factory(device_ref: str, hints: tuple[str, ...]):
-    """v1 has no SSH infra yet (ADR-0004 direct-connect): typed refusal."""
-    from .core.failures import FailureClass
-    raise Failure(
-        cls=FailureClass.BLOCKED,
-        causes=("MGMT_PATH_NOT_MODELED: SSH/telnet management sessions land with the transport "
-                "batch — today only the direct console is real (ADR-0004). Neighbors stay "
-                "discovered-but-unreached, never assumed managed.",))
+def _make_credential_provider(method: str, username: Optional[str] = None):
+    """Build the operator-credential callback used by the mgmt factory.
+
+    Passwords are read with :func:`getpass.getpass` so they are never echoed,
+    never stored in shell history, and never written to the ledger. They are
+    collected once per run and reused for every device the operator's account
+    can reach — the platform never invents or defaults a credential.
+    """
+    import getpass
+    cache: dict[str, Any] = {}
+
+    def provider(device_ref: str, vendor_family: str):
+        from .access.mgmt_session import MgmtCredential
+        if cache:
+            base = next(iter(cache.values()))
+            return MgmtCredential(username=base.username, password=base.password,
+                                  enable_secret=base.enable_secret, method=method)
+        user = username or getpass.getpass(
+            f"Management username for {device_ref} ({vendor_family}): ")
+        if not user:
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                f"NO_CREDENTIALS: operator supplied no username for {device_ref}; "
+                f"the platform does not fall back to a default account",))
+        password = getpass.getpass(f"Management password for {user}@{device_ref}: ")
+        secret = getpass.getpass(
+            f"Enable secret for {device_ref} (blank if none): ").strip()
+        cred = MgmtCredential(username=user, password=password,
+                              enable_secret=secret, method=method)
+        cache["base"] = cred
+        return cred
+
+    return provider
 
 
-def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None) -> int:
+#: Lazily-built management-session factory shared by the web chat path.
+#: ``web/server.py`` imports :func:`_open_real_management`; before Phase V that
+#: name did not exist anywhere in the codebase, so the web operator could never
+#: reach real hardware — every attempt fell into the ``NO_REAL_ADAPTER``
+#: refusal. It is implemented now, on top of the same identity-confirming
+#: factory the CLI uses.
+_SHARED_MGMT_FACTORY: Any = None
+
+
+def _open_real_management(device_ref: str, crawl: Any = None,
+                          console_session: Any = None,
+                          seed_ref: str = "seed-01") -> Any:
+    """Open a confirmed management session for the web/chat device runner.
+
+    ``crawl`` is the discovery evidence the operator already holds. Without it
+    the factory refuses (typed) rather than guessing an address, because a
+    device it never observed is a device it must not touch.
+    """
+    global _SHARED_MGMT_FACTORY
+    if _SHARED_MGMT_FACTORY is None:
+        _SHARED_MGMT_FACTORY = _real_mgmt_factory(
+            method=os.environ.get("NETOPS_MGMT_METHOD", "ssh"),
+            username=os.environ.get("NETOPS_MGMT_USER"),
+            allow_unverified_identity=(
+                os.environ.get("NETOPS_ALLOW_UNVERIFIED_IDENTITY", "") == "1"),
+        )
+    if crawl is not None:
+        _SHARED_MGMT_FACTORY.bind_crawl(crawl, console_session=console_session,
+                                        seed_ref=seed_ref)
+    return _SHARED_MGMT_FACTORY(device_ref, ())
+
+
+def _real_mgmt_factory(method: str = "ssh", username: Optional[str] = None,
+                       allow_unverified_identity: bool = False):
+    """The real out-of-band path to every discovered device.
+
+    Phase V replaced the old unconditional ``MGMT_PATH_NOT_MODELED`` refusal.
+    Devices are reached at management addresses discovery *observed*, and each
+    session is identity-confirmed (serial match against the crawl evidence)
+    before a single configuration line is sent.
+    """
+    from .access.mgmt_session import MgmtSessionFactory
+    return MgmtSessionFactory(
+        credential_provider=_make_credential_provider(method, username),
+        allow_unverified_identity=allow_unverified_identity)
+
+
+def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
+                  mgmt_method: str = "ssh", mgmt_user: Optional[str] = None,
+                  allow_unverified_identity: bool = False) -> int:
     store = LedgerStore("netops-ledger.sqlite3")
     key_id = store.keys.create_key("autopilot-collector")
     engine = AutopilotEngine(
@@ -71,7 +145,9 @@ def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None) ->
         time_authority=TimeAuthority(clock=lambda: datetime.now(timezone.utc)))
     report = engine.run(
         probe_port_session_factory=_real_session_factory,
-        mgmt_session_factory=_refused_mgmt_factory,
+        mgmt_session_factory=_real_mgmt_factory(
+            method=mgmt_method, username=mgmt_user,
+            allow_unverified_identity=allow_unverified_identity),
         port=port, execute=execute)
     from .cli.pretty import render_run_summary, ColorMode
     chain_ok = store.verify_chain().ok
@@ -87,18 +163,24 @@ def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None) ->
     return 0 if report.final.startswith("COMPLETE") else 2
 
 
-def run_demo(scenario: str = "branch", report_dir: Optional[str] = None) -> int:
+def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
+             execute: bool = False) -> int:
     from tests.support.simfabric import SimFabricFactory, make_ledger_stack
     from .cli.scenarios import make_scenario_io
     store, key_id, _counters, time_auth = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io(scenario)
+    if execute:
+        # The apply gate demands a typed BOND; the demo answers it so the
+        # whole discover → design → render → APPLY → verify → rollback path
+        # can be exercised without hardware.
+        io.append_answers(["BOND"])
     engine = AutopilotEngine(store=store, key_id=key_id,
                              io=io, time_authority=time_auth)
     report = engine.run(
         probe_port_session_factory=lambda port: fabric.probe(port),
         mgmt_session_factory=fabric.open,
-        port="SIM0", execute=False)
+        port="SIM0", execute=execute)
     from .cli.pretty import render_run_summary, ColorMode
     chain_ok = store.verify_chain().ok
     print(render_run_summary(
@@ -206,6 +288,94 @@ def run_webui(*, host: str, port: int, static_dir: Optional[str]) -> int:
         return 2
 
 
+def run_chat(port: Optional[str] = None, message: Optional[str] = None,
+             simulate: bool = False) -> int:
+    """Headless chat REPL — the same operator the web UI exposes.
+
+    ``--message`` runs a single turn and exits (scriptable); with no message
+    the operator reads lines until EOF or ``exit``/``quit``.
+    """
+    from .access.allowlist import CommandAllowlist
+    from .chat.device_runner import DeviceCommandRunner
+    from .chat.operator import ChatOperator
+    from .specs_data import specs_data_dir
+
+    store = LedgerStore("netops-ledger.sqlite3")
+    key_id = store.keys.create_key("chat-operator")
+    time_auth = TimeAuthority(clock=lambda: datetime.now(timezone.utc))
+    engine = AutopilotEngine(store=store, key_id=key_id, io=ConsoleIO(),
+                             time_authority=time_auth)
+    allowlist = CommandAllowlist.load_dir(specs_data_dir("allowlists"))
+
+    seed_port = port or os.environ.get("NETOPS_SEED_PORT", "SIM0")
+    if simulate or str(seed_port).upper().startswith("SIM"):
+        from tests.support.simfabric import SimFabricFactory
+        fabric = SimFabricFactory(include_access=True, access_behavior="allow")
+        session_factory = fabric.device_session
+
+        class _SimRunner:
+            def run(self, *, port, execute, answers):
+                from .cli import ScriptedIO
+                # The chat supplies the answers the run needs (bond confirm,
+                # intent, WAN, availability, growth); they must actually be
+                # installed on the engine or it falls back to the interactive
+                # console and blocks on a prompt nobody is answering.
+                engine.io = ScriptedIO(list(answers))
+                return engine.run(probe_port_session_factory=lambda p: fabric.probe(p),
+                                  mgmt_session_factory=fabric.open,
+                                  port=port, execute=execute)
+        runner: Any = _SimRunner()
+    else:
+        mgmt = _real_mgmt_factory()
+        session_factory = lambda ref: _open_real_management(ref)  # noqa: E731
+
+        class _RealRunner:
+            def run(self, *, port, execute, answers):
+                from .cli import ScriptedIO
+                engine.io = ScriptedIO(list(answers))
+                return engine.run(probe_port_session_factory=_real_session_factory,
+                                  mgmt_session_factory=mgmt,
+                                  port=port, execute=execute)
+        runner = _RealRunner()
+
+    device_runner = DeviceCommandRunner(session_factory=session_factory,
+                                        allowlist=allowlist, store=store)
+    op = ChatOperator(store=store, runner=runner, device_runner=device_runner,
+                      allowlist=allowlist)
+
+    def _turn(text: str) -> None:
+        reply = op.handle(text)
+        # OperatorReply is a dataclass: print what an operator reads, not the
+        # repr. ``summary`` is the one-line verdict, ``detail`` the evidence.
+        summary = getattr(reply, "summary", "") or ""
+        detail = getattr(reply, "detail", "") or ""
+        status = getattr(getattr(reply, "status", None), "value", None) or ""
+        head = f"[{status.upper()}] {summary}" if status else summary
+        print(head)
+        if detail:
+            print(detail)
+        for action in getattr(reply, "actions", None) or []:
+            label = action.get("label") if isinstance(action, dict) else str(action)
+            if label:
+                print(f"  → {label}")
+
+    if message:
+        _turn(message)
+        return 0
+    print("NetOps Autopilot · chat operator  (type 'help', 'exit' to quit)")
+    while True:
+        try:
+            line = input("netops> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not line:
+            continue
+        if line.lower() in {"exit", "quit", "خروج"}:
+            return 0
+        _turn(line)
+
+
 def run_scenarios() -> int:
     from .cli.pretty import Table, ColorMode
     from .cli.scenarios import list_scenarios
@@ -227,6 +397,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="request execution (the EXECUTION_GATE still enforces the law)")
     ap.add_argument("--report-dir", default=None,
                     help="write HTML + JSON reports to this directory after the run")
+    ap.add_argument("--mgmt-method", default="ssh", choices=["ssh", "telnet"],
+                    help="management path used to reach discovered neighbours (default: ssh)")
+    ap.add_argument("--mgmt-user", default=None,
+                    help="management username (prompted securely if omitted)")
+    ap.add_argument("--allow-unverified-identity", action="store_true",
+                    help="configure a device whose serial could not be confirmed "
+                         "(operator takes responsibility; refused by default)")
 
     demo = sub.add_parser("demo", help="deterministic simulated fabric, full flow, no hardware")
     demo.add_argument("--scenario", default="branch",
@@ -234,6 +411,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                       help="which canned scenario to run (default: branch)")
     demo.add_argument("--report-dir", default=None,
                       help="write HTML + JSON reports to this directory after the run")
+    demo.add_argument("--execute", action="store_true",
+                      help="run the full apply path against the simulated fabric "
+                           "(the typed BOND gate is still enforced)")
 
     cfg = sub.add_parser("config", help="print effective configuration")
     cfg.add_argument("--path", default=None, help="load config from this path (YAML/JSON/TOML)")
@@ -247,19 +427,32 @@ def main(argv: Optional[list[str]] = None) -> int:
     web.add_argument("--port", type=int, default=8765, help="bind port (default: 8765)")
     web.add_argument("--static", default=None, help="path to static web UI directory")
 
+    chat = sub.add_parser("chat", help="interactive network operator (Arabic/English)")
+    chat.add_argument("--port", default=None,
+                      help="seed console port (SIM0 = deterministic simulated fabric)")
+    chat.add_argument("--message", default=None,
+                      help="run a single chat turn and exit (scriptable)")
+    chat.add_argument("--simulate", action="store_true",
+                      help="force the deterministic simulated fabric")
+
     sub.add_parser("scenarios", help="list built-in demo scenarios")
 
     args = parser.parse_args(argv)
     if args.command == "autopilot":
-        return run_autopilot(args.port, args.execute, report_dir=args.report_dir)
+        return run_autopilot(args.port, args.execute, report_dir=args.report_dir,
+                             mgmt_method=args.mgmt_method, mgmt_user=args.mgmt_user,
+                             allow_unverified_identity=args.allow_unverified_identity)
     if args.command == "demo":
-        return run_demo(scenario=args.scenario, report_dir=args.report_dir)
+        return run_demo(scenario=args.scenario, report_dir=args.report_dir,
+                        execute=args.execute)
     if args.command == "config":
         return run_config(path=args.path, show_defaults=args.show_defaults)
     if args.command == "health":
         return run_health()
     if args.command == "webui":
         return run_webui(host=args.host, port=args.port, static_dir=args.static)
+    if args.command == "chat":
+        return run_chat(port=args.port, message=args.message, simulate=args.simulate)
     if args.command == "scenarios":
         return run_scenarios()
     return 1

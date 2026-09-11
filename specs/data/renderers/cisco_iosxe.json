@@ -3,14 +3,57 @@
   "vendor_os": "ios-xe",
   "verified": true,
   "verified_at": "2026-09-11",
-  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist.",
-  "wrappers": { "enter_config": ["enable", "configure terminal"], "exit_config": ["end"] },
+  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist. Phase V: svi renders `ip address <ip> <dotted-mask>`; IOS/IOS-XE rejects the CIDR form.",
+  "wrappers": {
+    "enter_config": [
+      "enable",
+      "configure terminal"
+    ],
+    "exit_config": [
+      "end"
+    ]
+  },
   "features": {
-    "vlan": { "commands": ["vlan {vlan_id}", " name {name}"] },
-    "svi": { "commands": ["interface Vlan{vlan_id}", " ip address {address}"], "prelude": ["ip routing"] },
-    "trunk": { "commands": ["interface {interface}", " switchport trunk encapsulation dot1q", " switchport mode trunk", " switchport trunk allowed vlan {allowed_vlans_csv}"] },
-    "access": { "commands": ["interface {interface}", " switchport mode access", " switchport access vlan {vlan_id}"] },
-    "hostname": { "commands": ["hostname {hostname}"] },
-    "interface": { "commands": ["interface {interface}", " description {description}"] }
+    "vlan": {
+      "commands": [
+        "vlan {vlan_id}",
+        " name {name}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "interface Vlan{vlan_id}",
+        " ip address {address_ip} {address_mask}"
+      ],
+      "prelude": [
+        "ip routing"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "interface {interface}",
+        " switchport trunk encapsulation dot1q",
+        " switchport mode trunk",
+        " switchport trunk allowed vlan {allowed_vlans_csv}"
+      ]
+    },
+    "access": {
+      "commands": [
+        "interface {interface}",
+        " switchport mode access",
+        " switchport access vlan {vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "hostname {hostname}"
+      ]
+    },
+    "interface": {
+      "commands": [
+        "interface {interface}",
+        " description {description}"
+      ]
+    }
   }
 }

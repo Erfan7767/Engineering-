@@ -2087,54 +2087,23 @@ class ChatOperator:
                     continue
                 if record.get("outcome") != "APPLIED":
                     continue
-                # Send every rollback command individually. Each
-                # command must be in the allowlist.
+                # Send every rollback command individually. Each one has to
+                # be a *registered inverse* of a template this run applied —
+                # provenance, not pattern-matching.
                 results = []
                 for cmd in rollback_cmds:
-                    # The allowlist classify needs the full cmd (e.g.
-                    # "no vlan 10" matches a CONFIG_REVERSIBLE entry;
-                    # "no vlan <vlan_id>" is the template). Try the
-                    # head first, then the full cmd, then look up by
-                    # inverse ("vlan 10" → classify the underlying
-                    # intent). A `no <cmd>` form is the typed inverse
-                    # of the original `cmd` — by construction the
-                    # inverse is as allowed as the original.
                     cmd_stripped = cmd.strip()
-                    cls = None
-                    for try_cmd in (
-                        cmd_stripped,                                # full
-                        cmd_stripped.split(None, 1)[0] if cmd_stripped else "",  # head
-                    ):
-                        try:
-                            cls = self._allowlist.classify(try_cmd)
-                        except Exception:  # noqa: BLE001
-                            cls = None
-                        if cls:
-                            break
-                    if cls is None and cmd_stripped.startswith("no "):
-                        # Inverse lookup: "no vlan 10" → classify
-                        # "vlan 10" (the original). The classify is
-                        # exact-match, so we walk the allowlist for
-                        # any template whose head matches the
-                        # inverse's head.
-                        inverse = cmd_stripped[3:].strip()
-                        try:
-                            cls = self._allowlist.classify(inverse)
-                        except Exception:  # noqa: BLE001
-                            cls = None
-                        if cls is None:
-                            # Head-match: "vlan 10" head="vlan" →
-                            # any template starting with "vlan ".
-                            for tmpl, entry in self._allowlist._by_template.items():
-                                if not tmpl.startswith(inverse.split(" ", 1)[0] + " "):
-                                    continue
-                                if entry.cls in ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK"):
-                                    cls = entry.cls
-                                    break
-                        if cls in ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK"):
-                            pass  # inverse of an allowed command is allowed
-                        else:
-                            cls = None
+                    if cmd_stripped.startswith("!"):
+                        # The executor could not build an automatic inverse;
+                        # it is a typed manual step, never an issuable command.
+                        results.append(f"  ! {cmd_stripped}  [MANUAL STEP REQUIRED]")
+                        continue
+                    source = self._allowlist.is_registered_inverse(cmd_stripped)
+                    if source is None:
+                        results.append(
+                            f"  \u2715 {cmd}  [BLOCKED: not a registered inverse]")
+                        continue
+                    cls = source.cls
                     if cls not in ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK", "READ_ONLY"):
                         results.append(f"  ✕ {cmd}  [BLOCKED: not in allowlist]")
                         continue
