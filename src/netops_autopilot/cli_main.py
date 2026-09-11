@@ -179,7 +179,13 @@ def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
                              io=io, time_authority=time_auth)
     report = engine.run(
         probe_port_session_factory=lambda port: fabric.probe(port),
-        mgmt_session_factory=fabric.open,
+        # The factory object, not its bound ``.open`` method: the access-retry
+        # loop needs the ``grant()`` hook to model the operator supplying
+        # working credentials, and a bound method does not carry it. Passing
+        # ``.open`` made the demo answer "y" to the retry prompt and then do
+        # nothing at all — a prompt whose answer is ignored is worse than no
+        # prompt, because it reports a decision that was never acted on.
+        mgmt_session_factory=fabric,
         port="SIM0", execute=execute)
     from .cli.pretty import render_run_summary, ColorMode
     chain_ok = store.verify_chain().ok
@@ -322,7 +328,7 @@ def run_chat(port: Optional[str] = None, message: Optional[str] = None,
                 # console and blocks on a prompt nobody is answering.
                 engine.io = ScriptedIO(list(answers))
                 return engine.run(probe_port_session_factory=lambda p: fabric.probe(p),
-                                  mgmt_session_factory=fabric.open,
+                                  mgmt_session_factory=fabric,
                                   port=port, execute=execute)
         runner: Any = _SimRunner()
     else:

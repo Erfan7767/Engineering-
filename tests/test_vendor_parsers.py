@@ -83,8 +83,11 @@ def test_junos_missing_fields_typed():
 def test_catalog_registers_all_v1_parsers_with_unique_ids():
     registry = default_registry()
     ids = [builder().info.parser_id for builder in CATALOG_BUILDERS]
-    # 6 identity parsers (D1) + 7 neighbor parsers (D5-capstone OI-0170).
-    assert len(ids) == 13 and len(set(ids)) == len(ids)
+    # 6 identity parsers (D1) + 7 neighbor parsers (D5-capstone OI-0170)
+    # + 1 interface-inventory parser (Phase W: the port evidence the Design
+    #   Engine needs to assign end-user access ports).
+    assert len(ids) == 14 and len(set(ids)) == len(ids)
+    assert "regex/cisco_iosxe_show_interfaces_status" in ids
     for parser_id in ids:
         assert registry.latest(parser_id).info.parser_id == parser_id
     families = {builder().info.vendor_family for builder in CATALOG_BUILDERS}

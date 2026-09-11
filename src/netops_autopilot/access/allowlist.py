@@ -41,10 +41,17 @@ from typing import Optional
 
 #: Execution order: first matching class wins; FORBIDDEN is checked first so
 #: a forbidden template can never hide inside a broader class by accident.
-CLASS_PRIORITY = ("FORBIDDEN", "DESTRUCTIVE", "CONFIG_HIGH_RISK", "CONFIG_REVERSIBLE", "READ_ONLY")
+CLASS_PRIORITY = ("FORBIDDEN", "DESTRUCTIVE", "CONFIG_HIGH_RISK", "CONFIG_REVERSIBLE",
+                  "READ_ONLY", "CONFIG_PERSIST")
 
-#: Classes an executor may push to a device.
+#: Classes an executor may push to a device as configuration.
 CONFIG_CLASSES = ("CONFIG_REVERSIBLE", "CONFIG_HIGH_RISK")
+
+#: The class of commands that make an already-applied change survive a reload.
+#: Kept out of ``CONFIG_CLASSES`` on purpose: persisting is not a reversible
+#: configuration line, it has no meaningful inverse, and it must run only
+#: AFTER verification — never as part of the change body, never on rollback.
+PERSIST_CLASSES = ("CONFIG_PERSIST",)
 
 #: A trailing placeholder with one of these names swallows the remainder of
 #: the command (``erase <args>`` matches ``erase startup-config``).

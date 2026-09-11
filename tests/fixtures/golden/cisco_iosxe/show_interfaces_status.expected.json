@@ -1,0 +1,115 @@
+{
+  "parser_id": "regex/cisco_iosxe_show_interfaces_status",
+  "parser_version": "1.0.0",
+  "command": "show interfaces status",
+  "spec_trace": "Phase W: port inventory the Design Engine needs to assign end-user access ports",
+  "expected": [
+    {
+      "field": "interface_count",
+      "parse_status": "OK",
+      "value": 12
+    },
+    {
+      "field": "interface_table",
+      "parse_status": "OK",
+      "value": [
+        {
+          "port": "Gi1/0/1",
+          "status": "connected",
+          "vlan": "10",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/2",
+          "status": "connected",
+          "vlan": "trunk",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/3",
+          "status": "notconnect",
+          "vlan": "1",
+          "duplex": "auto",
+          "speed": "auto",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/4",
+          "status": "connected",
+          "vlan": "10",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/5",
+          "status": "connected",
+          "vlan": "10",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/6",
+          "status": "connected",
+          "vlan": "20",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/7",
+          "status": "connected",
+          "vlan": "20",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/8",
+          "status": "connected",
+          "vlan": "30",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/9",
+          "status": "connected",
+          "vlan": "40",
+          "duplex": "a-full",
+          "speed": "a-1000",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/10",
+          "status": "disabled",
+          "vlan": "1",
+          "duplex": "auto",
+          "speed": "auto",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/11",
+          "status": "disabled",
+          "vlan": "1",
+          "duplex": "auto",
+          "speed": "auto",
+          "type": "10/100/1000BaseTX"
+        },
+        {
+          "port": "Gi1/0/12",
+          "status": "disabled",
+          "vlan": "1",
+          "duplex": "auto",
+          "speed": "auto",
+          "type": "10/100/1000BaseTX"
+        }
+      ]
+    }
+  ]
+}

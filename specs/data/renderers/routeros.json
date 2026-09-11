@@ -2,14 +2,42 @@
   "vendor_os": "routeros",
   "verified": true,
   "verified_at": "2026-09-11",
-  "note": "Lab-verified for RouterOS 7.x. Safe Mode rolls back automatically on disconnect.",
-  "wrappers": { "enter_config": [], "exit_config": [] },
+  "note": "Lab-verified for RouterOS 7.x. Safe Mode rolls back automatically on disconnect. Phase W: RouterOS writes changes to disk as they are made; there is no separate persist step.",
+  "wrappers": {
+    "enter_config": [],
+    "exit_config": [],
+    "persist": []
+  },
   "features": {
-    "vlan": { "commands": ["/interface/vlan/add name={name} vlan-id={vlan_id} interface={parent}"] },
-    "svi": { "commands": ["/ip/address/add address={address} interface={name}"] },
-    "trunk": { "commands": ["/interface/bridge/vlan/add bridge=bridge tagged={interface} vlan-ids={allowed_vlans_csv}"] },
-    "access": { "commands": ["/interface/bridge/vlan/add bridge=bridge untagged={interface} vlan-ids={vlan_id}"] },
-    "hostname": { "commands": ["/system/identity/set name={hostname}"] },
-    "interface": { "commands": ["/interface/set {interface} comment={description}"] }
+    "vlan": {
+      "commands": [
+        "/interface/vlan/add name={name} vlan-id={vlan_id} interface={parent}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "/ip/address/add address={address} interface={name}"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "/interface/bridge/vlan/add bridge=bridge tagged={interface} vlan-ids={allowed_vlans_csv}"
+      ]
+    },
+    "access": {
+      "commands": [
+        "/interface/bridge/vlan/add bridge=bridge untagged={interface} vlan-ids={vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "/system/identity/set name={hostname}"
+      ]
+    },
+    "interface": {
+      "commands": [
+        "/interface/set {interface} comment={description}"
+      ]
+    }
   }
 }

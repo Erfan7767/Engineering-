@@ -7,11 +7,12 @@ the whole run.
 """
 
 from netops_autopilot.autopilot import Phase
+from netops_autopilot.autopilot.answer_script import answer_script
 from netops_autopilot.autopilot.orchestrator import AutopilotEngine
 from netops_autopilot.cli import ScriptedIO
 from tests.support.simfabric import SimFabricFactory, make_ledger_stack
 
-ANSWERS = ["y", "2", "seed-01", "ISP fiber DHCP handoff", "STANDARD", "+25% in 12 months"]
+ANSWERS = answer_script(access_retry="n", intent="2")
 
 
 def _run():

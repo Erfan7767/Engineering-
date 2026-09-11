@@ -3,7 +3,7 @@
   "vendor_os": "ios-xe",
   "verified": true,
   "verified_at": "2026-09-11",
-  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist. Phase V: svi renders `ip address <ip> <dotted-mask>`; IOS/IOS-XE rejects the CIDR form.",
+  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist. Phase V: svi renders `ip address <ip> <dotted-mask>`; IOS/IOS-XE rejects the CIDR form. Phase W: `write memory` persists to startup-config; without it every applied change is lost on the next reload. Phase W: a template line prefixed with '? ' (marker + one space) is OPTIONAL \u2014 skipped when a placeholder is unbound instead of failing the whole block, so a DHCP pool with no declared DNS server still renders. Only the marker and one space are stripped, so the line's indentation \u2014 which encodes CLI nesting \u2014 is preserved.",
   "wrappers": {
     "enter_config": [
       "enable",
@@ -11,6 +11,9 @@
     ],
     "exit_config": [
       "end"
+    ],
+    "persist": [
+      "write memory"
     ]
   },
   "features": {
@@ -53,6 +56,16 @@
       "commands": [
         "interface {interface}",
         " description {description}"
+      ]
+    },
+    "dhcp": {
+      "commands": [
+        "ip dhcp excluded-address {exclude_first} {exclude_last}",
+        "ip dhcp pool {pool}",
+        " network {network} {netmask}",
+        " default-router {gateway}",
+        "?  dns-server {dns}",
+        "?  domain-name {domain}"
       ]
     }
   }

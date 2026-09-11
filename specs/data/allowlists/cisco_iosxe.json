@@ -435,6 +435,37 @@
           ],
           "rollback": "no ip address",
           "scope": "interface"
+        },
+        {
+          "template": "ip dhcp excluded-address <first> <last>",
+          "purpose": "reserve addresses DHCP must not hand out",
+          "rollback": "no ip dhcp excluded-address <first> <last>"
+        },
+        {
+          "template": "ip dhcp pool <name>",
+          "purpose": "create a DHCP pool",
+          "rollback": "no ip dhcp pool <name>",
+          "enters_mode": true
+        },
+        {
+          "template": "network <net> <mask>",
+          "purpose": "pool network and mask",
+          "rollback": "no network"
+        },
+        {
+          "template": "default-router <gw>",
+          "purpose": "pool default gateway",
+          "rollback": "no default-router"
+        },
+        {
+          "template": "dns-server <args>",
+          "purpose": "pool DNS resolvers (IOS takes a space-separated list)",
+          "rollback": "no dns-server"
+        },
+        {
+          "template": "domain-name <name>",
+          "purpose": "pool DNS domain",
+          "rollback": "no domain-name"
         }
       ]
     },
@@ -554,6 +585,15 @@
         {
           "template": "no router",
           "reason": "bare `no router` is refused; the precise declared inverses `no router ospf <pid>` / `no router bgp <asn>` remain available so a routing change can still be rolled back (Phase V)"
+        }
+      ]
+    },
+    "CONFIG_PERSIST": {
+      "entries": [
+        {
+          "template": "write memory",
+          "purpose": "copy the running-config to startup-config so the change survives a reload",
+          "rollback": ""
         }
       ]
     }

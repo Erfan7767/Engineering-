@@ -200,6 +200,7 @@ def default_scenarios() -> dict[str, ScenarioFn]:
         return facts, counters
 
     def _scenario_autopilot_e2e():
+        from netops_autopilot.autopilot.answer_script import answer_script
         from netops_autopilot.autopilot.orchestrator import AutopilotEngine
         from netops_autopilot.cli import ScriptedIO
         from tests.support.simfabric import SimFabricFactory, make_ledger_stack
@@ -208,7 +209,8 @@ def default_scenarios() -> dict[str, ScenarioFn]:
         fabric = SimFabricFactory(include_access=True, access_behavior="allow")
         engine = AutopilotEngine(
             store=store, key_id=key_id,
-            io=ScriptedIO(["y", "2", "seed-01", "x", "STANDARD", "flat"]),
+            io=ScriptedIO(answer_script(access_retry="n", intent="2",
+                                      wan_handoff="x", growth="flat")),
             time_authority=time_auth)
         report = engine.run(
             probe_port_session_factory=lambda port: fabric.probe(port),

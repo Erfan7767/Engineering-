@@ -71,7 +71,12 @@ from ..ledger.models import (
     RawArtifact,
 )
 from ..ledger.store import LedgerStore
-from .allowlist import CONFIG_CLASSES, CommandAllowlist, CommandMatch
+from .allowlist import (
+    CONFIG_CLASSES,
+    PERSIST_CLASSES,
+    CommandAllowlist,
+    CommandMatch,
+)
 
 
 class ExecSession(Protocol):
@@ -107,6 +112,7 @@ class ChangeOutcome(str, Enum):
     APPLIED_PARTIAL = "APPLIED_PARTIAL"            # some blocks applied
     ROLLED_BACK = "ROLLED_BACK"                    # rolled back AND confirmed clean
     ROLLBACK_FAILED = "ROLLBACK_FAILED"            # rollback attempted, device NOT confirmed clean
+    PERSIST_FAILED = "PERSIST_FAILED"              # applied + verified, but NOT saved to startup
     REJECTED = "REJECTED"                          # allowlist rejected a command
     BLOCKED_DRY_RUN_MISMATCH = "BLOCKED_DRY_RUN_MISMATCH"
 
@@ -144,6 +150,12 @@ class ChangeRecord:
     before_hash: Optional[str] = None
     after_hash: Optional[str] = None
     rollback_hash: Optional[str] = None
+    #: Phase W — how many applied configuration lines were found in the
+    #: post-apply readback, and how many were not. Zero with a non-zero
+    #: command count means verification proved nothing, so it is reported
+    #: rather than left for the operator to guess.
+    state_checked: int = 0
+    state_absent: int = 0
     commit_id: Optional[str] = None
     failure_causes: list[str] = field(default_factory=list)
 
@@ -182,6 +194,8 @@ class ChangeRecord:
             "before_hash": self.before_hash,
             "after_hash": self.after_hash,
             "rollback_hash": self.rollback_hash,
+            "state_checked": self.state_checked,
+            "state_absent": self.state_absent,
             "commit_id": self.commit_id,
             "failure_causes": list(self.failure_causes),
             "rollback_commands": list(self.rollback_commands),
@@ -280,6 +294,19 @@ def normalize_running_config(data: bytes) -> bytes:
     return "\n".join(out).encode("utf-8")
 
 
+def _read_running_config(session: ExecSession) -> Optional[bytes]:
+    """Read the running-config verbatim, or ``None`` if the read failed.
+
+    Verification needs the text, not just its hash: a changed hash proves
+    *something* changed, which is a much weaker claim than "the lines we sent
+    are in the device's configuration".
+    """
+    try:
+        return session.execute("show running-config", timeout_s=10.0)
+    except Exception:  # noqa: BLE001 — best-effort; absence is reported, not guessed
+        return None
+
+
 def _read_running_hash(session: ExecSession) -> Optional[str]:
     """Capture a baseline hash of the running-config for drift detection.
 
@@ -340,6 +367,7 @@ class ConfigExecutor:
         *,
         dry_run: bool = False,
         wrappers: tuple[Sequence[str], Sequence[str]] = ((), ()),
+        persist: Sequence[str] = (),
     ) -> ChangeRecord:
         """Apply ``commands`` to ``device_ref`` via ``session``.
 
@@ -441,9 +469,47 @@ class ConfigExecutor:
                 self._record_to_ledger(record)
                 return record
 
+        # ----- Phase 4: persist. Only now.
+        # A change that is not saved is a change that vanishes on the next
+        # reload, so this is not optional housekeeping — but it must never run
+        # before verification (we would be making an unverified state
+        # permanent) and never during rollback (we would be making the
+        # half-applied state permanent).
+        if persist:
+            persisted, persist_causes = self._persist(session, record, persist)
+            if not persisted:
+                record.failure_causes.extend(persist_causes)
+                record.outcome = ChangeOutcome.PERSIST_FAILED
+                self._record_to_ledger(record)
+                return record
+
         record.outcome = ChangeOutcome.APPLIED
         self._record_to_ledger(record)
         return record
+
+    def _persist(self, session: ExecSession, record: ChangeRecord,
+                 commands: Sequence[str]) -> tuple[bool, list[str]]:
+        """Issue the vendor's persist commands. Returns (ok, causes).
+
+        Each one must be allowlisted ``CONFIG_PERSIST``; anything else is
+        refused rather than sent, so this channel cannot be used to smuggle
+        configuration past the change gate.
+        """
+        causes: list[str] = []
+        for command in commands:
+            stripped = command.strip()
+            if not stripped:
+                continue
+            if self._allowlist.gate(stripped) not in PERSIST_CLASSES:
+                causes.append(f"PERSIST_NOT_ALLOWLISTED:{stripped}")
+                continue
+            result = self._issue(session, record, stripped, "PERSIST",
+                                 "CONFIG_PERSIST", 0)
+            if not result.ok():
+                causes.append(
+                    f"PERSIST_FAILED:{stripped}:{result.error} — the change is in the "
+                    f"running-config but will be LOST on the next reload")
+        return (not causes, causes)
 
     # ------------------------------------------------------------ planning
     def _plan(self, enter: list[str], body: list[str], exit_: list[str],
@@ -725,16 +791,62 @@ class ConfigExecutor:
         if causes:
             return (False, causes)
 
-        if record.before_hash is None:
-            causes.append("VERIFY_BASELINE_UNAVAILABLE: state change not confirmed")
-            return (True, causes)          # typed caveat, not a silent pass
-        new_hash = _read_running_hash(session)
-        if new_hash is None:
+        readback = _read_running_config(session)
+        if readback is None:
+            # Typed caveat, never a silent pass.
             causes.append("VERIFY_READBACK_UNAVAILABLE: state change not confirmed")
             return (True, causes)
-        if new_hash == record.before_hash:
-            return (False, [f"VERIFY_NO_CHANGE: before==after ({new_hash})"])
-        return (True, [])
+
+        normalized = normalize_running_config(readback)
+        record.after_hash = hashlib.sha256(normalized).hexdigest()[:16]
+        if record.before_hash is None:
+            causes.append("VERIFY_BASELINE_UNAVAILABLE: state change not confirmed")
+        elif record.after_hash == record.before_hash:
+            return (False, [f"VERIFY_NO_CHANGE: before==after ({record.after_hash})"])
+
+        # Signal 3 (Phase W): the intended state actually exists on the device.
+        causes.extend(self._verify_state_present(normalized, applied, record))
+        return (not causes, causes)
+
+    def _verify_state_present(
+        self, normalized: bytes, applied: Sequence[_PlannedLine],
+        record: ChangeRecord,
+    ) -> list[str]:
+        """Assert each applied configuration line exists in the readback.
+
+        The hash comparison above proves the configuration *changed*. It does
+        not prove it changed into what was asked for: a line the device parsed
+        and then ignored, or a later line that overwrote an earlier one, both
+        leave a different hash and a wrong network. Reading the lines back is
+        the only signal that closes that gap, so it is now required.
+
+        Mode transitions (``enable``, ``configure terminal``, ``end``,
+        ``exit``) leave no configuration line and are classified outside
+        ``CONFIG_CLASSES``; they are excluded and counted as unchecked rather
+        than counted as verified. A ``no …`` line is checked the other way
+        round — the negated form must be *gone*.
+        """
+        present = {
+            " ".join(line.split())
+            for line in normalized.decode("utf-8", "replace").splitlines()
+            if line.strip() and not line.lstrip().startswith("!")
+        }
+        causes: list[str] = []
+        for planned in applied:
+            if planned.cls not in CONFIG_CLASSES:
+                continue                       # not a configuration statement
+            target = " ".join(planned.stripped.split())
+            record.state_checked += 1
+            if target.startswith("no "):
+                positive = " ".join(target[3:].split())
+                if positive in present:
+                    record.state_absent += 1
+                    causes.append(f"VERIFY_STATE_STILL_PRESENT:{target}")
+                continue
+            if target not in present:
+                record.state_absent += 1
+                causes.append(f"VERIFY_STATE_ABSENT:{target}")
+        return causes
 
     # ------------------------------------------------------------- ledger
     def _record_to_ledger(self, record: ChangeRecord) -> None:

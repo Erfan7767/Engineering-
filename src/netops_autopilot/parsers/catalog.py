@@ -7,6 +7,7 @@ catalog is deterministic across runs.
 from __future__ import annotations
 
 from .cisco_show_version import CiscoIosXeShowVersionParser
+from .interface_inventory import CiscoIosXeInterfacesStatusParser
 from .keyvalue import routeros_system_resource
 from .neighbor_parsers import NEIGHBOR_CATALOG_BUILDERS
 from .registry import ParserRegistry
@@ -21,6 +22,7 @@ from .vendor_parsers import (
 CATALOG_BUILDERS = (
     routeros_system_resource,
     CiscoIosXeShowVersionParser,
+    CiscoIosXeInterfacesStatusParser,
     junos_show_version,
     fortios_get_system_status,
     arubaos_show_version,

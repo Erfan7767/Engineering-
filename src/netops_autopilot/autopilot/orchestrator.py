@@ -13,6 +13,7 @@ from ..access.collector import Collector, SessionLockManager
 from ..access.day0 import Day0State, classify_day0_state
 from ..access.vendor_detect import detect_family_candidates
 from ..core.budgets import CommandBudget
+from .answer_script import grants_access_retry
 from ..core.counters import CounterCollector
 from ..core.failures import Failure, FailureClass
 from ..core.timeauth import TimeAuthority
@@ -161,6 +162,7 @@ class AutopilotEngine:
             if session is None:
                 return self.report
             self._phase_discovery(session, mgmt_session_factory)
+            self._phase_access_retry(session, mgmt_session_factory)
             self._phase_map()
             blueprint = self._phase_elicit()
             if blueprint is None:
@@ -265,6 +267,98 @@ class AutopilotEngine:
                     f"devices={totals['devices']} commands={totals['commands_collected']}/{totals['commands_planned']} "
                     f"statuses={totals['device_status']}")
 
+    def _phase_access_retry(self, boot, mgmt_session_factory,
+                            max_rounds: int = 2) -> None:
+        """Give the operator the evidence-directed retry the gaps list promises.
+
+        Discovery reports ``ACCESS_LIMITED`` for a device whose credentials
+        were refused, and the design then excludes it from the managed set.
+        That exclusion was permanent: nothing ever offered a retry, so a
+        network with one differently-credentialed switch stayed permanently
+        half-configured while the run still reported success.
+
+        The loop is honest in both directions. A device that unlocks is
+        re-crawled and joins the managed set with its identity confirmed; a
+        device that still refuses stays excluded *and is announced*. Nothing
+        is silently included and nothing is silently dropped.
+        """
+        assert self.report.crawl is not None
+        session, family = boot
+        for _round in range(max_rounds):
+            limited = self._access_limited_refs()
+            if not limited:
+                return
+            listing = ", ".join(limited)
+            # Deliberately NOT ``io.confirm``: a confirmation whose default is
+            # "yes" is not a confirmation. Supplying credentials to a device
+            # and re-probing it is a security-relevant act, so it requires an
+            # explicit affirmative answer — silence declines.
+            answer = self.io.ask(
+                f"{len(limited)} discovered device(s) could not be reached with the "
+                f"credentials tried: {listing}.\n"
+                f"Retry now with management credentials? Type 'y' to retry, "
+                f"anything else to leave them out: ").strip().lower()
+            if not grants_access_retry(answer):
+                # No phase record here, deliberately: discovery did not run
+                # again, so writing a second DISCOVERY_A row would put a phase
+                # in the report that no work corresponds to. The exclusion is
+                # already announced where it belongs — the gaps list
+                # (DEVICE_UNREACHABLE), the design role reason
+                # (UNMANAGED_NEIGHBOR) and this line on the operator's console.
+                self.io.show(
+                    f"ACCESS_RETRY DECLINED — {len(limited)} device(s) stay outside "
+                    f"the managed set ({listing}): announced, never silently "
+                    f"included or dropped.")
+                return
+            # Real hardware collects the secret through the management
+            # factory's getpass-backed provider on the next open attempt; the
+            # simulated fabric has an explicit grant hook.
+            grant = getattr(mgmt_session_factory, "grant", None)
+            if callable(grant):
+                grant()
+            allowlist = self.catalog_allowlists[family]
+
+            class _Factory:
+                def open(self, device_ref, hints):
+                    if device_ref == "seed-01":
+                        return session
+                    return mgmt_session_factory(device_ref, hints)
+
+            report = self.crawl.crawl(
+                seed_ref="seed-01", seed_family=family,
+                session_factory=_Factory(),
+                allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())))
+            before, after = set(self._access_limited_refs()), set()
+            self.report.crawl = report
+            after = set(self._access_limited_refs())
+            unlocked = sorted(before - after)
+            still = sorted(after)
+            if unlocked:
+                self.io.show(f"ACCESS RETRY OK — now reachable: {', '.join(unlocked)}")
+            if not unlocked:
+                self._phase(Phase.DISCOVERY_A, "ACCESS_LIMITED",
+                            f"retry did not unlock any device; still limited: "
+                            f"{', '.join(still) or '∅'}")
+                return
+        remaining = self._access_limited_refs()
+        if remaining:
+            self._phase(Phase.DISCOVERY_A, "ACCESS_LIMITED",
+                        f"{len(remaining)} device(s) still outside the managed set: "
+                        f"{', '.join(remaining)}")
+
+    def _access_limited_refs(self) -> list[str]:
+        """Devices discovery saw but could not reach for an access reason."""
+        if self.report.crawl is None:
+            return []
+        out: list[str] = []
+        for dev in self.report.crawl.devices:
+            if dev.status.value == "COMPLETE":
+                continue
+            causes = " ".join(dev.rejection_reasons or ())
+            if "ACCESS_LIMITED" in causes or "AUTH_REFUSED" in causes:
+                out.append(dev.device_ref)
+        return sorted(out)
+
     def _phase_map(self) -> None:
         assert self.report.crawl is not None
         topo = TopologyMapEngine(self.twin).build(self.report.crawl)
@@ -305,6 +399,13 @@ class AutopilotEngine:
         answers["wan_handoff"] = self.io.ask("Describe the WAN handoff (e.g., 'ISP fiber, dhcp'): ").strip()
         answers["availability"] = (self.io.ask("Availability class [STANDARD|HIGH]: ").strip() or "STANDARD")
         answers["growth"] = self.io.ask("Growth plan (e.g., '+25% in 12 months'): ").strip() or "+25% in 12 months"
+        # Client DNS for the DHCP pools. Deliberately asked and never
+        # defaulted: an invented resolver is a silent, hard-to-find outage.
+        # Blank is allowed and leaves the pools without a dns-server line,
+        # which the design then reports as a visible gap.
+        answers["dns_servers"] = self.io.ask(
+            "DNS server(s) handed to clients, comma-separated (blank = none): ").strip()
+        self._dns_servers = answers["dns_servers"]
         request, missing = business_intent_from_blueprint(
             bp, answers=answers, requirement_text=answer)
         if missing:
@@ -367,7 +468,8 @@ class AutopilotEngine:
         for dev in self.report.crawl.devices:
             if dev.identity and dev.identity.vendor_family:
                 vendor_os_of[dev.device_ref] = dev.identity.vendor_family.split("/")[-1]
-        irs = DesignEngine(CapabilityEngine.load_builtin()).render_ir(design, vendor_os_of=vendor_os_of)
+        irs = DesignEngine(CapabilityEngine.load_builtin()).render_ir(
+            design, vendor_os_of=vendor_os_of, answers=self._design_answers())
         for ref, ir in sorted(irs.items()):
             try:
                 rendered = render_ir(ref, ir)
@@ -498,11 +600,17 @@ class AutopilotEngine:
                 ref, session, _all_commands(rendered),
                 dry_run=False,
                 wrappers=rendered.wrappers,
+                persist=getattr(rendered, "persist", ()),
             )
             records.append(record.to_dict())
 
         outcomes = [r["outcome"] for r in records]
-        if "ROLLBACK_FAILED" in outcomes:
+        if "PERSIST_FAILED" in outcomes:
+            # Applied and verified, but not saved: the network works right now
+            # and silently breaks at the next reload. Louder than PARTIAL.
+            verdict = "PERSIST_FAILED"
+            self.report.final = "BLOCKED-PERSIST-FAILED"
+        elif "ROLLBACK_FAILED" in outcomes:
             # A device we could not restore is the loudest possible outcome.
             # It must outrank everything else so a run can never be reported
             # as COMPLETE while a device sits in a partial state.
@@ -531,6 +639,19 @@ class AutopilotEngine:
         self._phase(Phase.EXECUTION_GATE, "OK",
                     f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(outcomes)} device(s)")
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
+
+    def _design_answers(self) -> dict[str, str]:
+        """The operator answers the IR needs (client DNS, router choice).
+
+        Values come from what the human actually typed during elicitation.
+        Anything not asked for is simply absent, so the renderer reports the
+        gap instead of inventing a value.
+        """
+        answers = {"router_device": self._ask_again("router_device", "seed-01")}
+        dns = getattr(self, "_dns_servers", "")
+        if dns:
+            answers["dns_servers"] = dns
+        return answers
 
     def _bind_mgmt_context(self, mgmt_session_factory, console_session) -> None:
         """Hand the discovery evidence to the management-session factory.

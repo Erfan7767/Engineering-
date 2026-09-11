@@ -16,6 +16,7 @@ import json
 import pytest
 
 from netops_autopilot.access.executor import ChangeOutcome, ConfigExecutor
+from netops_autopilot.autopilot.answer_script import answer_script
 from netops_autopilot.autopilot.orchestrator import AutopilotEngine
 from netops_autopilot.cli import ScriptedIO
 from netops_autopilot.specs_data import specs_data_dir
@@ -97,8 +98,7 @@ def test_executor_rejects_unsafe_command():
 # ---------------- orchestrator end-to-end ----------------
 
 
-ANSWERS = ["y", "2", "seed-01", "ISP fiber DHCP handoff",
-           "STANDARD", "+25% in 12 months"]
+ANSWERS = answer_script(access_retry="n", intent="2")
 
 
 def test_orchestrator_full_run_stages_real_config():

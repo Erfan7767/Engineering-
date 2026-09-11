@@ -5,43 +5,219 @@
   "classes": {
     "READ_ONLY": {
       "entries": [
-        { "template": "show version", "purpose": "identity", "fields": ["model", "junos-version"] },
-        { "template": "show chassis hardware", "purpose": "hardware inventory", "fields": ["part-number", "serial-number"] },
-        { "template": "show interfaces terse", "purpose": "L1 state", "fields": ["interface", "admin-status", "link-status"] },
-        { "template": "show interfaces detail", "purpose": "counters/errors", "fields": ["interface", "input-errors", "output-errors"] },
-        { "template": "show lldp neighbors", "purpose": "neighbor evidence", "fields": ["parent-interface", "port-id", "chassis-id", "remote-system-name"] },
-        { "template": "show vlans", "purpose": "VLAN model", "fields": ["vlan-name", "tag", "interfaces"] },
-        { "template": "show ethernet-switching table", "purpose": "MAC evidence", "fields": ["vlan", "mac-address", "interface"] },
-        { "template": "show route", "purpose": "routing state", "fields": ["protocol", "prefix", "next-hop", "interface"] },
-        { "template": "show configuration | display set", "purpose": "configuration (hash baseline)", "fields": ["__full_text_hash__"] },
-        { "template": "show system commit changes", "purpose": "config change detection", "fields": ["__commits__"] },
-        { "template": "show system uptime", "purpose": "liveness", "fields": ["current-time", "uptime"] }
+        {
+          "template": "show version",
+          "purpose": "identity",
+          "fields": [
+            "model",
+            "junos-version"
+          ]
+        },
+        {
+          "template": "show chassis hardware",
+          "purpose": "hardware inventory",
+          "fields": [
+            "part-number",
+            "serial-number"
+          ]
+        },
+        {
+          "template": "show interfaces terse",
+          "purpose": "L1 state",
+          "fields": [
+            "interface",
+            "admin-status",
+            "link-status"
+          ]
+        },
+        {
+          "template": "show interfaces detail",
+          "purpose": "counters/errors",
+          "fields": [
+            "interface",
+            "input-errors",
+            "output-errors"
+          ]
+        },
+        {
+          "template": "show lldp neighbors",
+          "purpose": "neighbor evidence",
+          "fields": [
+            "parent-interface",
+            "port-id",
+            "chassis-id",
+            "remote-system-name"
+          ]
+        },
+        {
+          "template": "show vlans",
+          "purpose": "VLAN model",
+          "fields": [
+            "vlan-name",
+            "tag",
+            "interfaces"
+          ]
+        },
+        {
+          "template": "show ethernet-switching table",
+          "purpose": "MAC evidence",
+          "fields": [
+            "vlan",
+            "mac-address",
+            "interface"
+          ]
+        },
+        {
+          "template": "show route",
+          "purpose": "routing state",
+          "fields": [
+            "protocol",
+            "prefix",
+            "next-hop",
+            "interface"
+          ]
+        },
+        {
+          "template": "show configuration | display set",
+          "purpose": "configuration (hash baseline)",
+          "fields": [
+            "__full_text_hash__"
+          ]
+        },
+        {
+          "template": "show system commit changes",
+          "purpose": "config change detection",
+          "fields": [
+            "__commits__"
+          ]
+        },
+        {
+          "template": "show system uptime",
+          "purpose": "liveness",
+          "fields": [
+            "current-time",
+            "uptime"
+          ]
+        }
       ]
     },
     "CONFIG_REVERSIBLE": {
       "notes": "Junos config applies are wrapped in 'commit confirmed 5' by the adapter; auto-rollback on connection loss. Lab-verified for Junos 20.x+.",
       "entries": [
-        { "template": "set system host-name <hostname>", "purpose": "set hostname", "fields": ["hostname"], "rollback": "delete system host-name", "scope": "system" },
-        { "template": "set vlans <name> vlan-id <vlan_id>", "purpose": "create VLAN", "fields": ["name", "vlan_id"], "rollback": "delete vlans <name>", "scope": "vlan" },
-        { "template": "set interfaces <intf> unit <unit> family inet address <ip>/<prefix>", "purpose": "set L3 address", "fields": ["intf", "unit", "ip", "prefix"], "rollback": "delete interfaces <intf> unit <unit> family inet address <ip>/<prefix>", "scope": "interface" },
-        { "template": "set interfaces <intf> unit 0 family ethernet-switching vlan members <name>", "purpose": "assign port to VLAN", "fields": ["intf", "name"], "rollback": "delete interfaces <intf> unit 0 family ethernet-switching vlan members <name>", "scope": "interface" },
-        { "template": "set interfaces <intf> unit 0 family ethernet-switching port-mode trunk", "purpose": "set trunk mode", "fields": ["intf"], "rollback": "delete interfaces <intf> unit 0 family ethernet-switching port-mode", "scope": "interface" }
+        {
+          "template": "set system host-name <hostname>",
+          "purpose": "set hostname",
+          "fields": [
+            "hostname"
+          ],
+          "rollback": "delete system host-name",
+          "scope": "system"
+        },
+        {
+          "template": "set vlans <name> vlan-id <vlan_id>",
+          "purpose": "create VLAN",
+          "fields": [
+            "name",
+            "vlan_id"
+          ],
+          "rollback": "delete vlans <name>",
+          "scope": "vlan"
+        },
+        {
+          "template": "set interfaces <intf> unit <unit> family inet address <ip>/<prefix>",
+          "purpose": "set L3 address",
+          "fields": [
+            "intf",
+            "unit",
+            "ip",
+            "prefix"
+          ],
+          "rollback": "delete interfaces <intf> unit <unit> family inet address <ip>/<prefix>",
+          "scope": "interface"
+        },
+        {
+          "template": "set interfaces <intf> unit 0 family ethernet-switching vlan members <name>",
+          "purpose": "assign port to VLAN",
+          "fields": [
+            "intf",
+            "name"
+          ],
+          "rollback": "delete interfaces <intf> unit 0 family ethernet-switching vlan members <name>",
+          "scope": "interface"
+        },
+        {
+          "template": "set interfaces <intf> unit 0 family ethernet-switching port-mode trunk",
+          "purpose": "set trunk mode",
+          "fields": [
+            "intf"
+          ],
+          "rollback": "delete interfaces <intf> unit 0 family ethernet-switching port-mode",
+          "scope": "interface"
+        }
       ]
     },
     "CONFIG_HIGH_RISK": {
       "notes": "Routing-protocol and management-plane templates. Require lock-out plan + change window.",
       "entries": [
-        { "template": "set routing-options router-id <ip>", "purpose": "set router-id", "fields": ["ip"], "rollback": "delete routing-options router-id", "scope": "routing" },
-        { "template": "set protocols ospf area <area> interface <intf>", "purpose": "OSPF area/interface", "fields": ["area", "intf"], "rollback": "delete protocols ospf area <area> interface <intf>", "scope": "routing" },
-        { "template": "set system login user <name> class superuser authentication plain-text-password", "purpose": "create admin user (interactive)", "fields": ["name"], "rollback": "delete system login user <name>", "scope": "system" }
+        {
+          "template": "set routing-options router-id <ip>",
+          "purpose": "set router-id",
+          "fields": [
+            "ip"
+          ],
+          "rollback": "delete routing-options router-id",
+          "scope": "routing"
+        },
+        {
+          "template": "set protocols ospf area <area> interface <intf>",
+          "purpose": "OSPF area/interface",
+          "fields": [
+            "area",
+            "intf"
+          ],
+          "rollback": "delete protocols ospf area <area> interface <intf>",
+          "scope": "routing"
+        },
+        {
+          "template": "set system login user <name> class superuser authentication plain-text-password",
+          "purpose": "create admin user (interactive)",
+          "fields": [
+            "name"
+          ],
+          "rollback": "delete system login user <name>",
+          "scope": "system"
+        }
       ]
     },
-    "DESTRUCTIVE": { "entries": [
-      { "template": "loader-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
-    ] },
-    "FORBIDDEN": { "entries": [
-      { "template": "request system zeroize", "reason": "destructive" },
-      { "template": "request system snapshot delete", "reason": "destructive" }
-    ] }
+    "DESTRUCTIVE": {
+      "entries": [
+        {
+          "template": "loader-recovery-sequence",
+          "purpose": "never executed by platform; HUMAN_TASK instructions only",
+          "fields": []
+        }
+      ]
+    },
+    "FORBIDDEN": {
+      "entries": [
+        {
+          "template": "request system zeroize",
+          "reason": "destructive"
+        },
+        {
+          "template": "request system snapshot delete",
+          "reason": "destructive"
+        }
+      ]
+    },
+    "CONFIG_PERSIST": {
+      "entries": [
+        {
+          "template": "commit",
+          "purpose": "make the verified candidate configuration permanent",
+          "rollback": "rollback 0"
+        }
+      ]
+    }
   }
 }

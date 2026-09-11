@@ -46,6 +46,10 @@ class RenderedConfig:
     label: str                     # PREVIEW_SEED_UNVERIFIED
     blocks: tuple[RenderedBlock, ...]
     wrappers: tuple[str, ...]
+    #: Commands that make the change survive a reload (``write memory``,
+    #: Junos ``commit``). Empty for platforms that persist as they go.
+    #: Shown in the preview so the operator approves the whole operation.
+    persist: tuple[str, ...] = ()
 
     def to_text(self) -> str:
         lines = [f"! {self.label} — device={self.device_ref} vendor_os={self.vendor_os}"]
@@ -61,6 +65,9 @@ class RenderedConfig:
                 continue
             lines.extend(block.commands)
         lines.extend(exit_)
+        if self.persist:
+            lines.append("! persist (runs only after post-apply verification passes)")
+            lines.extend(self.persist)
         return "\n".join(lines)
 
 
@@ -96,8 +103,7 @@ def render_ir(device_ref: str, ir: ConfigIR) -> RenderedConfig:
         if "allowed_vlans" in params and params["allowed_vlans"] is not None:
             params["allowed_vlans_csv"] = ",".join(str(v) for v in params["allowed_vlans"])
         try:
-            commands = tuple(cmd.format(**{k: _fmt(v) for k, v in params.items()})
-                             for cmd in template.get("commands", ()))
+            commands = _render_commands(template.get("commands", ()), params)
             prelude: tuple[str, ...] = ()
             if node.feature not in prelude_done:
                 prelude = tuple(cmd.format(**{k: _fmt(v) for k, v in params.items()})
@@ -116,7 +122,38 @@ def render_ir(device_ref: str, ir: ConfigIR) -> RenderedConfig:
     label = "RENDER-VERIFIED" if verified else "PREVIEW_SEED_UNVERIFIED"
     return RenderedConfig(device_ref=device_ref, vendor_os=os_name,
                           verified_templates=verified, label=label,
-                          blocks=tuple(blocks), wrappers=wrappers)
+                          blocks=tuple(blocks), wrappers=wrappers,
+                          persist=tuple(wrappers_data.get("persist", ())))
+
+
+def _render_commands(templates: tuple, params: dict) -> tuple:
+    """Format a feature's command templates against the node's parameters.
+
+    A template line prefixed with ``"? "`` is **optional**: when one of its
+    placeholders is unbound the line is skipped rather than failing the whole
+    block. Exactly the marker plus one space is stripped, so the line's own
+    indentation survives — and indentation is what encodes CLI nesting, so
+    losing it would put the command in the wrong mode. That distinction matters — a DHCP pool with no declared DNS server
+    is a real, useful configuration, and reporting the entire pool as
+    NOT_MODELED because one optional line could not be filled would hide
+    working configuration behind a missing nicety.
+
+    A line WITHOUT the marker still raises on an unbound placeholder, which
+    the caller turns into a typed NOT_MODELED block (T2). Required and
+    optional are declared in the data, never decided here.
+    """
+    out: list[str] = []
+    formatted = {k: _fmt(v) for k, v in params.items()}
+    for cmd in templates:
+        optional = cmd.startswith("? ")
+        body = cmd[2:] if optional else cmd
+        try:
+            out.append(body.format(**formatted))
+        except KeyError:
+            if not optional:
+                raise
+            # Skipped on purpose; the parameter is simply absent.
+    return tuple(out)
 
 
 def _fmt(value) -> str:

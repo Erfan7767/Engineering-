@@ -21,6 +21,7 @@ deterministic site design and one ConfigIR per device:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -106,13 +107,50 @@ class SiteDesign:
 
 
 # ------------------------------------------------------------------ harvest
+_PORT_TOKEN = re.compile(r"(\d+|\D+)")
+
+
+def port_sort_key(name: str) -> tuple:
+    """Natural (numeric-aware) ordering for port names.
+
+    Plain ``sorted()`` puts ``gi1/0/10`` before ``gi1/0/2``, which is not how
+    any engineer reads a patch panel — and access-port assignment order
+    decides which VLAN lands on which socket, so the order is part of the
+    design's determinism, not a cosmetic detail.
+    """
+    return tuple((0, int(tok)) if tok.isdigit() else (1, tok.lower())
+                 for tok in _PORT_TOKEN.findall(name))
+
+
 def harvest_interfaces(report: CrawlReport) -> dict[str, tuple[str, ...]]:
-    """Local port names per device from neighbor tables (merged view),
-    port-name normalized with the device's family. Deterministic, dedup."""
+    """Local port names per device, port-name normalized, deterministic.
+
+    Phase W: the port inventory (``show interfaces status``) is the primary
+    source. Deriving ports only from neighbour tables — the previous
+    behaviour — could never yield an end-user port, because the only ports a
+    neighbour table names are exactly the ones the design reserves for
+    infrastructure. The result was a structurally guaranteed
+    ``0 access ports``: VLANs and gateways were created and nothing was ever
+    plugged into them.
+
+    Neighbour-derived ports are still merged in, so a device that answers no
+    inventory command is no worse off than before. Order is the device's own
+    port order (inventory first, then any link-only port), which is
+    deterministic and matches how an engineer reads the box.
+    """
     out: dict[str, list[str]] = {}
     for dev in report.devices:
         family = dev.identity.vendor_family if dev.identity else ""
         ports: list[str] = []
+        # 1. the real inventory, in the order the device reported it
+        for row in dev.interface_table:
+            raw = row.get("port")
+            if not raw:
+                continue
+            norm, _mapped = normalize_port(family, raw)
+            if norm and norm not in ports:
+                ports.append(norm)
+        # 2. anything a neighbour table named that the inventory did not
         for link in report.links:
             for ep in (link.endpoint_a, link.endpoint_b):
                 if ep.device_ref != dev.device_ref or not ep.interface:
@@ -120,8 +158,10 @@ def harvest_interfaces(report: CrawlReport) -> dict[str, tuple[str, ...]]:
                 norm, _mapped = normalize_port(family, ep.interface)
                 if norm and norm not in ports:
                     ports.append(norm)
-        out[dev.device_ref] = sorted(ports)
-    return {k: tuple(v) for k, v in out.items()}
+        # Natural order, so the assignment is replay-identical AND matches the
+        # physical port numbering an operator walks the rack by.
+        out[dev.device_ref] = tuple(sorted(ports, key=port_sort_key))
+    return out
 
 
 class DesignEngine:
@@ -289,34 +329,56 @@ class DesignEngine:
 
     def _uplinks(self, report: CrawlReport, reachable: dict[str, DeviceResult],
                  family_of: dict[str, str]) -> list[UplinkAssignment]:
-        uplinks: list[UplinkAssignment] = []
-        for ref in sorted(reachable):
-            candidates: list[tuple[int, str, str, str, str]] = []
-            for link in report.links:
-                eps = [link.endpoint_a, link.endpoint_b]
-                mine = next((e for e in eps if e.device_ref == ref), None)
-                peer = next((e for e in eps if e.device_ref != ref), None)
-                if mine is None or peer is None or mine.interface is None:
+        """One assignment for every device-port that carries neighbour evidence.
+
+        Both ends of a link have to be trunks or the link does not carry the
+        design's VLANs. The previous rule — one uplink per device, the best
+        link only — left the router's *other* downstream ports in their default
+        access mode, so the switch cabled to them sat on VLAN 1 while the
+        design claimed a trunk existed there. A three-device fabric exposed it:
+        the core's uplink was announced in the plan and never configured.
+
+        Two further defects are fixed with it:
+
+        * ``break`` sat inside the link loop, so ``candidates`` never held more
+          than one entry and the ``.sort()`` below it was dead code. The
+          ``reason`` string still claimed grade-based selection with a
+          (peer, port) tie-break — a false statement about what the engine did.
+        * Every candidate link is now ranked and the best grade per local port
+          wins, so the reason describes the selection that actually happened.
+        """
+        # (device_ref, normalized local port) → best (rank, peer, peer port)
+        best: dict[tuple[str, str], tuple[int, str, str]] = {}
+        for link in report.links:
+            try:
+                rank = _GRADE_RANK.index(link.fsm4_state)
+            except ValueError:
+                rank = len(_GRADE_RANK) - 1
+            for mine, peer in ((link.endpoint_a, link.endpoint_b),
+                               (link.endpoint_b, link.endpoint_a)):
+                if mine.device_ref not in reachable:
                     continue
                 if peer.device_ref not in reachable:
                     continue
-                try:
-                    rank = _GRADE_RANK.index(link.fsm4_state)
-                except ValueError:
-                    rank = len(_GRADE_RANK) - 1
-                candidates.append((rank, ref, mine.interface, peer.device_ref, peer.interface or "?"))
-                break  # one uplink per device: the best discovered link only
-            if candidates:
-                candidates.sort(key=lambda c: (c[0], c[3], c[4]))
-                rank, _r, port, peer_ref, peer_port = candidates[0]
-                state = _GRADE_RANK[rank] if rank < len(_GRADE_RANK) else lf.UNKNOWN
-                uplinks.append(UplinkAssignment(
-                    device_ref=ref, local_port=normalize_port(family_of.get(ref, ""), port)[0] or port,
-                    peer_ref=peer_ref,
-                    peer_port=normalize_port(family_of.get(peer_ref, ""), peer_port)[0] or peer_port,
-                    link_state=state,
-                    reason=(f"best discovered uplink by FSM-4 grade ({state}); "
-                            f"tie-break (peer, port)")))
+                if mine.interface is None or peer.interface is None:
+                    continue  # no local port ⇒ cannot be configured, never guessed
+                port = normalize_port(family_of.get(mine.device_ref, ""),
+                                      mine.interface)[0] or mine.interface
+                peer_port = normalize_port(family_of.get(peer.device_ref, ""),
+                                           peer.interface)[0] or peer.interface
+                key = (mine.device_ref, port)
+                prior = best.get(key)
+                if prior is None or (rank, peer.device_ref, peer_port) < prior:
+                    best[key] = (rank, peer.device_ref, peer_port)
+
+        uplinks: list[UplinkAssignment] = []
+        for (ref, port), (rank, peer_ref, peer_port) in sorted(best.items()):
+            state = _GRADE_RANK[rank] if rank < len(_GRADE_RANK) else lf.UNKNOWN
+            uplinks.append(UplinkAssignment(
+                device_ref=ref, local_port=port, peer_ref=peer_ref,
+                peer_port=peer_port, link_state=state,
+                reason=(f"port carries neighbour evidence (FSM-4 {state}); best "
+                        f"grade per local port, tie-break (peer, port)")))
         return uplinks
 
     def _access_ports(self, report: CrawlReport, reachable: dict[str, DeviceResult],
@@ -340,6 +402,7 @@ class DesignEngine:
         enduser = [a for a in zones if a.kind in ("INTERNAL", "GUEST", "DMZ")]
         # Serve the largest internal-ish zone first (shortage is visible).
         enduser.sort(key=lambda a: -blueprint.default_host_sizes.get(a.zone, 0))
+        weights = _zone_weights(enduser, blueprint)
         assignments: list[AccessAssignment] = []
         for ref in sorted(reachable):
             family = family_of.get(ref, "")
@@ -347,27 +410,41 @@ class DesignEngine:
                     if p not in used.get(ref, set()) and p not in infrastructure.get(ref, set())]
             if not free:
                 continue  # honest silence: nothing harvested beyond uplinks
-            for zone_assign, port in zip(enduser, free):
+            # Phase W: spread the free ports across the zones in proportion to
+            # their planned host counts. The previous `zip(enduser, free)`
+            # gave every zone exactly ONE port regardless of size, so a
+            # 96-host users zone and an 8-host mgmt zone both got a single
+            # socket. Deterministic weighted round-robin: same inputs, same
+            # assignment, replay-identical.
+            for port, zone_assign in zip(free, _weighted_cycle(enduser, weights)):
                 assignments.append(AccessAssignment(
                     device_ref=ref, port=port, zone=zone_assign.zone,
                     vlan_id=zone_assign.vlan_id,
-                    reason=("first unused harvested port in deterministic order "
-                            "(infrastructure ports with ANY neighbor evidence excluded); "
-                            "pairs largest-need zone first; shortage visible in counts")))
+                    reason=(f"unused harvested port in deterministic order "
+                            f"(infrastructure ports with ANY neighbor evidence excluded); "
+                            f"distributed in proportion to planned host count "
+                            f"(weight {weights[zone_assign.zone]})")))
             used.setdefault(ref, set()).update(free)
         return assignments
 
     # ------------------------------------------------------------------ IR
-    def render_ir(self, design: SiteDesign, *, vendor_os_of: dict[str, str]) -> dict[str, ConfigIR]:
+    def render_ir(self, design: SiteDesign, *, vendor_os_of: dict[str, str],
+                  answers: Optional[dict[str, str]] = None) -> dict[str, ConfigIR]:
         """Per-device ConfigIR. UNMANAGED/unreachable devices get none.
 
         Node ordering is stable: VLAN model → L3 SVIs (router only) →
         uplinks (trunk) → access memberships. Every node is tagged
         REVERSIBLE_BY_REPLACE (archive-backed) or flagged, and carries the
-        decision lineage in parameters['reason']."""
+        decision lineage in parameters['reason'].
+
+        ``answers`` carries operator-supplied values that must never be
+        guessed — currently the client DNS servers for DHCP pools. Absent
+        values leave the corresponding template line unbound, which the
+        renderer reports rather than inventing."""
         out: dict[str, ConfigIR] = {}
         if design.blocked:
             return out
+        answers = dict(answers or {})
         role_of = {r.device_ref: r.role for r in design.roles}
         for zone in design.zones:
             target = zone.routed_on
@@ -405,6 +482,53 @@ class DesignEngine:
                 reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
                 requires=(f"vlan:{zone.zone}",),
                 provides=(f"l3:{zone.zone}",)))
+            # DHCP for the zones clients actually attach to. Without a pool the
+            # VLAN and gateway exist but nothing ever gets an address, so the
+            # network is dead on arrival for end users.
+            if zone.kind in ("INTERNAL", "GUEST", "DMZ"):
+                prefix = zone.subnet.split("/")[1]
+                mask = _prefix_to_mask(prefix)
+                exclusion = _dhcp_exclusion(zone.subnet, zone.gateway)
+                # IOS `dns-server` takes a SPACE-separated list. The operator
+                # is asked for commas because that is how people write it;
+                # emitting the comma form verbatim would be rejected by the
+                # device, so it is normalized here rather than at the wire.
+                dns = " ".join(
+                    tok for tok in re.split(r"[,;\s]+", (answers.get("dns_servers") or "").strip())
+                    if tok)
+                if mask and exclusion:
+                    dhcp_params = {
+                        "pool": zone.zone,
+                        "network": str(ipaddress.ip_network(zone.subnet, strict=False).network_address),
+                        "netmask": mask,
+                        "gateway": zone.gateway,
+                        "exclude_first": exclusion[0],
+                        "exclude_last": exclusion[1],
+                        "reason": (f"pool for zone {zone.zone}; first {DHCP_RESERVED_HOSTS} usable "
+                                   f"addresses reserved for gateway/infrastructure"),
+                    }
+                    if dns:
+                        dhcp_params["dns"] = dns
+                    nodes.append(IRNode(
+                        node_id=f"dhcp-{zone.zone}",
+                        target=_REF(target),
+                        operation=Operation.CREATE, feature="dhcp", vendor_os=os_name,
+                        parameters=dhcp_params,
+                        reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                        requires=(f"l3:{zone.zone}",),
+                        provides=(f"dhcp:{zone.zone}",)))
+                else:
+                    # Not invented, not silently dropped: a zone with no
+                    # computable pool is visible in the render as NOT_MODELED.
+                    nodes.append(IRNode(
+                        node_id=f"dhcp-{zone.zone}",
+                        target=_REF(target),
+                        operation=Operation.CREATE, feature="dhcp", vendor_os=os_name,
+                        parameters={"reason": (f"NO_DHCP_POOL: subnet {zone.subnet} has no "
+                                               f"computable IPv4 exclusion block (T2)")},
+                        reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                        requires=(f"l3:{zone.zone}",),
+                        provides=()))
             out[target] = _IR(target, os_name, tuple(nodes))
         for up in design.uplinks:
             ref = up.device_ref
@@ -434,6 +558,90 @@ class DesignEngine:
                 requires=(f"vlan:{acc.zone}",),)]
             out[ref] = _IR(ref, os_name, tuple(nodes))
         return {ref: ir for ref, ir in sorted(out.items()) if ir.nodes}
+
+
+def _zone_weights(enduser: list, blueprint: Blueprint) -> dict:
+    """Integer distribution weights from the blueprint's planned host counts.
+
+    Falls back to 1 so a zone with no declared size still receives ports
+    rather than being silently starved.
+    """
+    weights: dict = {}
+    for zone_assign in enduser:
+        size = blueprint.default_host_sizes.get(zone_assign.zone, 0)
+        weights[zone_assign.zone] = max(1, int(size))
+    return weights
+
+
+def _weighted_cycle(enduser: list, weights: dict) -> list:
+    """A deterministic weighted round-robin over ``enduser``.
+
+    Emits each zone ``weight`` times, interleaved by largest-remainder so the
+    sequence stays balanced (users, users, voice, users, …) instead of
+    exhausting one zone before starting the next. Pure function of its inputs.
+    """
+    if not enduser:
+        return []
+    total = sum(weights.get(z.zone, 1) for z in enduser)
+    # Largest-remainder apportionment over a fixed cycle length so the ratio
+    # between zones is honoured even for small port counts.
+    cycle_len = max(len(enduser), min(total, 12))
+    quota: list[list] = []
+    for zone_assign in enduser:
+        w = weights.get(zone_assign.zone, 1)
+        exact = cycle_len * w / total
+        quota.append([zone_assign, int(exact), exact - int(exact)])
+    given = sum(q[1] for q in quota)
+    for entry in sorted(quota, key=lambda q: -q[2])[: cycle_len - given]:
+        entry[1] += 1
+    # Interleave: repeatedly take one slot from each zone that still has quota.
+    out: list = []
+    while True:
+        progressed = False
+        for entry in quota:
+            if entry[1] > 0:
+                out.append(entry[0])
+                entry[1] -= 1
+                progressed = True
+        if not progressed:
+            break
+    return out
+
+
+#: Addresses reserved at the bottom of every DHCP-served subnet for the
+#: gateway and future infrastructure (printers, APs, servers with statics).
+#: A pool that hands out its gateway address is a pool that breaks silently
+#: the day someone gives that address to a printer.
+DHCP_RESERVED_HOSTS = 10
+
+
+def _dhcp_exclusion(subnet: str, gateway: str) -> Optional[tuple[str, str]]:
+    """(first_excluded, last_excluded) for a subnet, or None if uncomputable.
+
+    Reserves the first :data:`DHCP_RESERVED_HOSTS` usable addresses, always
+    covering the gateway, and never runs past the last usable address — a
+    pool with zero assignable addresses would be worse than no pool.
+    """
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+    except ValueError:
+        return None
+    if net.version != 4:
+        return None                      # IPv6 uses SLAAC/RA, not this pool model
+    hosts = list(net.hosts())
+    if not hosts:
+        return None
+    first = hosts[0]
+    reserve = min(DHCP_RESERVED_HOSTS, len(hosts))
+    last = hosts[reserve - 1]
+    # The gateway must be inside the excluded block.
+    try:
+        gw = ipaddress.ip_address(gateway)
+    except ValueError:
+        gw = None
+    if gw is not None and gw in net and int(gw) > int(last):
+        last = gw
+    return (str(first), str(last))
 
 
 def _prefix_to_mask(prefix: str) -> Optional[str]:

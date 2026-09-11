@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from netops_autopilot.autopilot.answer_script import ANSWER_SLOTS, answer_script
 from netops_autopilot.cli.scenarios import (
     SCENARIOS,
     list_scenarios,
@@ -20,6 +21,12 @@ def test_all_scenarios_have_valid_shape():
         assert sc.answers
         # First answer must be the binding confirm "y".
         assert sc.answers[0].strip().lower() in {"y", "yes"}, f"scenario {sid} must start with bond confirm"
+        assert len(sc.answers) == len(ANSWER_SLOTS), (
+            f"scenario {sid} has {len(sc.answers)} answers for "
+            f"{len(ANSWER_SLOTS)} question slots")
+        # intent slot carries the blueprint hint; router slot names a real device.
+        assert sc.answers[ANSWER_SLOTS.index("intent")] == sc.blueprint_hint, sid
+        assert sc.answers[ANSWER_SLOTS.index("router_device")] == "seed-01", sid
 
 
 def test_list_scenarios_returns_pairs():
@@ -33,9 +40,7 @@ def test_list_scenarios_returns_pairs():
 def test_make_scenario_io_known():
     io = make_scenario_io("branch")
     assert isinstance(io, ScriptedIO)
-    # First answer is the bond confirm, second is the blueprint hint.
-    assert io._answers[0] == "y"
-    assert io._answers[1] == SCENARIOS["branch"].blueprint_hint
+    assert io._answers == list(SCENARIOS["branch"].answers)
 
 
 def test_make_scenario_io_unknown_raises():
@@ -46,6 +51,7 @@ def test_make_scenario_io_unknown_raises():
 def test_scenario_io_consumes_answers_in_order():
     io = make_scenario_io("hotel")
     bond = io.confirm("bond?")
+    retry = io.ask("retry?")
     intent = io.ask("intent?")
     router = io.ask("router?")
     wan = io.ask("wan?")
@@ -53,7 +59,8 @@ def test_scenario_io_consumes_answers_in_order():
     growth = io.ask("growth?")
     # The bond confirm is a bool (True if "y" in answer)
     assert bond is True
-    # Layout: [bond_confirm="y", blueprint_hint, router, wan, avail, growth]
+    # Layout: [bond, access_retry, blueprint_hint, router, wan, avail, growth]
+    assert retry == SCENARIOS["hotel"].answers[ANSWER_SLOTS.index("access_retry")]
     assert intent == SCENARIOS["hotel"].blueprint_hint
     # Phase V: answers[1] is the ROUTER DEVICE, i.e. a device ref the
     # simulated fabric actually reports. It used to hold a site name
@@ -82,10 +89,11 @@ def test_every_blueprint_hint_is_unambiguous():
 
 
 def test_every_router_answer_is_a_real_device_ref():
-    """answers[1] must name a device the simulated fabric discovers."""
+    """The router slot must name a device the simulated fabric discovers."""
     for sid, sc in SCENARIOS.items():
-        assert sc.answers[1] == "seed-01", (
-            f"scenario {sid!r} router answer {sc.answers[1]!r} is not a device "
+        i = ANSWER_SLOTS.index("router_device")
+        assert sc.answers[i] == "seed-01", (
+            f"scenario {sid!r} router answer {sc.answers[i]!r} is not a device "
             f"the simulated fabric reports")
 
 

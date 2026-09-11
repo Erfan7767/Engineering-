@@ -2,13 +2,47 @@
   "vendor_os": "junos",
   "verified": true,
   "verified_at": "2026-09-11",
-  "note": "Lab-verified for Junos 20.x+. commit confirmed 2 auto-rolls-back on disconnect.",
-  "wrappers": { "enter_config": ["configure private"], "exit_config": ["commit check", "commit confirmed 2"] },
+  "note": "Lab-verified for Junos 20.x+. commit confirmed 2 auto-rolls-back on disconnect. Phase W: `commit confirmed 2` alone auto-reverts after 2 minutes; the plain `commit` in `persist` is what makes the candidate permanent, and it runs only after verification passes.",
+  "wrappers": {
+    "enter_config": [
+      "configure private"
+    ],
+    "exit_config": [
+      "commit check",
+      "commit confirmed 2"
+    ],
+    "persist": [
+      "commit"
+    ]
+  },
   "features": {
-    "vlan": { "commands": ["set vlans {name} vlan-id {vlan_id}"] },
-    "svi": { "commands": ["set interfaces irb unit {vlan_id} family inet address {address}", "set vlans {name} l3-interface irb.{vlan_id}"] },
-    "trunk": { "commands": ["set interfaces {interface} unit 0 family ethernet-switching interface-mode trunk", "set interfaces {interface} unit 0 family ethernet-switching vlan members [{allowed_vlans_csv}]"] },
-    "access": { "commands": ["set interfaces {interface} unit 0 family ethernet-switching interface-mode access", "set interfaces {interface} unit 0 family ethernet-switching vlan members {vlan_id}"] },
-    "hostname": { "commands": ["set system host-name {hostname}"] }
+    "vlan": {
+      "commands": [
+        "set vlans {name} vlan-id {vlan_id}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "set interfaces irb unit {vlan_id} family inet address {address}",
+        "set vlans {name} l3-interface irb.{vlan_id}"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "set interfaces {interface} unit 0 family ethernet-switching interface-mode trunk",
+        "set interfaces {interface} unit 0 family ethernet-switching vlan members [{allowed_vlans_csv}]"
+      ]
+    },
+    "access": {
+      "commands": [
+        "set interfaces {interface} unit 0 family ethernet-switching interface-mode access",
+        "set interfaces {interface} unit 0 family ethernet-switching vlan members {vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "set system host-name {hostname}"
+      ]
+    }
   }
 }

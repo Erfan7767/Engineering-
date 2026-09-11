@@ -54,6 +54,37 @@ System serial number           : FOC1234X9YZ
 Configuration register is 0x2102
 """
 
+# access-sw1 reports ITSELF. It used to be ``core_sw2_session()`` — so unlocking
+# it made the device answer with core-sw2's hostname, serial and LLDP table,
+# and the design engine then assigned seed-01's Gi1/0/1 as an uplink to *both*
+# neighbours: one physical socket, two links. Fabricated evidence in the
+# substrate is as bad as fabricated evidence in the product.
+ACCESS_TABLE = b"""Capability codes:
+    (R) Router, (B) Bridge
+
+------------------------------------------------
+Local Intf: Gi1/0/24
+Chassis id: 6677.8899.aabb
+Port id: Gi1/0/2
+Port Description: GigabitEthernet1/0/2
+System Name: SEED-01
+System Description:
+Cisco IOS Software
+Time remaining: 100 seconds
+Management Addresses:
+    IP: 10.99.0.1
+
+Total entries displayed: 1
+"""
+
+ACCESS_VERSION = b"""Cisco IOS XE Software, Version 17.09.04a
+Cisco IOS Software [Cupertino], Catalyst L2 Switch Software
+cisco C9200-24T (ARM) processor
+ACCESS-SW1 uptime is 4 days, 6 hours
+System serial number           : FCW1832A0QQ
+Configuration register is 0x2102
+"""
+
 SEED_BANNER = b"\r\nCisco IOS Software, Catalyst L3 Switch\r\nseed-01 con0 is now available\r\nseed-01> "
 
 
@@ -89,12 +120,34 @@ def core_sw2_session() -> LoopbackSession:
     })
 
 
+def access_sw1_session() -> LoopbackSession:
+    """A distinct L2 access switch: its own identity, its own uplink port.
+
+    ``C9200-24T`` carries no L3 capability evidence, so the design engine must
+    place it in L2_ACCESS rather than promote it to a router. Its LLDP table
+    names ``Gi1/0/24`` toward ``SEED-01 Gi1/0/2`` — the reciprocal of what the
+    seed reports, so the link is corroborated from both ends.
+    """
+    return LoopbackSession({
+        "show version": ACCESS_VERSION,
+        "show lldp neighbors detail": ACCESS_TABLE,
+        "show cdp neighbors detail": b"",
+        "show ip route": b"% IP routing is not enabled",
+        "show clock detail": _fx("show_clock"),
+    })
+
+
 class SimFabricFactory:
     """SessionFactory over the scripted fabric (typed refusals included)."""
 
     def __init__(self, *, include_access: bool = False, access_behavior: str = "refuse") -> None:
         self._seed = seed_session()
         self._core = core_sw2_session()
+        self._access = access_sw1_session()
+        # Separate from ``access_behavior``, which governs core-sw2. One flag
+        # for two devices made access-sw1 reachable in every test that only
+        # meant to unlock core-sw2, silently deleting the ACCESS_LIMITED case.
+        self._access_sw1_unlocked = False
         self._include_access = include_access
         self._access_behavior = access_behavior
         self.opened: list[str] = []
@@ -110,15 +163,33 @@ class SimFabricFactory:
                     "(ACCESS_LIMITED — evidence-directed retry required)",))
             return self._core
         if device_ref == "access-sw1":
+            if self._access_sw1_unlocked:
+                return self._access
             raise Failure(cls=FailureClass.BLOCKED, causes=(
                 "AUTH_REFUSED: default credentials rejected on access-sw1 "
                 "(ACCESS_LIMITED — evidence-directed retry required)",))
         raise Failure(cls=FailureClass.BLOCKED, causes=(
             f"NO_ROUTE_KNOWN: {device_ref} has no mgmt-path facts",))
 
+    def __call__(self, device_ref: str, mgmt_hints: tuple[str, ...]):
+        """Callable form so the orchestrator can reach :meth:`grant`.
+
+        Phase W: the access-retry loop looks for a ``grant`` hook on the
+        session factory. Passing the bound ``open`` method hid the instance,
+        so the hook was unreachable and the retry could never unlock a
+        device in the simulated fabric.
+        """
+        return self.open(device_ref, mgmt_hints)
+
     def grant(self) -> None:
-        """The operator fixed credentials: core-sw2 now answers."""
+        """The operator supplied working credentials: neighbours now answer.
+
+        Unlocks every device the fabric models as credential-refused, which is
+        what the orchestrator's access-retry loop means by "the human gave us
+        a working login".
+        """
         self._access_behavior = "allow"
+        self._access_sw1_unlocked = True
 
     def device_session(self, device_ref: str) -> LoopbackSession:
         """Return a LoopbackSession that answers show commands for the

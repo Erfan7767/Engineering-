@@ -91,6 +91,10 @@ class DeviceResult:
     commands: list[CommandRecord] = field(default_factory=list)
     identity: Optional[Identity] = None
     mgmt_addresses: tuple[str, ...] = ()
+    #: L1/L2 port inventory from ``show interfaces status`` (Phase W). Empty
+    #: means the device never answered that command — NOT that it has no
+    #: ports. The Design Engine must be able to tell the two apart.
+    interface_table: tuple[dict, ...] = ()
     event_count: int = 0
     observation_count: int = 0
     claim_admitted: int = 0
@@ -351,6 +355,7 @@ class DiscoveryCrawlEngine:
                 result.rejection_reasons.extend(issue.reasons)
 
         result.identity = self._identity_of(device_ref, plan, observations_all)
+        result.interface_table = self._interfaces_of(observations_all)
         collected, planned = result.counts()
         result.status = (DeviceStatus.COMPLETE if collected == planned
                          else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)
@@ -417,6 +422,20 @@ class DiscoveryCrawlEngine:
             key=lambda r: (_norm_name(r.get("local_intf")) or "",
                            _norm_name(r.get("neighbor_id")) or ""))
         return rows
+
+    @staticmethod
+    def _interfaces_of(observations: list[Observation]) -> tuple[dict, ...]:
+        """The OK ``interface_table`` observation, if the device produced one.
+
+        Only an OK observation counts. A MISSING one (no header in the output)
+        leaves the tuple empty, which the Design Engine reads as "inventory
+        unavailable" and refuses to invent access ports from.
+        """
+        for obs in observations:
+            if obs.field == "interface_table" and obs.parse_status is ParseStatus.OK \
+                    and isinstance(obs.value, list):
+                return tuple(dict(row) for row in obs.value if isinstance(row, dict))
+        return ()
 
     def _identity_of(self, device_ref: str, plan, observations: list[Observation]) -> Identity:
         ok = [o for o in observations if o.parse_status is ParseStatus.OK]
