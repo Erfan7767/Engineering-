@@ -101,6 +101,18 @@ class IntentVerb(str, Enum):
     EXPORT = "export"                   # export audit trail
     MAINTENANCE = "maintenance"         # maintenance window ops
 
+    # Phase O: 30-year expert operations — Day-2 diagnostics
+    MAC_TABLE = "mac_table"             # parse mac address table
+    CABLE_DIAG = "cable_diag"           # CRC / cable diagnostics
+    ROUTING = "routing"                 # OSPF / BGP / EIGRP neighbors
+    ACL_HITS = "acl_hits"               # ACL audit / hit counts
+    POE = "poe"                         # PoE budget & allocation
+    DRIFT = "drift"                     # config drift detection
+    EOL = "eol"                         # hardware EOL/EOS check
+    TRUNK = "trunk"                     # trunk audit
+    UPGRADE = "upgrade"                 # upgrade path validator
+    SUMMARY = "summary"                 # network summary
+
     # Meta
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -214,6 +226,41 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.MAINTENANCE, (
         "نافذة الصيانة", "نافذة التغيير", "صيانة",
         "maintenance window",
+    )),
+    (IntentVerb.MAC_TABLE, (
+        "جدول العناوين", "mac address", "mac", "عناوين mac",
+        "جدول mac",
+    )),
+    (IntentVerb.CABLE_DIAG, (
+        "تشخيص الكابلات", "cable", "crc", "cable diagnostic",
+        "فحص الكابلات",
+    )),
+    (IntentVerb.ROUTING, (
+        "الجيران ospf", "الجيران bgp", "ospf", "bgp", "eigrp",
+        "حالة البروتوكولات", "حالة الراوتنج", "بروتوكولات الراوتنج",
+    )),
+    (IntentVerb.ACL_HITS, (
+        "قوائم الوصول", "acl", "hits", "زيارات acl",
+        "تدقيق acl",
+    )),
+    (IntentVerb.POE, (
+        "poe", "الميزانية", "ميزانية الطاقة", "الطاقة الكهربائية",
+    )),
+    (IntentVerb.DRIFT, (
+        "الانحراف", "تغير الإعدادات", "drift", "config drift",
+        "ما الذي تغير",
+    )),
+    (IntentVerb.EOL, (
+        "eol", "eos", "نهاية العمر", "نهاية الدعم", "هل الجهاز منتهي",
+    )),
+    (IntentVerb.TRUNK, (
+        "ترانك", "trunk", "الترانكات", "تدقيق الترانك",
+    )),
+    (IntentVerb.UPGRADE, (
+        "الترقية", "مسار الترقية", "upgrade", "ترقية ios",
+    )),
+    (IntentVerb.SUMMARY, (
+        "ملخص", "ملخص الشبكة", "summary", "نظرة عامة",
     )),
     (IntentVerb.BOND, (
         "اربط", "أكد الربط", "bond",
@@ -335,6 +382,48 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "maintenance window", "change window", "maintenance",
         "scheduled window", "window",
     )),
+    (IntentVerb.MAC_TABLE, (
+        "mac address-table", "mac address table", "show mac",
+        "mac table", "mac-table",
+    )),
+    (IntentVerb.CABLE_DIAG, (
+        "cable diagnostic", "cable diag", "cable diagnostics",
+        "show cable", "show interfaces cable",
+    )),
+    (IntentVerb.ROUTING, (
+        "ospf neighbors", "bgp neighbors", "eigrp neighbors",
+        "show ospf neighbor", "show ip ospf neighbor",
+        "show ip bgp summary", "show ip eigrp neighbors",
+        "routing neighbors", "routing protocols",
+    )),
+    (IntentVerb.ACL_HITS, (
+        "show ip access-lists", "show access-lists", "acl audit",
+        "show acl", "acl hits",
+    )),
+    (IntentVerb.POE, (
+        "show power inline", "power inline", "poe budget",
+        "poe allocation", "poe usage",
+    )),
+    (IntentVerb.DRIFT, (
+        "config drift", "show drift", "drift detection",
+        "what drifted", "what changed since",
+    )),
+    (IntentVerb.EOL, (
+        "eol", "eos", "end of life", "end of support",
+        "is this device still supported", "hardware lifecycle",
+    )),
+    (IntentVerb.TRUNK, (
+        "show interfaces trunk", "trunk audit", "trunk matrix",
+        "vlan trunks", "show trunk",
+    )),
+    (IntentVerb.UPGRADE, (
+        "upgrade path", "can i upgrade", "ios upgrade",
+        "show upgrade", "valid upgrade",
+    )),
+    (IntentVerb.SUMMARY, (
+        "summary", "network summary", "give me a summary",
+        "overall view", "one-pager",
+    )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
     )),
@@ -387,6 +476,8 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
         "network", "type", "small", "office", "branch", "hotel",
         "retail", "datacenter", "leaf", "spine", "data", "center",
         "device", "detail", "details", "info", "about", "brief",
+        "upgrade", "eol", "eos", "trunk", "drift", "summary",
+        "power", "inline", "mac", "cable", "ospf", "bgp", "acl",
     }
 
     # 2) IP address
@@ -440,6 +531,23 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
             args["vendor"] = tokens[idx + 1]
             if len(tokens) > idx + 2:
                 args["model"] = tokens[idx + 2]
+
+    # 5c) upgrade <from> to <to>
+    if norm.startswith("upgrade") or norm.startswith("الترقية"):
+        # "upgrade 17.9 to 17.12" or "الترقية 17.9 إلى 17.12"
+        tokens = norm.split()
+        version_pattern = re.compile(r"^\d+\.\d+")
+        versions = [t for t in tokens if version_pattern.match(t)]
+        if len(versions) >= 2:
+            args["from_version"] = versions[0]
+            args["to_version"] = versions[1]
+
+    # 5d) eol <vendor> <model>
+    if norm.startswith("eol") or norm.startswith("eos") or norm.startswith("نهاية"):
+        tokens = norm.split()
+        if len(tokens) >= 3:
+            args["vendor"] = tokens[1]
+            args["model"] = tokens[2]
 
     # 6) device ref — done LAST so we don't capture "gi1" as a device
     # when the user typed "show interface gi1/0/1".
@@ -781,6 +889,36 @@ class ChatOperator:
                 args.get("window_id"),
                 lang,
             )
+
+        if verb is IntentVerb.MAC_TABLE:
+            return self._do_mac_table(args.get("device"), lang)
+
+        if verb is IntentVerb.CABLE_DIAG:
+            return self._do_cable_diag(args.get("device"), lang)
+
+        if verb is IntentVerb.ROUTING:
+            return self._do_routing(args.get("device"), lang)
+
+        if verb is IntentVerb.ACL_HITS:
+            return self._do_acl_hits(args.get("device"), lang)
+
+        if verb is IntentVerb.POE:
+            return self._do_poe(args.get("device"), lang)
+
+        if verb is IntentVerb.DRIFT:
+            return self._do_drift(args.get("device"), lang)
+
+        if verb is IntentVerb.EOL:
+            return self._do_eol(args.get("vendor"), args.get("model"), lang)
+
+        if verb is IntentVerb.TRUNK:
+            return self._do_trunk(args.get("device"), lang)
+
+        if verb is IntentVerb.UPGRADE:
+            return self._do_upgrade(args.get("from_version"), args.get("to_version"), lang)
+
+        if verb is IntentVerb.SUMMARY:
+            return self._do_summary(lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -2177,6 +2315,449 @@ class ChatOperator:
                 if lang == "en" else f"{len(active)} نافذة نشطة"
             ),
             detail="\n".join(lines),
+        )
+
+    # -- Phase O: 30-year expert diagnostics -------------------------------
+
+    def _do_mac_table(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show mac address-table' on a device."""
+        from netops_autopilot.engines.mac_table import analyse
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.MAC_TABLE, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show mac address-table")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.MAC_TABLE, ReplyStatus.BLOCKED,
+                summary=("mac table failed" if lang == "en" else "فشل جدول MAC"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        a = analyse(ref, output)
+        from netops_autopilot.engines.mac_table import render as render_mac
+        return self._reply(
+            IntentVerb.MAC_TABLE, ReplyStatus.OK,
+            summary=(
+                f"mac table — {len(a.entries)} entries, "
+                f"{len(a.flapping_macs)} flapping MAC(s)"
+                if lang == "en"
+                else f"جدول MAC — {len(a.entries)} إدخال، "
+                     f"{len(a.flapping_macs)} عنوان متذبذب"
+            ),
+            detail=render_mac(a, lang=lang),
+            data={
+                "device_ref": ref,
+                "entry_count": len(a.entries),
+                "flapping_count": len(a.flapping_macs),
+            },
+        )
+
+    def _do_cable_diag(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show interfaces' for cable diagnostics."""
+        from netops_autopilot.engines.cable_diag import (
+            parse as parse_cable, CableReport,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.CABLE_DIAG, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show interfaces")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.CABLE_DIAG, ReplyStatus.BLOCKED,
+                summary=("cable diag failed" if lang == "en" else "فشل تشخيص الكابلات"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        stats = parse_cable(output)
+        r = CableReport(device_ref=ref, interfaces=stats)
+        from netops_autopilot.engines.cable_diag import (
+            render as render_cable,
+        )
+        return self._reply(
+            IntentVerb.CABLE_DIAG, ReplyStatus.OK,
+            summary=(
+                f"cable — {r.overall_verdict}"
+                if lang == "en"
+                else f"الكابلات — {r.overall_verdict}"
+            ),
+            detail=render_cable(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": r.overall_verdict,
+                "degraded": len(r.degraded_interfaces),
+                "fault": len(r.fault_interfaces),
+            },
+        )
+
+    def _do_routing(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Run OSPF + BGP neighbor state checks."""
+        from netops_autopilot.engines.routing_neighbors import (
+            RoutingReport, parse_ospf, parse_bgp,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.ROUTING, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            ospf_res = self._device_runner.run_show(ref, "show ip ospf neighbor")
+            ospf = parse_ospf(
+                ospf_res.output.decode("utf-8", errors="replace")
+            )
+        except Exception:
+            ospf = []
+        try:
+            bgp_res = self._device_runner.run_show(ref, "show ip bgp summary")
+            bgp = parse_bgp(
+                bgp_res.output.decode("utf-8", errors="replace")
+            )
+        except Exception:
+            bgp = []
+        r = RoutingReport(device_ref=ref, ospf=ospf, bgp=bgp)
+        from netops_autopilot.engines.routing_neighbors import (
+            render as render_routing,
+        )
+        return self._reply(
+            IntentVerb.ROUTING, ReplyStatus.OK,
+            summary=(
+                f"routing — {r.overall_verdict} "
+                f"(OSPF: {len(r.ospf)}, BGP: {len(r.bgp)})"
+                if lang == "en"
+                else f"الراوتنج — {r.overall_verdict} "
+                     f"(OSPF: {len(r.ospf)}، BGP: {len(r.bgp)})"
+            ),
+            detail=render_routing(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": r.overall_verdict,
+                "ospf_count": len(r.ospf),
+                "bgp_count": len(r.bgp),
+            },
+        )
+
+    def _do_acl_hits(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Run ACL audit and report ACEs with hot/cold verdict."""
+        from netops_autopilot.engines.acl_audit import (
+            parse as parse_acl, AclReport,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.ACL_HITS, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show ip access-lists")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.ACL_HITS, ReplyStatus.BLOCKED,
+                summary=("acl audit failed" if lang == "en" else "فشل تدقيق ACL"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        aces = parse_acl(output)
+        r = AclReport(device_ref=ref, aces=aces)
+        from netops_autopilot.engines.acl_audit import (
+            render as render_acl,
+        )
+        return self._reply(
+            IntentVerb.ACL_HITS, ReplyStatus.OK,
+            summary=(
+                f"acl — {r.total} ACEs, {len(r.hot)} hot, {len(r.cold)} cold"
+                if lang == "en"
+                else f"ACL — {r.total} قاعدة، {len(r.hot)} نشطة، {len(r.cold)} خامدة"
+            ),
+            detail=render_acl(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "total": r.total,
+                "hot": len(r.hot),
+                "cold": len(r.cold),
+            },
+        )
+
+    def _do_poe(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Run PoE budget check on a device."""
+        from netops_autopilot.engines.poe import analyse
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.POE, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show power inline")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.POE, ReplyStatus.BLOCKED,
+                summary=("poe check failed" if lang == "en" else "فشل فحص PoE"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        r = analyse(ref, output)
+        from netops_autopilot.engines.poe import render as render_poe
+        return self._reply(
+            IntentVerb.POE, ReplyStatus.OK,
+            summary=(
+                f"poe — {r.overall_verdict} ({r.utilization_pct:.1f}% used)"
+                if lang == "en"
+                else f"PoE — {r.overall_verdict} ({r.utilization_pct:.1f}% مستخدم)"
+            ),
+            detail=render_poe(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": r.overall_verdict,
+                "budget_w": r.nominal_budget_w,
+                "allocated_w": r.allocated_w,
+                "utilization_pct": r.utilization_pct,
+            },
+        )
+
+    def _do_drift(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Compare current running-config to the last known-good snapshot."""
+        from netops_autopilot.engines.drift import detect
+        from netops_autopilot.engines.backup import SnapshotStore
+        ref = device_ref or "seed-01"
+        store = SnapshotStore(".netops-snapshots")
+        snaps = store.list(ref)
+        if not snaps:
+            return self._reply(
+                IntentVerb.DRIFT, ReplyStatus.BLOCKED,
+                summary=("no baseline — snapshot capture first" if lang == "en"
+                         else "لا يوجد مرجع — التقط لقطة أولاً"),
+            )
+        baseline = store.get(snaps[0].snapshot_id)
+        if baseline is None:
+            return self._reply(
+                IntentVerb.DRIFT, ReplyStatus.BLOCKED,
+                summary=("baseline missing" if lang == "en" else "المرجع مفقود"),
+            )
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.DRIFT, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show running-config")
+            current = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.DRIFT, ReplyStatus.BLOCKED,
+                summary=("drift check failed" if lang == "en" else "فشل فحص الانحراف"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        r = detect(ref, baseline, current)
+        from netops_autopilot.engines.drift import render as render_drift
+        return self._reply(
+            IntentVerb.DRIFT, ReplyStatus.OK,
+            summary=(
+                f"drift — {r.overall_verdict} ({r.drift_count} lines)"
+                if lang == "en"
+                else f"الانحراف — {r.overall_verdict} ({r.drift_count} سطر)"
+            ),
+            detail=render_drift(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": r.overall_verdict,
+                "drift_count": r.drift_count,
+                "added": len(r.added),
+                "removed": len(r.removed),
+            },
+        )
+
+    def _do_eol(
+        self, vendor: Optional[str], model: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Look up hardware EOL/EOS status."""
+        from netops_autopilot.engines.eol import evaluate as evaluate_eol, render
+        # If no model given, default to looking up the first
+        # discovered device's model.
+        if not vendor or not model:
+            if self._ctx.last_discovery is not None:
+                for d in self._ctx.last_discovery.devices:
+                    if d.identity and d.identity.model:
+                        vendor = vendor or (
+                            (d.identity.vendor_family or "").split("/")[-1]
+                            if d.identity.vendor_family else "cisco"
+                        )
+                        model = model or d.identity.model
+                        break
+        if not vendor or not model:
+            return self._reply(
+                IntentVerb.EOL, ReplyStatus.NEEDS_INPUT,
+                summary=("which model?" if lang == "en" else "أي طراز؟"),
+                detail=("e.g. 'eol cisco C9500-48Y4C'"
+                        if lang == "en"
+                        else "مثال: 'eol cisco C9500-48Y4C'"),
+            )
+        s = evaluate_eol(vendor, model)
+        if s is None:
+            return self._reply(
+                IntentVerb.EOL, ReplyStatus.BLOCKED,
+                summary=("model unknown" if lang == "en" else "طراز غير معروف"),
+                detail=f"{vendor}/{model} not in catalogue",
+            )
+        return self._reply(
+            IntentVerb.EOL, ReplyStatus.OK,
+            summary=(
+                f"eol — {s.verdict.value}"
+                if lang == "en"
+                else f"EOL — {s.verdict.value}"
+            ),
+            detail=render(s, lang=lang),
+            data={
+                "vendor": vendor,
+                "model": model,
+                "verdict": s.verdict.value,
+            },
+        )
+
+    def _do_trunk(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show interfaces trunk' on a device."""
+        from netops_autopilot.engines.trunk_audit import (
+            parse as parse_trunk, TrunkReport,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.TRUNK, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show interfaces trunk")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.TRUNK, ReplyStatus.BLOCKED,
+                summary=("trunk audit failed" if lang == "en" else "فشل تدقيق الترانك"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        trunks = parse_trunk(output)
+        r = TrunkReport(device_ref=ref, trunks=trunks)
+        from netops_autopilot.engines.trunk_audit import (
+            render as render_trunk,
+        )
+        return self._reply(
+            IntentVerb.TRUNK, ReplyStatus.OK,
+            summary=(
+                f"trunk — {r.trunking_count} trunking of {len(r.trunks)}"
+                if lang == "en"
+                else f"الترانك — {r.trunking_count} نشط من {len(r.trunks)}"
+            ),
+            detail=render_trunk(r, lang=lang),
+            data={
+                "device_ref": ref,
+                "trunking": r.trunking_count,
+                "total": len(r.trunks),
+            },
+        )
+
+    def _do_upgrade(
+        self, from_version: Optional[str], to_version: Optional[str],
+        lang: str,
+    ) -> OperatorReply:
+        """Validate a Cisco IOS-XE upgrade path."""
+        from netops_autopilot.engines.upgrade_path import (
+            evaluate, verdict_for, render,
+        )
+        if not from_version or not to_version:
+            return self._reply(
+                IntentVerb.UPGRADE, ReplyStatus.NEEDS_INPUT,
+                summary=("which versions?" if lang == "en" else "أي إصدارات؟"),
+                detail=("e.g. 'upgrade 17.9 to 17.12'"
+                        if lang == "en"
+                        else "مثال: 'الترقية 17.9 إلى 17.12'"),
+            )
+        step = evaluate(from_version, to_version)
+        v = verdict_for(step)
+        return self._reply(
+            IntentVerb.UPGRADE, ReplyStatus.OK,
+            summary=(
+                f"upgrade {step.from_version} → {step.to_version} — {v.value}"
+                if lang == "en"
+                else f"الترقية {step.from_version} ← {step.to_version} — {v.value}"
+            ),
+            detail=render(step, v, lang=lang),
+            data={
+                "from_version": step.from_version,
+                "to_version": step.to_version,
+                "intermediate": step.intermediate,
+                "verdict": v.value,
+            },
+        )
+
+    def _do_summary(self, lang: str) -> OperatorReply:
+        """Build a network summary one-pager."""
+        from netops_autopilot.engines.summary import build, SummaryInputs
+        n_dev = 0
+        n_link = 0
+        n_reach = 0
+        n_unreach = 0
+        if self._ctx.last_discovery is not None:
+            n_dev = len(self._ctx.last_discovery.devices)
+            for d in self._ctx.last_discovery.devices:
+                status = d.status.value if hasattr(d.status, "value") else str(d.status)
+                if status == "COMPLETE":
+                    n_reach += 1
+                else:
+                    n_unreach += 1
+        if self._ctx.last_topology is not None:
+            n_link = len(self._ctx.last_topology.edges)
+        try:
+            n_evidence = self._store.event_count()
+        except Exception:  # noqa: BLE001
+            n_evidence = 0
+        last_run = "—"
+        if self._ctx.last_run is not None:
+            try:
+                last_run = str(self._ctx.last_run.verdict)
+            except Exception:  # noqa: BLE001
+                last_run = "UNKNOWN"
+        s = SummaryInputs(
+            device_count=n_dev,
+            reachable_count=n_reach,
+            unreachable_count=n_unreach,
+            link_count=n_link,
+            last_run_verdict=last_run,
+            evidence_count=n_evidence,
+        )
+        return self._reply(
+            IntentVerb.SUMMARY, ReplyStatus.OK,
+            summary=(
+                f"summary — {n_dev} devices, {n_link} links"
+                if lang == "en"
+                else f"ملخص — {n_dev} جهاز، {n_link} رابط"
+            ),
+            detail=build(s, lang=lang),
+            data={
+                "devices": n_dev,
+                "reachable": n_reach,
+                "links": n_link,
+                "evidence": n_evidence,
+            },
         )
 
     # -- helpers -----------------------------------------------------------

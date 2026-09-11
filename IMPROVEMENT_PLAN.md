@@ -606,3 +606,38 @@ rollback (regression)       → OK   ✓ no vlan 10  ✓ no name
 | M     | 998   | baseline |
 | N     | 1033  | +35 expert operations |
 
+
+## Phase O — 30-Year Expert Operations (Day-2 Diagnostics)
+
+A 30-year network engineer doesn't just deploy; the day after a
+deployment they audit, verify, and confirm. Phase O adds the
+Day-2 operations any senior engineer would run on a network in
+production.
+
+**10 new engines, 33 new tests, all green. Total: 1066 tests
+passing.**
+
+| Engine                | Operation                                       |
+|-----------------------|-------------------------------------------------|
+| `mac_table`           | Parse `show mac address-table`, detect flapping |
+| `cable_diag`          | CRC / runts / giants / lost-carrier per port   |
+| `routing_neighbors`   | OSPF / BGP / EIGRP state classifier             |
+| `acl_audit`           | Hit-count analysis: HOT / WARM / COLD / SHADOWED |
+| `poe`                 | PoE budget, allocation, utilization, faults     |
+| `drift`               | LCS-based config drift vs. baseline             |
+| `eol`                 | Hardware lifecycle: ACTIVE / EOL_REACHED / etc. |
+| `trunk_audit`         | Trunk matrix, allowed/active VLANs              |
+| `upgrade_path`        | IOS-XE upgrade path validator (BFS)             |
+| `summary`             | One-pager network summary (EN + AR)             |
+
+**10 new chat verbs**: `show mac address-table`, `cable
+diagnostic`, `ospf neighbors`, `show ip access-lists`, `show
+power inline`, `drift`, `eol <vendor> <model>`, `show
+interfaces trunk`, `upgrade <from> to <to>`, `summary`. All
+exposed in Arabic + English. 10 new UI buttons.
+
+**Phase | Tests | Delta**
+------- | -----:| ----:
+M       | 998   | baseline
+N       | 1033  | +35 expert operations
+O       | 1066  | +33 day-2 diagnostics

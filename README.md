@@ -287,6 +287,47 @@ apply branch → APPLIED  cmd_count: 5
 rollback → ✓ no vlan 10  ✓ no name
 ```
 
+## Phase O — Day-2 diagnostics, the 30-year engineer's toolbox
+
+Phase O adds the 10 operations a 30-year network engineer runs
+the day after a deployment. These are the typed, evidence-bound
+counterparts to what senior engineers have always done on
+production networks.
+
+* `show mac address-table` — MAC table parser + flapping detection
+* `cable diagnostic` — per-port CRC / runts / giants / lost-carrier
+* `ospf neighbors` / `bgp neighbors` — neighbor state classifier
+  (UP / PENDING / DOWN / UNKNOWN)
+* `show ip access-lists` — ACL hit-count audit (HOT / WARM / COLD /
+  SHADOWED)
+* `show power inline` — PoE budget + utilization + fault detection
+* `drift` — LCS-based config drift vs. the last golden snapshot
+* `eol cisco <model>` — hardware lifecycle (ACTIVE / ANNOUNCED /
+  EOL_REACHED / EOS_REACHED)
+* `show interfaces trunk` — trunk matrix + allowed / active VLANs
+* `upgrade <from> to <to>` — IOS-XE upgrade path validator (BFS up
+  to 4 hops, with intermediate suggestions)
+* `summary` — one-pager network summary (devices, links, reach,
+  evidence count, last run verdict)
+
+All 10 verbs accept Arabic and English. All 10 wired into the
+chat operator + the web UI. **1066 tests passing** (was 1033 after
+Phase N). 10 new web UI buttons.
+
+Live evidence:
+
+```
+show mac address-table → mac table — 0 entries, 0 flapping MAC(s)
+cable diagnostic → cable — UNKNOWN
+ospf neighbors → routing — UNKNOWN (OSPF: 0, BGP: 0)
+show ip access-lists → acl — 0 ACEs, 0 hot, 0 cold
+show power inline → poe — UNKNOWN (0.0% used)
+eol cisco C9500-48Y4C → eol — ACTIVE
+show interfaces trunk → trunk — 0 trunking of 0
+upgrade 17.9 to 17.12 → upgrade 17.9 → 17.12 — SUPPORTED
+summary → summary — 3 devices, 2 links
+```
+
 ## Phase M — Apply is real, rollback is real, evidence is real
 
 Phase M closed the last gap between the chat and the device. The
