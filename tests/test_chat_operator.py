@@ -173,7 +173,7 @@ def _make_operator(runner=None) -> ChatOperator:
     ("اعرض الإعدادات", IntentVerb.SHOW_CONFIG),
     ("show version", IntentVerb.SHOW_VERSION),
     ("اعرض الإصدار", IntentVerb.SHOW_VERSION),
-    ("show cdp neighbors", IntentVerb.SHOW_NEIGHBORS),
+    ("show cdp neighbors", IntentVerb.CDP),
     ("show lldp", IntentVerb.SHOW_NEIGHBORS),
     ("الجيران", IntentVerb.SHOW_NEIGHBORS),
     ("show vlan", IntentVerb.SHOW_VLANS),

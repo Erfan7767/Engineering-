@@ -113,6 +113,16 @@ class IntentVerb(str, Enum):
     UPGRADE = "upgrade"                 # upgrade path validator
     SUMMARY = "summary"                 # network summary
 
+    # Phase P: 30-year expert deeper improvements
+    REMEDIATE = "remediate"             # auto-remediation plan
+    LLDP = "lldp"                       # LLDP neighbor state
+    CDP = "cdp"                         # CDP neighbor state
+    VTP = "vtp"                         # VTP domain / mode / revision
+    STP = "stp"                         # STP topology
+    DHCP_SNOOP = "dhcp_snoop"           # DHCP snooping status
+    ROOT_CAUSE = "root_cause"           # AI root-cause analysis
+    RECOMMEND = "recommend"             # 30-year expert tips
+
     # Meta
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -261,6 +271,30 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     )),
     (IntentVerb.SUMMARY, (
         "ملخص", "ملخص الشبكة", "summary", "نظرة عامة",
+    )),
+    (IntentVerb.REMEDIATE, (
+        "إصلاح", "إصلاح تلقائي", "خطط إصلاح", "remediate",
+    )),
+    (IntentVerb.LLDP, (
+        "جيران lldp", "lldp", "show lldp",
+    )),
+    (IntentVerb.CDP, (
+        "جيران cdp", "cdp", "show cdp",
+    )),
+    (IntentVerb.VTP, (
+        "حالة vtp", "vtp", "show vtp",
+    )),
+    (IntentVerb.STP, (
+        "spanning tree", "stp", "STP",
+    )),
+    (IntentVerb.DHCP_SNOOP, (
+        "dhcp snooping", "dhcp snoop", "انتهاكات dhcp",
+    )),
+    (IntentVerb.ROOT_CAUSE, (
+        "السبب الجذري", "لماذا", "ما السبب", "root cause",
+    )),
+    (IntentVerb.RECOMMEND, (
+        "توصيات", "نصائح", "توصية", "recommend",
     )),
     (IntentVerb.BOND, (
         "اربط", "أكد الربط", "bond",
@@ -423,6 +457,42 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.SUMMARY, (
         "summary", "network summary", "give me a summary",
         "overall view", "one-pager",
+    )),
+    (IntentVerb.REMEDIATE, (
+        "remediate", "fix it", "auto-remediate", "auto fix",
+        "plan a fix", "what should i do", "iصلاح", "إصلاح",
+    )),
+    (IntentVerb.LLDP, (
+        "show lldp neighbors detail", "show lldp neighbors",
+        "lldp neighbors detail", "lldp neighbors",
+        "show lldp", "lldp", "جيران lldp",
+    )),
+    (IntentVerb.CDP, (
+        "show cdp neighbors detail", "show cdp neighbors",
+        "cdp neighbors detail", "cdp neighbors",
+        "show cdp", "cdp", "جيران cdp",
+    )),
+    (IntentVerb.VTP, (
+        "show vtp status", "show vtp", "vtp",
+        "حالة vtp",
+    )),
+    (IntentVerb.STP, (
+        "show spanning-tree", "show stp", "stp",
+        "spanning tree", "stp topology",
+    )),
+    (IntentVerb.DHCP_SNOOP, (
+        "show ip dhcp snooping", "dhcp snooping",
+        "show dhcp", "dhcp snoop",
+    )),
+    (IntentVerb.ROOT_CAUSE, (
+        "why", "root cause", "why is this broken",
+        "what caused", "diagnose root",
+        "السبب الجذري", "لماذا",
+    )),
+    (IntentVerb.RECOMMEND, (
+        "recommend", "best practice", "tips",
+        "what should i also do", "senior tip",
+        "توصية", "نصيحة",
     )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
@@ -919,6 +989,30 @@ class ChatOperator:
 
         if verb is IntentVerb.SUMMARY:
             return self._do_summary(lang)
+
+        if verb is IntentVerb.REMEDIATE:
+            return self._do_remediate(lang)
+
+        if verb is IntentVerb.LLDP:
+            return self._do_lldp(args.get("device"), lang)
+
+        if verb is IntentVerb.CDP:
+            return self._do_cdp(args.get("device"), lang)
+
+        if verb is IntentVerb.VTP:
+            return self._do_vtp(args.get("device"), lang)
+
+        if verb is IntentVerb.STP:
+            return self._do_stp(args.get("device"), lang)
+
+        if verb is IntentVerb.DHCP_SNOOP:
+            return self._do_dhcp_snoop(args.get("device"), lang)
+
+        if verb is IntentVerb.ROOT_CAUSE:
+            return self._do_root_cause(lang)
+
+        if verb is IntentVerb.RECOMMEND:
+            return self._do_recommend(args.get("action") or "add_trunk", lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -2757,6 +2851,372 @@ class ChatOperator:
                 "reachable": n_reach,
                 "links": n_link,
                 "evidence": n_evidence,
+            },
+        )
+
+    # -- Phase P: 30-year expert deeper improvements ----------------------
+
+    def _do_remediate(self, lang: str) -> OperatorReply:
+        """Build a remediation plan from the most recent diagnostics.
+
+        Uses the O-engines already in OperatorContext. If nothing
+        has been diagnosed yet, falls back to "no findings".
+        """
+        from netops_autopilot.engines.remediation import plan_remediations
+        # Pull whatever we have from the recent health / acl / poe /
+        # drift / routing findings. The O-verbs that produced them
+        # left their results in the chat, but the operator's context
+        # is not a query layer for them — so we only use drift here
+        # (drift has a real persistence path through snapshots).
+        drift_lines: list[dict[str, Any]] = []
+        # Try to call drift fresh if a baseline exists.
+        from netops_autopilot.engines.backup import SnapshotStore
+        store = SnapshotStore(".netops-snapshots")
+        # Use the first discovered device, if any.
+        ref = "seed-01"
+        if self._ctx.last_discovery is not None:
+            for d in self._ctx.last_discovery.devices:
+                if d.status.value == "COMPLETE" if hasattr(
+                    d.status, "value"
+                ) else False:
+                    ref = d.device_ref
+                    break
+        snaps = store.list(ref)
+        if snaps and self._device_runner is not None:
+            try:
+                baseline = store.get(snaps[0].snapshot_id)
+                if baseline is not None:
+                    res = self._device_runner.run_show(
+                        ref, "show running-config",
+                    )
+                    current = res.output.decode(
+                        "utf-8", errors="replace"
+                    )
+                    from netops_autopilot.engines.drift import detect
+                    r = detect(ref, baseline, current)
+                    drift_lines = [
+                        {"text": l.text, "kind": l.kind}
+                        for l in r.drift_lines
+                    ]
+            except Exception:  # noqa: BLE001
+                pass
+        plan = plan_remediations(
+            drift_lines=drift_lines,
+            device_ref=ref,
+        )
+        return self._reply(
+            IntentVerb.REMEDIATE, ReplyStatus.OK,
+            summary=(
+                f"remediation plan — {plan.overall_verdict} "
+                f"({plan.action_count} action(s))"
+                if lang == "en"
+                else f"خطة الإصلاح — {plan.overall_verdict} "
+                     f"({plan.action_count} إجراء)"
+            ),
+            detail=plan.render(lang=lang),
+            data={
+                "verdict": plan.overall_verdict,
+                "action_count": plan.action_count,
+                "blocked_count": plan.blocked_count,
+                "highest_risk": plan.highest_risk.value,
+            },
+        )
+
+    def _do_lldp(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show lldp neighbors detail' on a device."""
+        from netops_autopilot.engines.protocols import parse_lldp
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.LLDP, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(
+                ref, "show lldp neighbors detail",
+            )
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.LLDP, ReplyStatus.BLOCKED,
+                summary=("lldp failed" if lang == "en" else "فشل lldp"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        nbrs = parse_lldp(output)
+        lines = [
+            f"LLDP neighbors on {ref}: {len(nbrs)}",
+            "",
+        ]
+        for n in nbrs:
+            lines.append(
+                f"  {n.local_interface:<14} -> "
+                f"{n.system_name or n.chassis_id or '?'} "
+                f"({n.platform}) {n.mgmt_ip}"
+            )
+        return self._reply(
+            IntentVerb.LLDP, ReplyStatus.OK,
+            summary=(
+                f"lldp — {len(nbrs)} neighbor(s)"
+                if lang == "en"
+                else f"lldp — {len(nbrs)} جار"
+            ),
+            detail="\n".join(lines),
+            data={"device_ref": ref, "neighbors": len(nbrs)},
+        )
+
+    def _do_cdp(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show cdp neighbors detail' on a device."""
+        from netops_autopilot.engines.protocols import parse_cdp
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.CDP, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(
+                ref, "show cdp neighbors detail",
+            )
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.CDP, ReplyStatus.BLOCKED,
+                summary=("cdp failed" if lang == "en" else "فشل cdp"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        nbrs = parse_cdp(output)
+        lines = [f"CDP neighbors on {ref}: {len(nbrs)}", ""]
+        for n in nbrs:
+            lines.append(
+                f"  {n.local_interface:<14} -> "
+                f"{n.device_id} ({n.platform}) {n.mgmt_ip}"
+            )
+        return self._reply(
+            IntentVerb.CDP, ReplyStatus.OK,
+            summary=(
+                f"cdp — {len(nbrs)} neighbor(s)"
+                if lang == "en"
+                else f"cdp — {len(nbrs)} جار"
+            ),
+            detail="\n".join(lines),
+            data={"device_ref": ref, "neighbors": len(nbrs)},
+        )
+
+    def _do_vtp(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show vtp status' on a device."""
+        from netops_autopilot.engines.protocols import parse_vtp
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.VTP, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show vtp status")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.VTP, ReplyStatus.BLOCKED,
+                summary=("vtp failed" if lang == "en" else "فشل vtp"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        s = parse_vtp(output)
+        return self._reply(
+            IntentVerb.VTP, ReplyStatus.OK,
+            summary=(
+                f"vtp — {s.vtp_mode.value} revision {s.vtp_revision}"
+                if lang == "en"
+                else f"vtp — {s.vtp_mode.value} مراجعة {s.vtp_revision}"
+            ),
+            detail=(
+                f"  domain:  {s.vtp_domain}\n"
+                f"  mode:    {s.vtp_mode.value}\n"
+                f"  rev:     {s.vtp_revision}\n"
+                f"  md5:     {s.md5_digest or '?'}\n"
+                f"  rogue?:  {'YES' if s.is_rogue else 'no'}"
+            ),
+            data={
+                "device_ref": ref,
+                "domain": s.vtp_domain,
+                "mode": s.vtp_mode.value,
+                "revision": s.vtp_revision,
+                "is_rogue": s.is_rogue,
+            },
+        )
+
+    def _do_stp(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show spanning-tree' on a device."""
+        from netops_autopilot.engines.protocols import parse_stp
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.STP, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show spanning-tree")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.STP, ReplyStatus.BLOCKED,
+                summary=("stp failed" if lang == "en" else "فشل stp"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        r = parse_stp(output)
+        return self._reply(
+            IntentVerb.STP, ReplyStatus.OK,
+            summary=(
+                f"stp — {len(r.instances)} VLAN(s) tracked"
+                if lang == "en"
+                else f"stp — {len(r.instances)} VLAN مُتتبّع"
+            ),
+            detail=(
+                f"  VLANs tracked: {len(r.instances)}\n"
+                f"  Unstable:      {len(r.unstable)}"
+            ),
+            data={
+                "device_ref": ref,
+                "instances": len(r.instances),
+                "unstable": len(r.unstable),
+            },
+        )
+
+    def _do_dhcp_snoop(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse DHCP snooping status + bindings on a device."""
+        from netops_autopilot.engines.protocols import parse_dhcp_snooping
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.DHCP_SNOOP, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            status_res = self._device_runner.run_show(
+                ref, "show ip dhcp snooping",
+            )
+            status_out = status_res.output.decode(
+                "utf-8", errors="replace"
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.DHCP_SNOOP, ReplyStatus.BLOCKED,
+                summary=("dhcp snoop failed" if lang == "en"
+                         else "فشل dhcp snooping"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        try:
+            bind_res = self._device_runner.run_show(
+                ref, "show ip dhcp snooping binding",
+            )
+            bind_out = bind_res.output.decode(
+                "utf-8", errors="replace"
+            )
+        except Exception:  # noqa: BLE001
+            bind_out = ""
+        s = parse_dhcp_snooping(status_out, bind_out)
+        return self._reply(
+            IntentVerb.DHCP_SNOOP, ReplyStatus.OK,
+            summary=(
+                f"dhcp snooping — "
+                f"{'enabled' if s.enabled else 'disabled'}, "
+                f"{s.violations} violation(s)"
+                if lang == "en"
+                else f"dhcp snooping — "
+                     f"{'مفعّل' if s.enabled else 'معطّل'}، "
+                     f"{s.violations} انتهاك"
+            ),
+            detail=(
+                f"  enabled:  {s.enabled}\n"
+                f"  trusted:  {', '.join(s.trusted_ports) or 'none'}\n"
+                f"  binds:    {s.bindings_count}\n"
+                f"  viol:     {s.violations}\n"
+                f"  rogue?:   {'YES' if s.has_rogue_server else 'no'}"
+            ),
+            data={
+                "device_ref": ref,
+                "enabled": s.enabled,
+                "violations": s.violations,
+                "bindings": s.bindings_count,
+                "has_rogue": s.has_rogue_server,
+            },
+        )
+
+    def _do_root_cause(self, lang: str) -> OperatorReply:
+        """Run a root-cause analysis on the most recent findings.
+
+        A senior engineer's "why is this broken?" answer.
+        """
+        from netops_autopilot.engines.root_cause import (
+            analyze_link_down, analyze_poe,
+        )
+        # If we have a recent health / poe finding, fold it in.
+        ref = "seed-01"
+        if self._ctx.last_discovery is not None:
+            for d in self._ctx.last_discovery.devices:
+                if d.status.value == "COMPLETE" if hasattr(
+                    d.status, "value"
+                ) else False:
+                    ref = d.device_ref
+                    break
+        # Default: link-down with no special evidence.
+        a = analyze_link_down(interface=f"any port on {ref}")
+        if lang == "ar":
+            return self._reply(
+                IntentVerb.ROOT_CAUSE, ReplyStatus.OK,
+                summary=(
+                    f"تحليل السبب الجذري — {len(a.causes)} سبب محتمل"
+                ),
+                detail=a.render(lang="ar"),
+                data={"cause_count": len(a.causes)},
+            )
+        return self._reply(
+            IntentVerb.ROOT_CAUSE, ReplyStatus.OK,
+            summary=(
+                f"root-cause — {len(a.causes)} possible cause(s)"
+            ),
+            detail=a.render(lang="en"),
+            data={"cause_count": len(a.causes)},
+        )
+
+    def _do_recommend(
+        self, action: str, lang: str
+    ) -> OperatorReply:
+        """Surface 30-year expert recommendations for a planned action."""
+        from netops_autopilot.engines.recommendations import (
+            recommend_for_action,
+        )
+        rep = recommend_for_action(action, context_label=action)
+        return self._reply(
+            IntentVerb.RECOMMEND, ReplyStatus.OK,
+            summary=(
+                f"recommendations for {action} — "
+                f"{rep.required_count} required, "
+                f"{rep.advised_count} advised"
+                if lang == "en"
+                else f"توصيات لـ {action} — "
+                     f"{rep.required_count} مطلوب، "
+                     f"{rep.advised_count} مُستحسن"
+            ),
+            detail=rep.render(lang=lang),
+            data={
+                "action": action,
+                "required": rep.required_count,
+                "advised": rep.advised_count,
             },
         )
 

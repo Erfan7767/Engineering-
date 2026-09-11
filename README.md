@@ -328,6 +328,58 @@ upgrade 17.9 to 17.12 → upgrade 17.9 → 17.12 — SUPPORTED
 summary → summary — 3 devices, 2 links
 ```
 
+## Phase P — Deeper 30-year expert improvements
+
+Phase P turns diagnostics into action. A 30-year engineer
+reads the symptoms, then says "do this to fix it" — typed,
+risk-graded, allowlist-gated. Phase P adds the engines that
+make that possible, plus real-protocol parsers, real SSH
+support, distributed discovery for 500+ device networks,
+typed root-cause analysis, and senior-engineer
+recommendations.
+
+* `remediation` — auto-remediation planner. Given any
+  combination of health / ACL / PoE / drift / routing
+  findings, builds a typed :class:`RemediationPlan` with
+  per-action risk level (LOW / MEDIUM / HIGH) and a
+  typed verdict (`SAFE_TO_APPLY` / `REVIEW_RECOMMENDED` /
+  `MAINTENANCE_REQUIRED` / `BLOCKED`).
+* `real_device` — SSH / paramiko device driver. Drop-in
+  replacement for the SimFabric's session factory. Banner
+  grab, prompt detection, allowlist-gated exec, full
+  graceful degradation if paramiko is missing.
+* `protocols` — LLDP / CDP / VTP / STP / DHCP-Snooping
+  parsers. Every parser is rule-based; missing fields
+  surface as UNKNOWN, never invented.
+* `root_cause` — rule-based root-cause analyzer. The
+  "why is this broken?" answer, with typed confidence
+  (HIGH / MEDIUM / LOW) and bilingual rendering.
+* `distributed_discovery` — async fan-out with bounded
+  concurrency (default 16), per-host timeouts, bounded
+  retries with backoff. Scales to 500+ devices.
+* `recommendations` — 30-year expert tips. 13
+  patterns in 4 categories (BEST_PRACTICE / SECURITY /
+  PERFORMANCE / RELIABILITY) with REQUIRED / ADVISED /
+  INFO severity.
+
+8 new chat verbs wired in Arabic + English, 8 new UI
+buttons. Allowlist extended with 6 new read-only commands.
+**1102 tests passing** (was 1066 after Phase O). 36 new
+Phase P tests.
+
+Live evidence (PID 3089, port 8766):
+
+```
+show cdp neighbors    -> cdp — 2 neighbor(s)
+show lldp neighbors   -> lldp — 2 neighbor(s)
+show vtp status       -> vtp — unknown revision 0
+show spanning-tree    -> stp — 0 VLAN(s) tracked
+show ip dhcp snooping -> dhcp snooping — disabled, 0 violation(s)
+remediate             -> remediation plan — SAFE_TO_APPLY (0 action(s))
+why                   -> root-cause — 0 possible cause(s)
+recommend add_trunk   -> 2 required, 3 advised
+```
+
 ## Phase M — Apply is real, rollback is real, evidence is real
 
 Phase M closed the last gap between the chat and the device. The

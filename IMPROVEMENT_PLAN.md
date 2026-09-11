@@ -641,3 +641,38 @@ exposed in Arabic + English. 10 new UI buttons.
 M       | 998   | baseline
 N       | 1033  | +35 expert operations
 O       | 1066  | +33 day-2 diagnostics
+
+## Phase P — 30-Year Expert Deeper Improvements
+
+The 30-year expert's "Day-2 plus" toolbox. Where Phase N
+introduced read-only expert operations and Phase O added
+Day-2 diagnostics, Phase P turns diagnostics into
+auto-remediation, parses real protocols, drives real SSH
+sessions, scales to 500+ devices, and answers "why?" with
+typed root-cause analysis plus senior-engineer
+recommendations.
+
+**6 new engines, 36 new tests, all green. Total: 1102 tests
+passing.**
+
+| Engine                  | Operation                                    |
+|-------------------------|----------------------------------------------|
+| `remediation`           | Auto-remediation planner (typed, risk-graded) |
+| `real_device`           | SSH / paramiko device driver for live gear    |
+| `protocols`             | LLDP / CDP / VTP / STP / DHCP-Snooping parsers |
+| `root_cause`            | AI-style root-cause analyzer (rule-based)    |
+| `distributed_discovery` | Async / bounded-concurrency / retried discovery |
+| `recommendations`       | 30-year expert tips with severity & category  |
+
+**8 new chat verbs**: `remediate`, `show cdp neighbors`,
+`show lldp neighbors`, `show vtp status`, `show spanning-tree`,
+`show ip dhcp snooping`, `why`, `recommend <action>`. All
+exposed in Arabic + English. 8 new UI buttons. Allowlist
+extended with 6 new read-only commands.
+
+**Phase | Tests | Delta**
+------- | -----:| ----:
+M       | 998   | baseline
+N       | 1033  | +35 expert operations
+O       | 1066  | +33 day-2 diagnostics
+P       | 1102  | +36 expert deeper improvements
