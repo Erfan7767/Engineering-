@@ -22,6 +22,8 @@ run_reports/
 out/
 *.log
 logs/
+audit-exports/
+.netops-snapshots/
 
 # Environment / credentials — never committed (L11)
 .env

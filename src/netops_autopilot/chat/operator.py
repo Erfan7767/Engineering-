@@ -90,6 +90,17 @@ class IntentVerb(str, Enum):
     DIAGNOSE = "diagnose"               # run a diagnostic
     VERIFY = "verify"                   # verify config
 
+    # Phase N: 30-year expert operations
+    COMPLIANCE = "compliance"           # HIPAA/PCI/CIS/NIST audit
+    CONVERGENCE = "convergence"         # wait for routing convergence
+    SNAPSHOT = "snapshot"               # capture/restore a config snapshot
+    DIFF = "diff"                       # diff two snapshots
+    HEALTH = "health"                   # interface health per device
+    CAPABILITY = "capability"           # hardware capability matrix
+    INVENTORY = "inventory"             # aggregated inventory
+    EXPORT = "export"                   # export audit trail
+    MAINTENANCE = "maintenance"         # maintenance window ops
+
     # Meta
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -170,6 +181,39 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     )),
     (IntentVerb.VERIFY, (
         "تحقق", "تأكد", "verify", "check",
+    )),
+    (IntentVerb.COMPLIANCE, (
+        "الامتثال", "تدقيق", "hipaa", "pci", "cis", "nist",
+        "فحص أمني", "تأمين",
+    )),
+    (IntentVerb.CONVERGENCE, (
+        "تقارب", "انتظر التقارب", "هل تقارب",
+    )),
+    (IntentVerb.SNAPSHOT, (
+        "لقطة", "نسخ احتياطي", "احفظ الإعدادات", "استعد الإعدادات",
+        "snapshot", "backup",
+    )),
+    (IntentVerb.DIFF, (
+        "قارن", "مقارنة", "ما الذي تغير", "diff",
+    )),
+    (IntentVerb.HEALTH, (
+        "الصحة", "صحة المنافذ", "حالة المنافذ", "صحة الواجهات",
+        "health", "crc",
+    )),
+    (IntentVerb.CAPABILITY, (
+        "القدرات", "ما الذي يدعمه", "إمكانيات الجهاز",
+        "capability", "hardware",
+    )),
+    (IntentVerb.INVENTORY, (
+        "المخزون", "كل الأجهزة", "قائمة الأجهزة", "جرد",
+        "inventory", "asset",
+    )),
+    (IntentVerb.EXPORT, (
+        "تصدير", "صدّر السجل", "تنزيل التدقيق", "export",
+    )),
+    (IntentVerb.MAINTENANCE, (
+        "نافذة الصيانة", "نافذة التغيير", "صيانة",
+        "maintenance window",
     )),
     (IntentVerb.BOND, (
         "اربط", "أكد الربط", "bond",
@@ -257,6 +301,40 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.VERIFY, (
         "verify", "check", "validate", "confirm",
     )),
+    (IntentVerb.COMPLIANCE, (
+        "compliance", "audit", "hipaa", "pci", "cis", "nist",
+        "security check", "hardening", "best practice",
+    )),
+    (IntentVerb.CONVERGENCE, (
+        "convergence", "wait for convergence", "is it converged",
+        "wait until stable", "wait for stable",
+    )),
+    (IntentVerb.SNAPSHOT, (
+        "snapshot", "backup config", "save config", "restore config",
+        "capture config", "golden config",
+    )),
+    (IntentVerb.DIFF, (
+        "diff", "what changed", "compare configs", "show changes",
+    )),
+    (IntentVerb.HEALTH, (
+        "health", "interface health", "port health", "link health",
+        "check ports", "interface errors", "crc errors",
+    )),
+    (IntentVerb.CAPABILITY, (
+        "capability", "what does this device support", "hardware",
+        "model capabilities", "what can this router do",
+    )),
+    (IntentVerb.INVENTORY, (
+        "inventory", "all devices", "list devices", "device list",
+        "what do we have", "asset list",
+    )),
+    (IntentVerb.EXPORT, (
+        "export", "audit export", "download audit", "csv", "json",
+    )),
+    (IntentVerb.MAINTENANCE, (
+        "maintenance window", "change window", "maintenance",
+        "scheduled window", "window",
+    )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
     )),
@@ -343,6 +421,25 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
         if net_type in norm:
             args["network_type"] = net_type
             break
+
+    # 5b) capability lookup: "capability <vendor> <model>" — vendor
+    # is one of the known vendor prefixes; model is whatever comes
+    # after.
+    if norm.startswith("capability") or "القدرات" in norm:
+        # After "capability" / "القدرات", the next two tokens are
+        # the vendor and model.
+        tokens = norm.split()
+        try:
+            idx = tokens.index("capability")
+        except ValueError:
+            try:
+                idx = tokens.index("القدرات")
+            except ValueError:
+                idx = -1
+        if idx >= 0 and len(tokens) > idx + 1:
+            args["vendor"] = tokens[idx + 1]
+            if len(tokens) > idx + 2:
+                args["model"] = tokens[idx + 2]
 
     # 6) device ref — done LAST so we don't capture "gi1" as a device
     # when the user typed "show interface gi1/0/1".
@@ -636,6 +733,54 @@ class ChatOperator:
 
         if verb is IntentVerb.VERIFY:
             return self._do_verify(lang)
+
+        if verb is IntentVerb.COMPLIANCE:
+            return self._do_compliance(args.get("device_ref"), lang)
+
+        if verb is IntentVerb.CONVERGENCE:
+            return self._do_convergence(args.get("device_ref"), lang)
+
+        if verb is IntentVerb.SNAPSHOT:
+            return self._do_snapshot(
+                args.get("device_ref"),
+                args.get("action") or "list",
+                lang,
+            )
+
+        if verb is IntentVerb.DIFF:
+            return self._do_diff(
+                args.get("device_ref"),
+                args.get("left_id"),
+                args.get("right_id"),
+                lang,
+            )
+
+        if verb is IntentVerb.HEALTH:
+            return self._do_health(args.get("device_ref"), lang)
+
+        if verb is IntentVerb.CAPABILITY:
+            return self._do_capability(
+                args.get("vendor"),
+                args.get("model"),
+                lang,
+            )
+
+        if verb is IntentVerb.INVENTORY:
+            return self._do_inventory(args.get("filter"), lang)
+
+        if verb is IntentVerb.EXPORT:
+            return self._do_export(
+                args.get("format") or "json",
+                args.get("device_ref"),
+                lang,
+            )
+
+        if verb is IntentVerb.MAINTENANCE:
+            return self._do_maintenance(
+                args.get("action") or "list",
+                args.get("window_id"),
+                lang,
+            )
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -1598,6 +1743,440 @@ class ChatOperator:
                     if lang == "en" else
                     "BOND: أنا مخوّل لإحداث تغييرات على هذه الشبكة.\n"
                     "يمكنك الآن استخدام 'طبق [نوع]' بأمان."),
+        )
+
+    # -- Phase N: 30-year expert operations -------------------------------
+
+    def _do_compliance(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Run HIPAA/PCI/CIS/NIST compliance checks on a device.
+
+        If ``device_ref`` is omitted, runs against the seed
+        (the only REACHABLE device by default).
+        """
+        from netops_autopilot.engines.compliance import (
+            evaluate, render_report,
+        )
+        ref = device_ref
+        if not ref:
+            ref = "seed-01"  # default
+        if self._device_runner is None or self._allowlist is None:
+            return self._reply(
+                IntentVerb.COMPLIANCE, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+                detail=("Run discover first." if lang == "en"
+                        else "شغّل الاكتشاف أولاً."),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show running-config")
+            config = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.COMPLIANCE, ReplyStatus.BLOCKED,
+                summary=("compliance failed" if lang == "en"
+                         else "فشل الامتثال"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        report = evaluate(ref, config)
+        return self._reply(
+            IntentVerb.COMPLIANCE, ReplyStatus.OK,
+            summary=(
+                f"compliance — {report.overall_verdict}"
+                if lang == "en"
+                else f"الامتثال — {report.overall_verdict}"
+            ),
+            detail=render_report(report, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": report.overall_verdict,
+                "pass_count": report.pass_count,
+                "fail_count": report.fail_count,
+                "critical": [f.rule_id for f in report.critical_failures],
+                "high": [f.rule_id for f in report.high_failures],
+            },
+        )
+
+    def _do_convergence(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Wait for the routing table to converge on a device."""
+        from netops_autopilot.engines.convergence import (
+            ConvergenceProbe, probe,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None or self._allowlist is None:
+            return self._reply(
+                IntentVerb.CONVERGENCE, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en" else "لا يوجد منفذ"),
+            )
+        try:
+            session = self._device_runner.open_session(ref)
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.CONVERGENCE, ReplyStatus.BLOCKED,
+                summary=("convergence failed" if lang == "en"
+                         else "فشل التقارب"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        cfg = ConvergenceProbe(
+            device_ref=ref,
+            commands=("show ip route summary", "show ip arp"),
+            max_attempts=4,
+            interval_s=0.5,
+        )
+        try:
+            res = probe(session, cfg)
+        finally:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return self._reply(
+            IntentVerb.CONVERGENCE, ReplyStatus.OK,
+            summary=(
+                f"convergence — {res.verdict.value} after {res.attempts} sample(s)"
+                if lang == "en"
+                else f"التقارب — {res.verdict.value} بعد {res.attempts} عينة"
+            ),
+            detail=res.detail,
+            data={
+                "device_ref": ref,
+                "verdict": res.verdict.value,
+                "attempts": res.attempts,
+                "convergence_time_s": res.convergence_time_s,
+            },
+        )
+
+    def _do_snapshot(
+        self, device_ref: Optional[str], action: str, lang: str
+    ) -> OperatorReply:
+        """Capture / list / restore a config snapshot."""
+        from netops_autopilot.engines.backup import (
+            SnapshotStore, capture,
+        )
+        ref = device_ref or "seed-01"
+        store = SnapshotStore(".netops-snapshots")
+        if action in ("capture", "save", "take"):
+            if self._device_runner is None:
+                return self._reply(
+                    IntentVerb.SNAPSHOT, ReplyStatus.BLOCKED,
+                    summary=("no device runner" if lang == "en"
+                             else "لا يوجد منفذ"),
+                )
+            try:
+                session = self._device_runner.open_session(ref)
+            except Exception as exc:  # noqa: BLE001
+                return self._reply(
+                    IntentVerb.SNAPSHOT, ReplyStatus.BLOCKED,
+                    summary=("snapshot failed" if lang == "en"
+                             else "فشل اللقطة"),
+                    detail=f"{type(exc).__name__}: {exc}",
+                )
+            try:
+                snap = capture(session, ref, note="chat-captured")
+            finally:
+                try:
+                    session.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            store.save(snap)
+            return self._reply(
+                IntentVerb.SNAPSHOT, ReplyStatus.OK,
+                summary=(
+                    f"snapshot {snap.snapshot_id} captured ({snap.byte_size}b)"
+                    if lang == "en"
+                    else f"تم التقاط {snap.snapshot_id} ({snap.byte_size}ب)"
+                ),
+                detail=snap.snapshot_id,
+                data={"snapshot_id": snap.snapshot_id,
+                      "hash": snap.config_hash},
+            )
+        # Default: list
+        snaps = store.list(ref)
+        if not snaps:
+            return self._reply(
+                IntentVerb.SNAPSHOT, ReplyStatus.OK,
+                summary=("no snapshots" if lang == "en" else "لا توجد لقطات"),
+                detail=("Use 'snapshot capture' to take one."
+                        if lang == "en" else
+                        "استخدم 'لقطة التقاط' لأخذ واحدة."),
+            )
+        lines = [f"snapshots for {ref}:"]
+        for s in snaps[:10]:
+            lines.append(f"  {s.snapshot_id}  hash={s.config_hash}  "
+                         f"size={s.byte_size}b  note={s.note!r}")
+        return self._reply(
+            IntentVerb.SNAPSHOT, ReplyStatus.OK,
+            summary=(
+                f"{len(snaps)} snapshot(s) for {ref}"
+                if lang == "en"
+                else f"{len(snaps)} لقطة لـ {ref}"
+            ),
+            detail="\n".join(lines),
+        )
+
+    def _do_diff(
+        self, device_ref: Optional[str],
+        left_id: Optional[str], right_id: Optional[str],
+        lang: str,
+    ) -> OperatorReply:
+        """Diff two snapshots on a device (or the two most recent)."""
+        from netops_autopilot.engines.backup import (
+            SnapshotStore, diff_snapshots, render_diff,
+        )
+        ref = device_ref or "seed-01"
+        store = SnapshotStore(".netops-snapshots")
+        snaps = store.list(ref)
+        if len(snaps) < 2:
+            return self._reply(
+                IntentVerb.DIFF, ReplyStatus.BLOCKED,
+                summary=("not enough snapshots" if lang == "en"
+                         else "لقطات غير كافية"),
+                detail=("Need at least 2 snapshots to diff. "
+                        "Use 'snapshot capture' to take more."
+                        if lang == "en" else
+                        "تحتاج لقطتين على الأقل. استخدم 'لقطة التقاط'."),
+            )
+        # Use the two most recent by default.
+        if not left_id:
+            left_id = snaps[1].snapshot_id
+        if not right_id:
+            right_id = snaps[0].snapshot_id
+        left = store.get(left_id)
+        right = store.get(right_id)
+        if not left or not right:
+            return self._reply(
+                IntentVerb.DIFF, ReplyStatus.BLOCKED,
+                summary=("snapshot not found" if lang == "en"
+                         else "اللقطة غير موجودة"),
+                detail=f"left={left_id} right={right_id}",
+            )
+        d = diff_snapshots(left, right)
+        return self._reply(
+            IntentVerb.DIFF, ReplyStatus.OK,
+            summary=(
+                f"diff: +{d.added_count} -{d.removed_count}"
+                if lang == "en"
+                else f"الفرق: +{d.added_count} -{d.removed_count}"
+            ),
+            detail=render_diff(d, lang=lang),
+        )
+
+    def _do_health(
+        self, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Parse 'show interfaces' and report per-port health."""
+        from netops_autopilot.engines.health import (
+            DeviceHealth, parse_interfaces, render_health,
+        )
+        ref = device_ref or "seed-01"
+        if self._device_runner is None:
+            return self._reply(
+                IntentVerb.HEALTH, ReplyStatus.BLOCKED,
+                summary=("no device runner" if lang == "en"
+                         else "لا يوجد منفذ"),
+            )
+        try:
+            res = self._device_runner.run_show(ref, "show interfaces")
+            output = res.output.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.HEALTH, ReplyStatus.BLOCKED,
+                summary=("health check failed" if lang == "en"
+                         else "فشل فحص الصحة"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        interfaces = parse_interfaces(output)
+        h = DeviceHealth(device_ref=ref, interfaces=interfaces)
+        return self._reply(
+            IntentVerb.HEALTH, ReplyStatus.OK,
+            summary=(
+                f"health — {h.overall_verdict}"
+                if lang == "en"
+                else f"الصحة — {h.overall_verdict}"
+            ),
+            detail=render_health(h, lang=lang),
+            data={
+                "device_ref": ref,
+                "verdict": h.overall_verdict,
+                "healthy": h.healthy_count,
+                "degraded": h.degraded_count,
+                "critical": h.critical_count,
+                "down": h.down_count,
+            },
+        )
+
+    def _do_capability(
+        self, vendor: Optional[str], model: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Look up the hardware capability matrix for a model."""
+        from netops_autopilot.engines.capability_matrix import (
+            lookup, render_capabilities, Capability,
+            has_capability,
+        )
+        if not vendor or not model:
+            return self._reply(
+                IntentVerb.CAPABILITY, ReplyStatus.NEEDS_INPUT,
+                summary=("which model?" if lang == "en" else "أي طراز؟"),
+                detail=("e.g. 'capability cisco C9500-48Y4C'"
+                        if lang == "en" else
+                        "مثال: 'القدرات cisco C9500-48Y4C'"),
+            )
+        spec = lookup(vendor, model)
+        if spec is None:
+            return self._reply(
+                IntentVerb.CAPABILITY, ReplyStatus.BLOCKED,
+                summary=("model unknown" if lang == "en" else "طراز غير معروف"),
+                detail=f"{vendor}/{model} not in catalogue",
+            )
+        # Check a few high-value capabilities
+        vx_ok, vx_reason = has_capability(vendor, model, Capability.VXLAN)
+        bgp_ok, bgp_reason = has_capability(vendor, model, Capability.BGP)
+        extra = (
+            f"\nVXLAN: {vx_reason}\nBGP: {bgp_reason}"
+        )
+        return self._reply(
+            IntentVerb.CAPABILITY, ReplyStatus.OK,
+            summary=(
+                f"{vendor}/{model} — {len(spec.capabilities)} capabilities"
+                if lang == "en"
+                else f"{vendor}/{model} — {len(spec.capabilities)} قدرة"
+            ),
+            detail=render_capabilities(spec, lang=lang) + extra,
+        )
+
+    def _do_inventory(
+        self, filter_text: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Aggregated inventory view."""
+        from netops_autopilot.engines.inventory import (
+            Inventory, InventoryItem, render_inventory,
+        )
+        items: list[InventoryItem] = []
+        if self._ctx.last_discovery is not None:
+            for d in self._ctx.last_discovery.devices:
+                # The DeviceResult has an Identity, not vendor_family.
+                vendor = ""
+                model = ""
+                serial = ""
+                identity = getattr(d, "identity", None)
+                if identity is not None:
+                    vendor = (getattr(identity, "vendor_family", "") or "").split("/")[-1] if getattr(identity, "vendor_family", None) else ""
+                    model = getattr(identity, "model", "") or ""
+                    serial = getattr(identity, "serial", "") or ""
+                items.append(InventoryItem(
+                    device_ref=d.device_ref,
+                    vendor=vendor,
+                    model=model,
+                    serial=serial,
+                    mgmt_address=(d.mgmt_addresses[0] if d.mgmt_addresses else ""),
+                    status=str(d.status) if d.status else "",
+                ))
+        inv = Inventory(items=items)
+        if filter_text:
+            inv = inv.search(filter_text)
+        return self._reply(
+            IntentVerb.INVENTORY, ReplyStatus.OK,
+            summary=(
+                f"{len(inv.items)} device(s) in inventory"
+                if lang == "en"
+                else f"{len(inv.items)} جهاز في المخزون"
+            ),
+            detail=render_inventory(inv, lang=lang),
+        )
+
+    def _do_export(
+        self, fmt: str, device_ref: Optional[str], lang: str
+    ) -> OperatorReply:
+        """Export the audit trail as JSON or CSV."""
+        from netops_autopilot.engines.audit_export import (
+            export, ExportFilter,
+        )
+        if fmt not in ("json", "csv"):
+            fmt = "json"
+        f = ExportFilter(device_ref=device_ref or "")
+        try:
+            out = export(self._store, f, fmt=fmt)
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.EXPORT, ReplyStatus.BLOCKED,
+                summary=("export failed" if lang == "en" else "فشل التصدير"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        # Save to a file the operator can download.
+        import os
+        os.makedirs("audit-exports", exist_ok=True)
+        path = f"audit-exports/audit-{int(time.time())}.{fmt}"
+        try:
+            with open(path, "w", encoding="utf-8") as f_out:
+                f_out.write(out)
+        except OSError:
+            pass
+        return self._reply(
+            IntentVerb.EXPORT, ReplyStatus.OK,
+            summary=(
+                f"audit exported to {path}"
+                if lang == "en" else f"تم تصدير التدقيق إلى {path}"
+            ),
+            detail=f"{len(out)} bytes written to {path}",
+            data={"path": path, "format": fmt, "bytes": len(out)},
+        )
+
+    def _do_maintenance(
+        self, action: str, window_id: Optional[str], lang: str
+    ) -> OperatorReply:
+        """List / create / check maintenance windows."""
+        from netops_autopilot.engines.maintenance import (
+            MaintenanceWindow, WindowRegistry, evaluate_window,
+        )
+        reg = getattr(self, "_window_registry", None)
+        if reg is None:
+            reg = WindowRegistry()
+            self._window_registry = reg
+        if action in ("add", "create", "schedule"):
+            if not window_id:
+                return self._reply(
+                    IntentVerb.MAINTENANCE, ReplyStatus.NEEDS_INPUT,
+                    summary=("window id required" if lang == "en"
+                             else "مطلوب معرف النافذة"),
+                )
+            # Default to "now through +1h" if no other args.
+            import time as _t
+            w = MaintenanceWindow(
+                window_id=window_id,
+                label=window_id,
+                start_unix=_t.time() - 60.0,
+                end_unix=_t.time() + 3600.0,
+                reason="chat-scheduled",
+            )
+            reg.add(w)
+            return self._reply(
+                IntentVerb.MAINTENANCE, ReplyStatus.OK,
+                summary=(
+                    f"window {window_id} scheduled (now+1h)"
+                    if lang == "en"
+                    else f"تم جدولة {window_id} (الآن+ساعة)"
+                ),
+                detail=window_id,
+            )
+        # Default: list + active check
+        active = reg.list_active()
+        all_w = reg.list_all()
+        lines = [f"windows ({len(all_w)} total, {len(active)} active)"]
+        for w in all_w:
+            check = evaluate_window(w)
+            lines.append(
+                f"  {w.window_id}  {w.label}  "
+                f"[{check.verdict.value}]  {check.detail}"
+            )
+        return self._reply(
+            IntentVerb.MAINTENANCE, ReplyStatus.OK,
+            summary=(
+                f"{len(active)} active window(s)"
+                if lang == "en" else f"{len(active)} نافذة نشطة"
+            ),
+            detail="\n".join(lines),
         )
 
     # -- helpers -----------------------------------------------------------

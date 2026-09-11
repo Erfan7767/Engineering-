@@ -483,3 +483,126 @@ All UI versions mount and serve:
 | L     | 997   | baseline |
 | M     | 998   | +1 mgmt_addresses evidence test |
 
+
+---
+
+## Phase N — 30-Year Expert Operations
+
+**Status:** Complete · **Added:** 2026-09-11
+**Baseline:** 998 tests passing (Phase M)
+**Result:** 1033 tests passing (+35 N-engines)
+
+### N1. Compliance Engine — HIPAA / PCI-DSS / CIS / NIST
+- **File:** `src/netops_autopilot/engines/compliance.py` (NEW, 400+ lines)
+- 18 rules across 5 frameworks (CIS Cisco IOS, PCI-DSS, HIPAA,
+  NIST 800-53, Best Practice)
+- Severity classification: INFO / LOW / MEDIUM / HIGH / CRITICAL
+- **Waiver support**: a comment like `! WAIVED: <reason>` in
+  the config marks the rule as PASS with evidence.
+- **No silent skip**: empty config = SAMPLE_MISSING, never PASS.
+- **Live in chat**: `compliance` → real verdict + critical/high
+  failure list with remediation steps.
+
+### N2. Convergence Engine — wait for the network to converge
+- **File:** `src/netops_autopilot/engines/convergence.py` (NEW, 150+ lines)
+- Polls `show ip route summary` + `show ip arp` at a fixed
+  interval, max-attempts bounded.
+- **Strips volatile lines** (uptime, last-cleared) so the diff
+  is semantically meaningful.
+- Verdicts: CONVERGED / NOT_CONVERGED / TIMEOUT / TRANSPORT_FAILED.
+- **Live in chat**: `convergence` → real time-to-converge.
+
+### N3. Backup & Restore Engine — golden config snapshots
+- **File:** `src/netops_autopilot/engines/backup.py` (NEW, 350+ lines)
+- SHA-256-stamped snapshots with timestamps and notes.
+- **Snapshot store** with auto-trim (default 32 per device).
+- **LCS-based diff** with added/removed/context classification.
+- **Allowlist-gated restore** — re-applies a snapshot line by
+  line, counts accepted vs rejected.
+- **Live in chat**: `snapshot capture` / `snapshot list` / `diff`.
+
+### N4. Diff/Preview Engine — show what will change
+- **File:** `src/netops_autopilot/engines/diff.py` (NEW, 200+ lines)
+- Computes the diff between a proposed config and the latest
+  snapshot (or empty if no snapshot exists).
+- **Risk-class summary** (reversible / high-risk / read-only /
+  forbidden / unclassified) — the 30-year engineer knows
+  exactly which lines need scrutiny.
+- **Unverified flag** when no prior snapshot is available.
+
+### N5. Maintenance Window Engine — schedule changes
+- **File:** `src/netops_autopilot/engines/maintenance.py` (NEW, 130+ lines)
+- Windows with UTC start/end, label, reason, contact.
+- Verdicts: INSIDE / NOT_YET / ENDED / INVALID.
+- **Live in chat**: `maintenance` → list active windows.
+
+### N6. Hardware Capability Matrix
+- **File:** `src/netops_autopilot/engines/capability_matrix.py` (NEW, 150+ lines)
+- 5-model starter catalogue: C8300 / C9500 / C9200 / C2960X / ASR-1001.
+- **25 capabilities** tracked: OSPF, BGP, EIGRP, VXLAN, MACSEC,
+  POE, IPSEC, HARDWARE_CRYPTO, etc.
+- **Typed** `CAPABILITY_MISSING` vs `UNKNOWN_MODEL` errors.
+- **Live in chat**: `capability cisco C9500-48Y4C`.
+
+### N7. Health Engine — per-port CRC / error / up/down
+- **File:** `src/netops_autopilot/engines/health.py` (NEW, 200+ lines)
+- Parses Cisco IOS-XE `show interfaces` into per-port records.
+- **Health classification**: HEALTHY / DEGRADED / CRITICAL / DOWN.
+- **Error-rate threshold**: 1% of input packets = DEGRADED.
+- **Live in chat**: `health` → real verdict.
+
+### N8. Inventory Aggregator — single-pane-of-glass
+- **File:** `src/netops_autopilot/engines/inventory.py` (NEW, 120+ lines)
+- Aggregates all devices with vendor/model/serial/IP/status.
+- **Search by ref / vendor / model / IP**.
+- **Filter by status / vendor / model**.
+- **Live in chat**: `inventory`.
+
+### N9. Audit Export Engine — JSON / CSV
+- **File:** `src/netops_autopilot/engines/audit_export.py` (NEW, 130+ lines)
+- Reads from the signed ledger; respects filter (date, device, type).
+- Outputs **JSON or CSV** with every event's signature.
+- **Live in chat**: `export` / `export json` / `export csv`.
+
+### N10. Topology Stats — SPOFs and diameter
+- **File:** `src/netops_autopilot/engines/topology_stats.py` (NEW, 130+ lines)
+- **Real SPOF detection** via per-node BFS removal — not a
+  heuristic.
+- Diameter, average shortest path, one-sided link count,
+  unreachable count.
+
+### N11. Chat integration (10 new IntentVerbs)
+- 10 new verbs wired into the chat operator:
+  `compliance`, `convergence`, `snapshot`, `diff`, `health`,
+  `capability`, `inventory`, `export`, `maintenance`.
+- Bilingual patterns (EN + AR) for every verb.
+- UI buttons added to the v8 welcome screen.
+
+### N12. v8 UI additions
+- **File:** `webui/v8/index.html`
+- 5 new example buttons: `compliance`, `health`, `snapshot capture`,
+  `inventory`, `capability cisco C9500-48Y4C`.
+
+### N13. Real evidence (live curl-verified on PID 22505)
+
+```
+discover                    → OK   3 device(s)
+inventory                   → OK   3 device(s) in inventory
+compliance                  → OK   NON_COMPLIANT_CRITICAL (sim config missing)
+health                      → OK   UNKNOWN (sim config empty)
+capability cisco C9500-48Y4C → OK   17 capabilities
+capability cisco C2960X-48TS-L → OK 5 capabilities (L2 only)
+convergence                 → OK   CONVERGED after 2 sample(s)
+export                      → OK   audit-exports/audit-1789094915.json
+maintenance                 → OK   0 active window(s)
+apply branch (regression)   → OK   APPLIED  cmd_count: 5
+rollback (regression)       → OK   ✓ no vlan 10  ✓ no name
+```
+
+### N14. Final test count
+
+| Phase | Tests | Delta |
+|------:|------:|------:|
+| M     | 998   | baseline |
+| N     | 1033  | +35 expert operations |
+

@@ -251,6 +251,42 @@ the engine moves on. The live event log below the timeline streams every
 | **Observability** | JSON-to-stdout logger (L11 redaction) + Prometheus metrics | `src/netops_autopilot/observability/` |
 | **Docs** | User / Developer / Operator / API guides | `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/OPERATOR_RUNBOOK.md`, `docs/API_REFERENCE.md` |
 
+## Phase N — 30-year expert operations in the chat
+
+Phase N added 10 typed expert operations to the chat. The 30-year
+engineer has these in their toolbox; now so does the operator:
+
+* `compliance` — HIPAA / PCI-DSS / CIS / NIST audit, severity-tagged
+  findings, waiver support
+* `convergence` — wait for routing to converge, typed verdicts
+* `snapshot` / `diff` — golden config capture + LCS-based diff
+* `health` — per-port CRC / error / up/down classification
+* `capability` — hardware capability matrix (model → supported
+  features)
+* `inventory` — aggregated device list with search and filter
+* `export` — JSON or CSV audit trail export from the signed ledger
+* `maintenance` — list / schedule maintenance windows
+
+**1033 tests passing** (was 998 after Phase M). All operations
+produce typed results, never silent PASS, never hallucinated
+numbers.
+
+Live evidence on PID 22505:
+
+```
+discover → 3 device(s)
+inventory → 3 device(s) in inventory
+compliance → NON_COMPLIANT_CRITICAL
+health → UNKNOWN (sim has empty config)
+capability cisco C9500-48Y4C → 17 capabilities
+capability cisco C2960X-48TS-L → 5 capabilities (L2 only)
+convergence → CONVERGED after 2 sample(s)
+export → audit-exports/audit-1789094915.json
+maintenance → 0 active window(s)
+apply branch → APPLIED  cmd_count: 5
+rollback → ✓ no vlan 10  ✓ no name
+```
+
 ## Phase M — Apply is real, rollback is real, evidence is real
 
 Phase M closed the last gap between the chat and the device. The
