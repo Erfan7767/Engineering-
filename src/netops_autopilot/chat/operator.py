@@ -155,6 +155,17 @@ class IntentVerb(str, Enum):
     TOPOLOGY_IMPORT = "topology_import" # import EVE-NG / NetBox topology
     CONFIG_DIFF = "config_diff"         # line-level config diff
 
+    # Phase T — OSPF/ACL/PoE/Inventory/Cable/Backup/Compliance/NetDiff/Console
+    OSPF = "ospf"                       # OSPF cost/timers/area audit
+    ACL_AUDIT = "acl_audit"             # ACL rule audit + shadow detection
+    POE_BUDGET = "poe_budget"           # PoE power budget calculator
+    HW_INVENTORY = "hw_inventory"       # hardware inventory + serial
+    CABLE_PLANT = "cable_plant"         # patch panel / fiber records
+    BACKUP_SCHEDULE = "backup_schedule" # backup schedule + retention
+    COMPLIANCE_BASELINE = "compliance_baseline"  # CIS/PCI/HIPAA rule packs
+    NETWORK_DIFF = "network_diff"       # network-wide config diff
+    CONSOLE_SERVER = "console_server"   # OOB console server paths
+
     # Meta</old_text>
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
@@ -358,6 +369,16 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.VAULT, ("خزنة", "بيانات الاعتماد")),
     (IntentVerb.TOPOLOGY_IMPORT, ("استيراد", "netbox")),
     (IntentVerb.CONFIG_DIFF, ("فرق الإعدادات", "مقارنة الإعدادات")),
+    # Phase T Arabic
+    (IntentVerb.OSPF, ("ospf",)),
+    (IntentVerb.ACL_AUDIT, ("acl",)),
+    (IntentVerb.POE_BUDGET, ("poe", "ميزانية الطاقة")),
+    (IntentVerb.HW_INVENTORY, ("المخزون", "الأجهزة")),
+    (IntentVerb.CABLE_PLANT, ("كابل", "الألياف")),
+    (IntentVerb.BACKUP_SCHEDULE, ("النسخ الاحتياطي", "جدول النسخ")),
+    (IntentVerb.COMPLIANCE_BASELINE, ("baseline",)),
+    (IntentVerb.NETWORK_DIFF, ("مقارنة الأجهزة", "فرق الشبكة")),
+    (IntentVerb.CONSOLE_SERVER, ("خادم وحدة التحكم", "الوصول البديل")),
 )
 
 _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
@@ -670,6 +691,52 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "config diff", "diff configs", "compare configs",
         "diff running", "diff golden", "running-config diff",
         "فرق الإعدادات", "مقارنة الإعدادات",
+    )),
+    # Phase T EN
+    (IntentVerb.OSPF, (
+        "ospf", "show ip ospf", "ospf interface",
+        "ospf neighbor", "ospf cost",
+        "ospf",
+    )),
+    (IntentVerb.ACL_AUDIT, (
+        "acl audit", "show acl", "acl rule", "acl shadow",
+        "access-list audit",
+        "acl",
+    )),
+    (IntentVerb.POE_BUDGET, (
+        "poe budget", "power budget", "poe class",
+        "poe allocation", "power allocation",
+        "poe", "ميزانية الطاقة",
+    )),
+    (IntentVerb.HW_INVENTORY, (
+        "inventory", "hardware inventory", "show inventory",
+        "serial number", "part number",
+        "المخزون", "الأجهزة",
+    )),
+    (IntentVerb.CABLE_PLANT, (
+        "cable plant", "patch panel", "fiber strand",
+        "patch audit", "cable management",
+        "كابل", "الألياف",
+    )),
+    (IntentVerb.BACKUP_SCHEDULE, (
+        "backup schedule", "backup policy", "retention policy",
+        "schedule backup", "daily backup",
+        "النسخ الاحتياطي", "جدول النسخ",
+    )),
+    (IntentVerb.COMPLIANCE_BASELINE, (
+        "compliance baseline", "cis baseline", "pci baseline",
+        "hipaa baseline", "compliance scan",
+        "baseline",
+    )),
+    (IntentVerb.NETWORK_DIFF, (
+        "network diff", "compare devices", "cross-device diff",
+        "global diff", "all devices diff",
+        "مقارنة الأجهزة", "فرق الشبكة",
+    )),
+    (IntentVerb.CONSOLE_SERVER, (
+        "console server", "terminal server", "out-of-band",
+        "oob path", "console path",
+        "خادم وحدة التحكم", "الوصول البديل",
     )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
@@ -1274,6 +1341,26 @@ class ChatOperator:
             return self._do_topology_import(args, lang)
         if verb is IntentVerb.CONFIG_DIFF:
             return self._do_config_diff(args, lang)
+
+        # Phase T — OSPF/ACL/PoE/Inventory/Cable/Backup/Compliance/NetDiff/Console
+        if verb is IntentVerb.OSPF:
+            return self._do_ospf(args, lang)
+        if verb is IntentVerb.ACL_AUDIT:
+            return self._do_acl_audit(args, lang)
+        if verb is IntentVerb.POE_BUDGET:
+            return self._do_poe_budget(args, lang)
+        if verb is IntentVerb.HW_INVENTORY:
+            return self._do_hw_inventory(args, lang)
+        if verb is IntentVerb.CABLE_PLANT:
+            return self._do_cable_plant(args, lang)
+        if verb is IntentVerb.BACKUP_SCHEDULE:
+            return self._do_backup_schedule(args, lang)
+        if verb is IntentVerb.COMPLIANCE_BASELINE:
+            return self._do_compliance_baseline(args, lang)
+        if verb is IntentVerb.NETWORK_DIFF:
+            return self._do_network_diff(args, lang)
+        if verb is IntentVerb.CONSOLE_SERVER:
+            return self._do_console_server(args, lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -2723,6 +2810,224 @@ connections:
                 f"Diff: +{rep.added_count} -{rep.removed_count}"
                 if lang == "en" else
                 f"فرق: +{rep.added_count} -{rep.removed_count}"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    # -- Phase T: OSPF / ACL / PoE / Inventory / Cable / Backup / Compliance / NetDiff / Console
+
+    def _do_ospf(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.routing_protocol import (
+            parse_cisco_ospf,
+        )
+        rep = parse_cisco_ospf(
+            "core-sw-01",
+            """GigabitEthernet0/0 is up, line protocol is up
+  Internet Address 10.0.0.1/24, Area 0
+  Cost: 1
+  Timer intervals configured, Hello 10, Dead 40
+  Network type BROADCAST
+""",
+        )
+        return self._reply(
+            IntentVerb.OSPF, ReplyStatus.OK,
+            summary=(
+                f"OSPF: {rep.interface_count} interface(s), "
+                f"{len(rep.mis_tuned)} mis-tuned"
+                if lang == "en" else
+                f"OSPF: {rep.interface_count} واجهة، "
+                f"{len(rep.mis_tuned)} مع ضبط خاطئ"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_acl_audit(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.acl_analyzer import (
+            parse_cisco_acl,
+        )
+        rep = parse_cisco_acl(
+            "WEB-FILTER",
+            """10 permit tcp 10.0.0.0 0.255.255.255 any eq 80
+20 permit tcp 10.0.0.0 0.255.255.255 any eq 443
+30 deny ip any any
+""",
+        )
+        return self._reply(
+            IntentVerb.ACL_AUDIT, ReplyStatus.OK,
+            summary=(
+                f"ACL: {rep.rule_count} rule(s), "
+                f"{rep.finding_count} finding(s)"
+                if lang == "en" else
+                f"ACL: {rep.rule_count} قاعدة، "
+                f"{rep.finding_count} مشكلة"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_poe_budget(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.poe_budget import (
+            PowerBudgetReport, PoePoweredDevice, PoeClass,
+        )
+        rep = PowerBudgetReport(
+            device="edge-sw-01",
+            total_budget_watts=370.0,
+            devices=[
+                PoePoweredDevice(
+                    port="Gi0/1", device_id="ap-01",
+                    poe_class=PoeClass.CLASS_3,
+                ),
+                PoePoweredDevice(
+                    port="Gi0/2", device_id="phone-01",
+                    poe_class=PoeClass.CLASS_2,
+                ),
+            ],
+        )
+        return self._reply(
+            IntentVerb.POE_BUDGET, ReplyStatus.OK,
+            summary=(
+                f"PoE: {rep.utilization_pct:.1f}% used"
+                if lang == "en" else
+                f"PoE: {rep.utilization_pct:.1f}% مستخدم"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_hw_inventory(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.inventory_items import (
+            parse_cisco_inventory,
+        )
+        rep = parse_cisco_inventory(
+            "core-router-01",
+            """NAME: "Chassis", DESCR: "Cisco ISR4451 Chassis"
+PID: ISR4451/K9         , VID: V05 , SN: FOC12345678
+""",
+        )
+        return self._reply(
+            IntentVerb.HW_INVENTORY, ReplyStatus.OK,
+            summary=(
+                f"Inventory: {rep.item_count} item(s)"
+                if lang == "en" else
+                f"المخزون: {rep.item_count} عنصر"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_cable_plant(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.cable_plant import (
+            parse_cable_plant,
+        )
+        rep = parse_cable_plant(
+            "site-A",
+            """A1:1 -> floor1-desk1 cat6 30m
+B1:1 -> IDF-1-sm-fc1 sm 50m
+""",
+        )
+        return self._reply(
+            IntentVerb.CABLE_PLANT, ReplyStatus.OK,
+            summary=(
+                f"Cable plant: {rep.record_count} record(s), "
+                f"{rep.fiber_count} fiber"
+                if lang == "en" else
+                f"كابل: {rep.record_count} سجل، "
+                f"{rep.fiber_count} ليف"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_backup_schedule(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from datetime import datetime
+        from netops_autopilot.engines.backup_schedule import (
+            BackupPolicy, build_schedule,
+        )
+        rep = build_schedule(
+            BackupPolicy(name="prod"),
+            start=datetime(2026, 1, 1, 0, 0, 0),
+            horizon_days=30,
+        )
+        return self._reply(
+            IntentVerb.BACKUP_SCHEDULE, ReplyStatus.OK,
+            summary=(
+                f"Backup: {rep.event_count} scheduled run(s)"
+                if lang == "en" else
+                f"النسخ: {rep.event_count} موعد"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_compliance_baseline(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.compliance_baseline import (
+            get_pack, run_pack,
+        )
+        rep = run_pack(
+            get_pack("pci"),
+            "ip ssh version 2\n",
+        )
+        return self._reply(
+            IntentVerb.COMPLIANCE_BASELINE, ReplyStatus.OK,
+            summary=(
+                f"Compliance: {rep.overall_verdict}"
+                if lang == "en" else
+                f"الامتثال: {rep.overall_verdict}"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_network_diff(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.network_diff import (
+            DeviceConfig, build_report,
+        )
+        rep = build_report([
+            DeviceConfig(
+                device_ref="sw1",
+                config="interface Gi0/1\n ip address 10.0.0.1\n",
+            ),
+            DeviceConfig(
+                device_ref="sw2",
+                config="interface Gi0/1\n ip address 10.0.0.2\n",
+            ),
+        ])
+        return self._reply(
+            IntentVerb.NETWORK_DIFF, ReplyStatus.OK,
+            summary=(
+                f"Network diff: {len(rep.divergent_pairs)} divergent"
+                if lang == "en" else
+                f"فرق الشبكة: {len(rep.divergent_pairs)} متباين"
+            ),
+            detail=rep.render(lang=lang),
+        )
+
+    def _do_console_server(
+        self, args: dict[str, str], lang: str,
+    ) -> OperatorReply:
+        from netops_autopilot.engines.console_server import (
+            ConsoleServerConfig, build_inventory,
+        )
+        rep = build_inventory(
+            ConsoleServerConfig(host="console-01.lab.local"),
+            ["core-sw-01", "edge-sw-01"],
+        )
+        return self._reply(
+            IntentVerb.CONSOLE_SERVER, ReplyStatus.OK,
+            summary=(
+                f"Console: {rep.path_count} OOB port(s)"
+                if lang == "en" else
+                f"وحدة التحكم: {rep.path_count} منفذ"
             ),
             detail=rep.render(lang=lang),
         )

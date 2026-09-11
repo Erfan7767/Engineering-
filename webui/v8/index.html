@@ -1038,6 +1038,17 @@ const COMMANDS = [
   { num: "",  verb: "vault",             en: "Device credentials vault",           ar: "الخزنة" },
   { num: "",  verb: "import topology",   en: "Import EVE-NG / NetBox topology",    ar: "استيراد الطوبولوجيا" },
   { num: "",  verb: "config diff",       en: "Config line-level diff",             ar: "فرق الإعدادات" },
+
+  // Phase T — OSPF / ACL / PoE / Inventory / Cable / Backup / Compliance / NetDiff / Console
+  { num: "",  verb: "ospf interface",    en: "OSPF cost/timer/area audit",         ar: "تدقيق OSPF" },
+  { num: "",  verb: "acl audit",         en: "ACL rule audit + shadow detection",  ar: "تدقيق ACL" },
+  { num: "",  verb: "poe budget",        en: "PoE power budget calculator",        ar: "ميزانية PoE" },
+  { num: "",  verb: "hardware inventory", en: "Hardware inventory + serial",       ar: "مخزون الأجهزة" },
+  { num: "",  verb: "cable plant",       en: "Patch panel / fiber plant",          ar: "شبكة الكابلات" },
+  { num: "",  verb: "backup schedule",   en: "Backup schedule + retention",        ar: "جدول النسخ الاحتياطي" },
+  { num: "",  verb: "compliance baseline", en: "CIS/PCI/HIPAA rule packs",         ar: "قواعد الامتثال" },
+  { num: "",  verb: "network diff",      en: "Cross-device config diff",           ar: "فرق الأجهزة" },
+  { num: "",  verb: "console server",    en: "Out-of-band console paths",          ar: "خادم وحدة التحكم" },
 ];
 
 const $ = sel => document.querySelector(sel);

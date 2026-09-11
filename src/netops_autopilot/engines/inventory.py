@@ -135,3 +135,4 @@ def _render_ar(inv: Inventory) -> str:
             f"{i.status:<14s} {i.mgmt_address:<18s} {i.interface_count}"
         )
     return "\n".join(lines)
+
