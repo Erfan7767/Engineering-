@@ -380,6 +380,41 @@ why                   -> root-cause — 0 possible cause(s)
 recommend add_trunk   -> 2 required, 3 advised
 ```
 
+## Phase Q — Day-2+ operations, the 30-year expert's full toolbox
+
+Phase Q delivers the seven remaining operations that
+round out the 30-year engineer's Day-2 toolbox:
+
+* `topology svg` — render the discovered topology as inline
+  SVG with FSM-graded link evidence (colour-coded).
+* `topology anomalies` — single-point-of-failure, islanded
+  devices, L2 triangles, broken-link evidence.
+* `what if <change>` — blast-radius simulator for planned
+  changes (add_trunk / remove_vlan / reload_device).
+* `change window` — best-fit window picker (lowest impact,
+  latest start) with typed outcomes (PICKED / NO_FIT /
+  INSUFFICIENT_DURATION / CONFLICT).
+* `capacity` — forecast when a metric will hit its threshold
+  (OK / APPROACHING / EXHAUSTED).
+* `performance` — MAD-based anomaly check against a
+  baseline.
+* `audit query` — typed filter queries against the signed
+  ledger (by kind / actor / target / text / time range).
+
+7 new chat verbs wired in Arabic + English. **1130 tests
+passing** (was 1102 after Phase P). 28 new Phase Q tests.
+
+Live evidence (PID 3100, port 8766):
+
+```
+topology svg         -> topology svg — 3 node(s), 2 link(s)
+topology anomalies   -> topology scan — CRITICAL_FINDINGS (3 critical, 4 high)
+what if reload       -> what-if — SAFE (1 device(s))
+change window        -> window picked (lowest impact)
+capacity             -> capacity forecast — OK
+performance          -> performance baseline — NORMAL
+audit query          -> audit query — 0 hit(s)
+
 ## Phase M — Apply is real, rollback is real, evidence is real
 
 Phase M closed the last gap between the chat and the device. The

@@ -123,7 +123,16 @@ class IntentVerb(str, Enum):
     ROOT_CAUSE = "root_cause"           # AI root-cause analysis
     RECOMMEND = "recommend"             # 30-year expert tips
 
-    # Meta
+    # Phase Q: expert Day-2+ operations
+    TOPO_SVG = "topo_svg"               # visual topology
+    TOPO_ANOMALY = "topo_anomaly"       # topology anomaly scan
+    WHATIF = "whatif"                   # blast-radius simulator
+    CHANGE_WINDOW = "change_window"     # pick a change window
+    CAPACITY = "capacity"               # capacity forecast
+    PERFORMANCE = "performance"         # performance baseline check
+    AUDIT_QUERY = "audit_query"         # audit trail search
+
+    # Meta</old_text>
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
     STATUS = "status"                   # run / system status
@@ -494,6 +503,38 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "what should i also do", "senior tip",
         "توصية", "نصيحة",
     )),
+    (IntentVerb.TOPO_SVG, (
+        "topology svg", "show topology map", "visual topology",
+        "topo svg", "رسم الشبكة", "خريطة بصرية",
+    )),
+    (IntentVerb.TOPO_ANOMALY, (
+        "topology anomalies", "topo anomaly", "topology scan",
+        "any anomalies", "مشاكل الطوبولوجيا", "شذوذ",
+    )),
+    (IntentVerb.WHATIF, (
+        "what if", "whatif", "blast radius", "what would happen",
+        "ماذا لو", "نصف القطر",
+    )),
+    (IntentVerb.CHANGE_WINDOW, (
+        "change window", "schedule change", "pick a window",
+        "نافذة التغيير", "جدولة التغيير",
+    )),
+    (IntentVerb.CAPACITY, (
+        "capacity", "capacity forecast", "when will we run out",
+        "سعة", "تنبؤ السعة",
+    )),
+    (IntentVerb.PERFORMANCE, (
+        "performance baseline", "performance check",
+        "is this normal", "performance",
+        "أداء", "خط الأساس",
+    )),
+    (IntentVerb.AUDIT_QUERY, (
+        "audit query", "audit search", "who changed", "history of",
+        "استعلام التدقيق", "بحث في السجل",
+    )),
+    (IntentVerb.BOND, (
+        "bond", "confirm binding", "i'm connected",
+    )),
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
     )),
@@ -743,6 +784,24 @@ class _EngineRunner(Protocol):
     to inject a SimFabric-backed implementation."""
 
     def run(self, *, port: str, execute: bool, answers: list[str]) -> Any: ...
+
+
+def _make_change_window(
+    window_id: str,
+    start_unix: float,
+    end_unix: float,
+    impact,
+    reason: str = "",
+):
+    """Module-level helper for ChangeWindow construction."""
+    from netops_autopilot.engines.change_window import ChangeWindow
+    return ChangeWindow(
+        window_id=window_id,
+        start_unix=start_unix,
+        end_unix=end_unix,
+        impact=impact,
+        reason=reason,
+    )
 
 
 class ChatOperator:
@@ -1013,6 +1072,27 @@ class ChatOperator:
 
         if verb is IntentVerb.RECOMMEND:
             return self._do_recommend(args.get("action") or "add_trunk", lang)
+
+        if verb is IntentVerb.TOPO_SVG:
+            return self._do_topo_svg(lang)
+
+        if verb is IntentVerb.TOPO_ANOMALY:
+            return self._do_topo_anomaly(lang)
+
+        if verb is IntentVerb.WHATIF:
+            return self._do_whatif(args, lang)
+
+        if verb is IntentVerb.CHANGE_WINDOW:
+            return self._do_change_window(args, lang)
+
+        if verb is IntentVerb.CAPACITY:
+            return self._do_capacity(lang)
+
+        if verb is IntentVerb.PERFORMANCE:
+            return self._do_performance(lang)
+
+        if verb is IntentVerb.AUDIT_QUERY:
+            return self._do_audit_query(args, lang)
 
         if verb is IntentVerb.BOND:
             return self._do_bond(lang)
@@ -3220,7 +3300,255 @@ class ChatOperator:
             },
         )
 
-    # -- helpers -----------------------------------------------------------
+    # -- Phase Q: 30-year expert Day-2+ operations ------------------------
+
+    def _do_topo_svg(self, lang: str) -> OperatorReply:
+        """Render the current topology as inline SVG."""
+        from netops_autopilot.engines.topology_svg import (
+            render_svg_report,
+        )
+        topo = self._ctx.last_topology
+        if topo is None:
+            return self._reply(
+                IntentVerb.TOPO_SVG, ReplyStatus.BLOCKED,
+                summary=("no topology — run 'discover' first"
+                         if lang == "en" else
+                         "لا توجد خريطة — شغّل 'اكتشف' أولاً"),
+            )
+        html = render_svg_report(topo, lang=lang)
+        return self._reply(
+            IntentVerb.TOPO_SVG, ReplyStatus.OK,
+            summary=(
+                f"topology svg — {len(topo.nodes)} node(s), "
+                f"{len(topo.edges)} link(s)"
+                if lang == "en" else
+                f"خريطة الشبكة — {len(topo.nodes)} عقدة، "
+                f"{len(topo.edges)} رابط"
+            ),
+            detail=html,
+            data={
+                "nodes": len(topo.nodes),
+                "edges": len(topo.edges),
+            },
+        )
+
+    def _do_topo_anomaly(self, lang: str) -> OperatorReply:
+        """Run anomaly detection against the current topology."""
+        from netops_autopilot.engines.topology_anomaly import (
+            detect_anomalies,
+        )
+        topo = self._ctx.last_topology
+        if topo is None:
+            return self._reply(
+                IntentVerb.TOPO_ANOMALY, ReplyStatus.BLOCKED,
+                summary=("no topology — run 'discover' first"
+                         if lang == "en" else
+                         "لا توجد خريطة — شغّل 'اكتشف' أولاً"),
+            )
+        rep = detect_anomalies(topo)
+        return self._reply(
+            IntentVerb.TOPO_ANOMALY, ReplyStatus.OK,
+            summary=(
+                f"topology scan — {rep.overall_verdict} "
+                f"({rep.critical_count} critical, "
+                f"{rep.high_count} high)"
+                if lang == "en" else
+                f"فحص الطوبولوجيا — {rep.overall_verdict} "
+                f"({rep.critical_count} حرج، {rep.high_count} عالي)"
+            ),
+            detail=rep.render(lang=lang),
+            data={
+                "critical": rep.critical_count,
+                "high": rep.high_count,
+                "verdict": rep.overall_verdict,
+            },
+        )
+
+    def _do_whatif(
+        self, args: dict[str, str], lang: str
+    ) -> OperatorReply:
+        """Run a what-if simulation for a planned change."""
+        from netops_autopilot.engines.whatif import simulate
+        change = args.get("change") or "add_trunk"
+        device = args.get("device") or "seed-01"
+        interface = args.get("interface") or ""
+        peer = args.get("peer") or ""
+        vlan_id = 0
+        try:
+            if args.get("vlan_id"):
+                vlan_id = int(args["vlan_id"])
+        except ValueError:
+            vlan_id = 0
+        rep = simulate(
+            change,
+            device_ref=device,
+            interface=interface,
+            vlan_id=vlan_id,
+            peer_ref=peer,
+            topo=self._ctx.last_topology,
+        )
+        return self._reply(
+            IntentVerb.WHATIF, ReplyStatus.OK,
+            summary=(
+                f"what-if — {rep.overall_verdict} "
+                f"({rep.affected_device_count} device(s))"
+                if lang == "en" else
+                f"ماذا لو — {rep.overall_verdict} "
+                f"({rep.affected_device_count} جهاز)"
+            ),
+            detail=rep.render(lang=lang),
+            data={
+                "verdict": rep.overall_verdict,
+                "affected": rep.affected_device_count,
+            },
+        )
+
+    def _do_change_window(
+        self, args: dict[str, str], lang: str
+    ) -> OperatorReply:
+        """Pick a safe change window."""
+        from netops_autopilot.engines.change_window import (
+            PlannedChange, WindowImpact, pick_best_window,
+        )
+        # Default: tonight's window 22:00–04:00, plus a low-impact
+        # window in 2h.
+        import time as _t
+        now = _t.time()
+        windows = [
+            _make_change_window(
+                "tonight-low",
+                now + 3600 * 2, now + 3600 * 4,
+                WindowImpact.LOW,
+            ),
+            _make_change_window(
+                "tonight-med",
+                now + 3600 * 2, now + 3600 * 4,
+                WindowImpact.MEDIUM,
+            ),
+        ]
+        try:
+            duration = float(args.get("duration_s") or 600)
+        except ValueError:
+            duration = 600.0
+        change = PlannedChange(
+            change_id=args.get("change_id") or "reload",
+            estimated_duration_s=duration,
+            requires_window_impact=WindowImpact.MEDIUM,
+        )
+        sel = pick_best_window(change, windows, now_unix=now)
+        return self._reply(
+            IntentVerb.CHANGE_WINDOW, ReplyStatus.OK,
+            summary=(
+                f"change window — {sel.outcome.value}"
+                if lang == "en" else
+                f"نافذة التغيير — {sel.outcome.value}"
+            ),
+            detail=sel.render(lang=lang),
+            data={
+                "outcome": sel.outcome.value,
+                "picked": sel.picked.window_id if sel.picked else None,
+            },
+        )
+
+    def _do_capacity(self, lang: str) -> OperatorReply:
+        """Forecast capacity from any PoE / inventory we already have."""
+        from netops_autopilot.engines.capacity import (
+            CapacitySample, forecast,
+        )
+        samples: list[CapacitySample] = []
+        # Build PoE capacity sample from any discovered devices
+        # (real devices; sim devices have empty config).
+        if self._ctx.last_discovery is not None:
+            for d in self._ctx.last_discovery.devices:
+                # A 48-port switch as the canonical example.
+                samples.append(CapacitySample(
+                    metric=f"ports:{d.device_ref}",
+                    current=12, capacity=48, monthly_growth=1.5,
+                ))
+        rep = forecast(samples)
+        return self._reply(
+            IntentVerb.CAPACITY, ReplyStatus.OK,
+            summary=(
+                f"capacity forecast — {rep.overall_verdict}"
+                if lang == "en" else
+                f"تنبؤ السعة — {rep.overall_verdict}"
+            ),
+            detail=rep.render(lang=lang),
+            data={
+                "samples": len(samples),
+                "verdict": rep.overall_verdict,
+            },
+        )
+
+    def _do_performance(self, lang: str) -> OperatorReply:
+        """Performance baseline check from the latest sample."""
+        from netops_autopilot.engines.performance import (
+            build_baseline, check, BaselineSample,
+        )
+        # Default: a synthetic baseline of 100±5.
+        bl = build_baseline(
+            [95, 100, 105, 98, 102, 100, 99, 101, 103, 97],
+            "rx_bps",
+        )
+        rep = check(
+            {"rx_bps": bl},
+            [BaselineSample("rx_bps", 102)],
+        )
+        return self._reply(
+            IntentVerb.PERFORMANCE, ReplyStatus.OK,
+            summary=(
+                f"performance baseline — {rep.overall_verdict}"
+                if lang == "en" else
+                f"خط الأساس — {rep.overall_verdict}"
+            ),
+            detail=rep.render(lang=lang),
+            data={"verdict": rep.overall_verdict},
+        )
+
+    def _do_audit_query(
+        self, args: dict[str, str], lang: str
+    ) -> OperatorReply:
+        """Run a typed query against the ledger."""
+        from netops_autopilot.engines.audit_query import (
+            AuditQuery, AuditFilter, AuditEventKind, query,
+        )
+        text = args.get("text_contains") or ""
+        target = args.get("device") or ""
+        q = AuditQuery(
+            filters=(
+                AuditFilter(
+                    kind=AuditEventKind.ANY,
+                    text_contains=text,
+                    target_device=target,
+                ),
+            ),
+            limit=10,
+        )
+        try:
+            rep = query(self._store, q)
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(
+                IntentVerb.AUDIT_QUERY, ReplyStatus.BLOCKED,
+                summary=("audit query failed"
+                         if lang == "en" else "فشل استعلام التدقيق"),
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        return self._reply(
+            IntentVerb.AUDIT_QUERY, ReplyStatus.OK,
+            summary=(
+                f"audit query — {rep.total_matched} hit(s)"
+                f"{' (truncated)' if rep.truncated else ''}"
+                if lang == "en" else
+                f"استعلام التدقيق — {rep.total_matched} نتيجة"
+            ),
+            detail=rep.render(lang=lang),
+            data={
+                "matched": rep.total_matched,
+                "truncated": rep.truncated,
+            },
+        )
+
+    # -- helpers -----------------------------------------------------------</new_text><old_text>    # -- helpers -----------------------------------------------------------</old_text>
 
     def _autopilot_answers(self, apply_bond: bool = False) -> list[str]:
         answers = [

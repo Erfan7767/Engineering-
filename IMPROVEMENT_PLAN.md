@@ -676,3 +676,37 @@ M       | 998   | baseline
 N       | 1033  | +35 expert operations
 O       | 1066  | +33 day-2 diagnostics
 P       | 1102  | +36 expert deeper improvements
+
+## Phase Q — Expert Day-2+ Operations
+
+Phase Q moves the operator from "Day-2 diagnostics" to
+"Day-2 plus": visualising the topology, scanning it for
+anomalies, simulating the blast radius of a planned change,
+picking a safe change window, forecasting capacity,
+checking performance against a baseline, and querying the
+audit trail.
+
+**7 new engines, 28 new tests, all green. Total: 1130 tests
+passing.**
+
+| Engine                | Operation                                      |
+|-----------------------|------------------------------------------------|
+| `topology_svg`        | Inline SVG topology, FSM-graded, deterministic |
+| `topology_anomaly`    | SPOF / islanded / L2 loop / broken-link scan  |
+| `whatif`              | Blast-radius simulator for planned changes    |
+| `change_window`       | Best-fit window picker for a planned change   |
+| `capacity`            | Capacity planner / forecast (days until threshold) |
+| `performance`         | Performance baseline + MAD-based anomaly detector |
+| `audit_query`         | Typed queries against the signed ledger      |
+
+**7 new chat verbs**: `topology svg`, `topology anomalies`,
+`what if <change>`, `change window`, `capacity`, `performance`,
+`audit query`. All exposed in Arabic + English.
+
+**Phase | Tests | Delta**
+------- | -----:| ----:
+M       | 998   | baseline
+N       | 1033  | +35 expert operations
+O       | 1066  | +33 day-2 diagnostics
+P       | 1102  | +36 expert deeper improvements
+Q       | 1130  | +28 expert Day-2+ operations
