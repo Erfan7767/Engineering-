@@ -95,7 +95,7 @@ class CiscoIosXeSerialAdapter(AccessAdapter, DiscoveryAdapter, ConfigAdapter):
         attached elsewhere first; conservative default per interface law is
         overridden here ONLY by construction: WE hold the open port handle —
         no other process can hold it simultaneously on the same host."""
-        return False
+        return device_ref in self._sessions
 
     # --------------------------------------------------- discovery adapter
     def run_layer(self, device_ref: str, layer: str) -> bytes:

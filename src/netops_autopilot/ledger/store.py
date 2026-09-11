@@ -6,6 +6,10 @@ integrity self-test (L03: mismatch ⇒ FATAL).
 
 This is the ONLY write path to ledger persistence (D0-06 rule); no engine
 may open the database directly.
+
+Thread safety: every write/read is serialized by a per-instance
+``threading.RLock``. The same LedgerStore may safely be shared by
+multiple threads (FastAPI threadpool, SSE worker, /state pollers).
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -71,14 +76,20 @@ class LedgerStore:
     """SQLite-backed evidence ledger."""
 
     def __init__(self, db_path: str = ":memory:", keys: Optional[KeyRegistry] = None) -> None:
-        self._db = sqlite3.connect(db_path)
+        # check_same_thread=False so a single LedgerStore may be used
+        # from any thread. The per-instance ``_lock`` (RLock) is the
+        # actual serializer; SQLite connections themselves are not
+        # safe for concurrent use even with that flag.
+        self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.executescript(_SCHEMA)
         self.keys = keys or KeyRegistry()
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------ chain
     def head_hash(self) -> str:
-        row = self._db.execute("SELECT record_hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
-        return row[0] if row else GENESIS_HASH
+        with self._lock:
+            row = self._db.execute("SELECT record_hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+            return row[0] if row else GENESIS_HASH
 
     def append_event(self, event: Event) -> str:
         """Sign (if unsigned), chain, and persist one Event. Returns record hash."""
@@ -89,18 +100,19 @@ class LedgerStore:
             )
         payload = event.signing_payload()
         signature_json = event.signature.model_dump_json()
-        prev = self.head_hash()
-        record_hash = _record_hash(prev, payload, signature_json)
-        try:
-            self._db.execute(
-                "INSERT INTO events (event_id, type, device_id, payload_json, signature_json, prev_hash, record_hash) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (event.event_id, event.type.value, event.device_id,
-                 json.dumps(payload, sort_keys=True), signature_json, prev, record_hash),
-            )
-            self._db.commit()
-        except sqlite3.IntegrityError as exc:
-            raise Failure(cls=FailureClass.FATAL, causes=(f"LEDGER_WRITE_REJECTED: {exc}",)) from exc
+        with self._lock:
+            prev = self.head_hash()
+            record_hash = _record_hash(prev, payload, signature_json)
+            try:
+                self._db.execute(
+                    "INSERT INTO events (event_id, type, device_id, payload_json, signature_json, prev_hash, record_hash) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (event.event_id, event.type.value, event.device_id,
+                     json.dumps(payload, sort_keys=True), signature_json, prev, record_hash),
+                )
+                self._db.commit()
+            except sqlite3.IntegrityError as exc:
+                raise Failure(cls=FailureClass.FATAL, causes=(f"LEDGER_WRITE_REJECTED: {exc}",)) from exc
         return record_hash
 
     def sign_event(self, event: Event, key_id: str) -> Event:
@@ -115,39 +127,45 @@ class LedgerStore:
 
     # ------------------------------------------------------------ sub-records
     def append_raw_artifact(self, artifact: RawArtifact) -> None:
-        self._db.execute(
-            "INSERT INTO raw_artifacts (raw_id, event_id, payload_json) VALUES (?,?,?)",
-            (artifact.raw_id, artifact.event_id, artifact.model_dump_json()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO raw_artifacts (raw_id, event_id, payload_json) VALUES (?,?,?)",
+                (artifact.raw_id, artifact.event_id, artifact.model_dump_json()),
+            )
+            self._db.commit()
 
     def append_observation(self, obs: Observation) -> None:
-        self._db.execute(
-            "INSERT INTO observations (obs_id, raw_id, payload_json) VALUES (?,?,?)",
-            (obs.obs_id, obs.raw_id, obs.model_dump_json()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO observations (obs_id, raw_id, payload_json) VALUES (?,?,?)",
+                (obs.obs_id, obs.raw_id, obs.model_dump_json()),
+            )
+            self._db.commit()
 
     def append_claim(self, claim: Claim) -> None:
-        self._db.execute(
-            "INSERT INTO claims (claim_id, payload_json) VALUES (?,?)",
-            (claim.claim_id, claim.model_dump_json()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO claims (claim_id, payload_json) VALUES (?,?)",
+                (claim.claim_id, claim.model_dump_json()),
+            )
+            self._db.commit()
 
     def append_transition(self, tr: StateTransition) -> None:
-        self._db.execute(
-            "INSERT INTO transitions (transition_id, payload_json) VALUES (?,?)",
-            (tr.transition_id, tr.model_dump_json()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO transitions (transition_id, payload_json) VALUES (?,?)",
+                (tr.transition_id, tr.model_dump_json()),
+            )
+            self._db.commit()
 
     # --------------------------------------------------------------- queries
     def event_count(self) -> int:
-        return self._db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        with self._lock:
+            return self._db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
 
     def events(self) -> list[Event]:
-        rows = self._db.execute("SELECT payload_json, signature_json FROM events ORDER BY seq").fetchall()
+        with self._lock:
+            rows = self._db.execute("SELECT payload_json, signature_json FROM events ORDER BY seq").fetchall()
         out: list[Event] = []
         for payload_json, signature_json in rows:
             data = json.loads(payload_json)
@@ -156,28 +174,33 @@ class LedgerStore:
         return out
 
     def claims(self) -> list[Claim]:
-        rows = self._db.execute("SELECT payload_json FROM claims ORDER BY rowid").fetchall()
+        with self._lock:
+            rows = self._db.execute("SELECT payload_json FROM claims ORDER BY rowid").fetchall()
         return [Claim.model_validate_json(r[0]) for r in rows]
 
     def observations(self) -> list[Observation]:
-        rows = self._db.execute("SELECT payload_json FROM observations ORDER BY rowid").fetchall()
+        with self._lock:
+            rows = self._db.execute("SELECT payload_json FROM observations ORDER BY rowid").fetchall()
         return [Observation.model_validate_json(r[0]) for r in rows]
 
     def raw_artifacts(self) -> list[RawArtifact]:
-        rows = self._db.execute("SELECT payload_json FROM raw_artifacts ORDER BY rowid").fetchall()
+        with self._lock:
+            rows = self._db.execute("SELECT payload_json FROM raw_artifacts ORDER BY rowid").fetchall()
         return [RawArtifact.model_validate_json(r[0]) for r in rows]
 
     def transitions(self) -> list[StateTransition]:
-        rows = self._db.execute("SELECT payload_json FROM transitions ORDER BY rowid").fetchall()
+        with self._lock:
+            rows = self._db.execute("SELECT payload_json FROM transitions ORDER BY rowid").fetchall()
         return [StateTransition.model_validate_json(r[0]) for r in rows]
 
     # -------------------------------------------------------------- integrity
     def verify_chain(self) -> ChainVerdict:
         """Recompute every hash and verify every signature. FATAL on failure."""
-        prev = GENESIS_HASH
-        rows = self._db.execute(
-            "SELECT seq, payload_json, signature_json, prev_hash, record_hash FROM events ORDER BY seq"
-        ).fetchall()
+        with self._lock:
+            prev = GENESIS_HASH
+            rows = self._db.execute(
+                "SELECT seq, payload_json, signature_json, prev_hash, record_hash FROM events ORDER BY seq"
+            ).fetchall()
         for seq, payload_json, signature_json, stored_prev, stored_hash in rows:
             payload = json.loads(payload_json)
             if stored_prev != prev:
@@ -200,4 +223,5 @@ class LedgerStore:
             )
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()

@@ -107,3 +107,29 @@ class TimeAuthority:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class FixedTimeAuthority(TimeAuthority):
+    """Deterministic TimeAuthority for tests and replay.
+
+    The clock is mutable so a test can advance time forward (e.g. simulate
+    a long-running deploy). Awaits the aware-datetime invariant on every
+    advance.
+    """
+
+    def __init__(self, start: Optional[datetime] = None) -> None:
+        if start is None:
+            start = datetime.now(timezone.utc)
+        self._t = _require_aware(start)
+        super().__init__(clock=lambda: self._t)
+
+    def now(self) -> datetime:
+        return self._t
+
+    def advance(self, delta: timedelta) -> None:
+        self._t = self._t + delta
+
+    def iso(self) -> str:
+        """ISO 8601 representation of the current clock value."""
+        return self._t.isoformat()
+

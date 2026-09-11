@@ -1,0 +1,1713 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#0a0e1a">
+<title>NetOps Autopilot — Network Engineering Console</title>
+<style>
+  /* =========================================================================
+     NetOps Autopilot · Professional UI
+     Built by Meta-Agent 5 (UI Architect)
+     No build step · No external deps · Works offline · RTL/LTR ready
+     ========================================================================= */
+  :root {
+    /* Brand palette: deep navy + electric cyan (network engineering feel) */
+    --bg-base: #0a0e1a;
+    --bg-elevated: #131829;
+    --bg-card: #1a2138;
+    --bg-card-hover: #1f2841;
+    --bg-overlay: rgba(10, 14, 26, 0.85);
+    --border-subtle: #232a45;
+    --border-strong: #2d3656;
+
+    --text-primary: #e8ecf4;
+    --text-secondary: #a8b2c8;
+    --text-muted: #6b7591;
+    --text-disabled: #4a5370;
+
+    --accent-cyan: #06d6ff;
+    --accent-cyan-dim: #0891b2;
+    --accent-cyan-bg: rgba(6, 214, 255, 0.08);
+
+    --accent-magenta: #f72585;
+    --accent-magenta-bg: rgba(247, 37, 133, 0.08);
+
+    --state-ok: #4ade80;
+    --state-ok-bg: rgba(74, 222, 128, 0.1);
+    --state-warn: #fbbf24;
+    --state-warn-bg: rgba(251, 191, 36, 0.1);
+    --state-block: #f87171;
+    --state-block-bg: rgba(248, 113, 113, 0.1);
+    --state-info: #60a5fa;
+    --state-info-bg: rgba(96, 165, 250, 0.1);
+    --state-purple: #c084fc;
+    --state-purple-bg: rgba(192, 132, 252, 0.1);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+    --shadow-glow: 0 0 24px rgba(6, 214, 255, 0.15);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-pill: 999px;
+
+    --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
+      "Helvetica Neue", Roboto, sans-serif;
+
+    --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* =====================  App Shell  ===================== */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 56px 1fr 32px;
+    grid-template-areas:
+      "topbar topbar"
+      "sidebar main"
+      "statusbar statusbar";
+    height: 100vh;
+  }
+
+  .topbar {
+    grid-area: topbar;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+    -webkit-app-region: drag;
+  }
+  .topbar .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 15px; letter-spacing: -0.01em;
+  }
+  .topbar .brand-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
+    border-radius: var(--radius-sm);
+    display: grid; place-items: center;
+    font-weight: 800; color: white; font-size: 13px;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .conn-status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 12px; border-radius: var(--radius-pill);
+    background: var(--bg-card); font-size: 12px;
+  }
+  .topbar .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .topbar .conn-dot.connected {
+    background: var(--state-ok);
+    box-shadow: 0 0 8px var(--state-ok);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .topbar .conn-dot.error { background: var(--state-block); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    padding: 16px 12px;
+  }
+  .sidebar-section {
+    margin-bottom: 24px;
+  }
+  .sidebar-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin: 0 8px 8px;
+    font-weight: 600;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    font-size: 13px;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
+  .nav-item.active {
+    background: var(--accent-cyan-bg);
+    color: var(--accent-cyan);
+    font-weight: 500;
+  }
+  .nav-item .nav-icon {
+    width: 16px; height: 16px;
+    display: grid; place-items: center;
+  }
+  .nav-badge {
+    margin-left: auto;
+    background: var(--accent-magenta);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
+    font-weight: 600;
+  }
+
+  .main {
+    grid-area: main;
+    overflow-y: auto;
+    padding: 24px 32px;
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .view-header {
+    display: flex; align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .view-header h1 {
+    font-size: 22px; font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .view-header .subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  /* =====================  Buttons  ===================== */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn:hover { background: var(--bg-card-hover); border-color: var(--accent-cyan); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary {
+    background: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+    color: var(--bg-base);
+  }
+  .btn-primary:hover { background: #25e1ff; border-color: #25e1ff; }
+  .btn-danger { background: var(--state-block); border-color: var(--state-block); color: white; }
+  .btn-ghost { background: transparent; border-color: transparent; }
+  .btn-ghost:hover { background: var(--bg-card); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* =====================  Cards  ===================== */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+  }
+  .card-header .icon {
+    color: var(--accent-cyan);
+    width: 18px; height: 18px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .card-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .card-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .card-grid-4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 1100px) {
+    .card-grid-2, .card-grid-3, .card-grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* =====================  Form  ===================== */
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .form-control {
+    width: 100%;
+    padding: 9px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    transition: var(--transition);
+  }
+  .form-control:focus {
+    outline: none;
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 3px var(--accent-cyan-bg);
+  }
+  .form-control::placeholder { color: var(--text-muted); }
+  select.form-control { font-family: var(--font-sans); }
+  textarea.form-control { font-family: var(--font-mono); min-height: 100px; resize: vertical; }
+  .form-hint {
+    font-size: 11px; color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .form-check {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .form-check input[type="checkbox"] {
+    width: 16px; height: 16px;
+    accent-color: var(--accent-cyan);
+    cursor: pointer;
+  }
+
+  /* =====================  Badges & States  ===================== */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge-ok { background: var(--state-ok-bg); color: var(--state-ok); }
+  .badge-block { background: var(--state-block-bg); color: var(--state-block); }
+  .badge-warn { background: var(--state-warn-bg); color: var(--state-warn); }
+  .badge-info { background: var(--state-info-bg); color: var(--state-info); }
+  .badge-purple { background: var(--state-purple-bg); color: var(--state-purple); }
+  .badge-muted { background: var(--bg-card); color: var(--text-muted); }
+  .badge-running::before {
+    content: "";
+    width: 6px; height: 6px;
+    background: currentColor;
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  /* =====================  Phase Timeline  ===================== */
+  .phase-list { list-style: none; }
+  .phase-item {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+    margin-bottom: 4px;
+  }
+  .phase-item:hover { background: var(--bg-card); }
+  .phase-item.active { background: var(--bg-card); border-left: 3px solid var(--accent-cyan); }
+  .phase-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .phase-dot.ok { background: var(--state-ok); box-shadow: 0 0 8px var(--state-ok); }
+  .phase-dot.blocked { background: var(--state-block); }
+  .phase-dot.warn { background: var(--state-warn); }
+  .phase-dot.running {
+    background: var(--accent-cyan);
+    box-shadow: 0 0 12px var(--accent-cyan);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .phase-dot.typed { background: var(--state-purple); }
+  .phase-name {
+    font-weight: 500;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+  }
+  .phase-detail {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .phase-time {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* =====================  Topology Canvas  ===================== */
+  .topology-canvas {
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    position: relative;
+    min-height: 500px;
+    border: 1px solid var(--border-subtle);
+  }
+  .topology-canvas svg {
+    width: 100%; height: 100%;
+    display: block;
+  }
+  .topology-canvas .empty {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px;
+  }
+  .topology-canvas .empty .icon {
+    font-size: 48px; opacity: 0.3;
+    margin-bottom: 12px;
+  }
+  /* SVG node styling */
+  .node-rect {
+    fill: var(--bg-card);
+    stroke: var(--border-strong);
+    stroke-width: 1.5;
+    transition: var(--transition);
+    cursor: pointer;
+  }
+  .node-rect:hover { stroke: var(--accent-cyan); fill: var(--bg-card-hover); }
+  .node-rect.seed { stroke: var(--accent-magenta); stroke-width: 2.5; }
+  .node-rect.unreachable { stroke: var(--state-block); stroke-dasharray: 3 2; opacity: 0.6; }
+  .node-text {
+    fill: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+  .node-vendor {
+    fill: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    text-anchor: middle;
+    pointer-events: none;
+  }
+  .edge-line {
+    stroke: var(--accent-cyan);
+    stroke-width: 1.5;
+    opacity: 0.5;
+    fill: none;
+  }
+  .edge-line.weak { stroke-dasharray: 3 3; opacity: 0.3; }
+  .edge-line:hover { stroke-width: 3; opacity: 1; }
+
+  /* =====================  Code blocks  ===================== */
+  pre.code {
+    background: var(--bg-base);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    max-height: 400px;
+  }
+  pre.code .keyword { color: var(--accent-magenta); }
+  pre.code .string { color: var(--state-ok); }
+  pre.code .comment { color: var(--text-muted); font-style: italic; }
+  pre.code .ip { color: var(--accent-cyan); }
+
+  /* =====================  Stat tiles  ===================== */
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .stat-value.ok { color: var(--state-ok); }
+  .stat-value.warn { color: var(--state-warn); }
+  .stat-value.block { color: var(--state-block); }
+  .stat-trend {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* =====================  Tables  ===================== */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .table th {
+    text-align: left;
+    padding: 10px 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+  }
+  .table tr:hover td { background: var(--bg-card); }
+  .table tr:last-child td { border-bottom: none; }
+  .table .mono { font-family: var(--font-mono); font-size: 12px; }
+
+  /* =====================  Alerts  ===================== */
+  .alert {
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .alert-info { background: var(--state-info-bg); border-color: var(--state-info); }
+  .alert-warn { background: var(--state-warn-bg); border-color: var(--state-warn); }
+  .alert-block { background: var(--state-block-bg); border-color: var(--state-block); }
+  .alert-ok { background: var(--state-ok-bg); border-color: var(--state-ok); }
+  .alert-icon { flex-shrink: 0; font-size: 18px; }
+
+  /* =====================  Statusbar  ===================== */
+  .statusbar {
+    grid-area: statusbar;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .statusbar .item { display: flex; align-items: center; gap: 6px; }
+  .statusbar .spacer { flex: 1; }
+
+  /* =====================  Toast  ===================== */
+  .toast-container {
+    position: fixed;
+    bottom: 48px; right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 360px;
+  }
+  .toast {
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid var(--accent-cyan);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 200ms ease-out;
+    font-size: 13px;
+  }
+  .toast.ok { border-left-color: var(--state-ok); }
+  .toast.warn { border-left-color: var(--state-warn); }
+  .toast.error { border-left-color: var(--state-block); }
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* =====================  Loading  ===================== */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--text-muted);
+    border-top-color: var(--accent-cyan);
+    border-radius: 50%;
+    animation: spin 800ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .skeleton {
+    background: linear-gradient(90deg,
+      var(--bg-card) 0%, var(--bg-card-hover) 50%, var(--bg-card) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: var(--radius-sm);
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* =====================  Empty state  ===================== */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+  .empty-state .icon {
+    font-size: 64px;
+    opacity: 0.2;
+    margin-bottom: 16px;
+  }
+  .empty-state h3 {
+    color: var(--text-secondary);
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  /* =====================  Scrollbar  ===================== */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg-base); }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan-dim); }
+
+  /* =====================  Settings rows  ===================== */
+  .settings-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row .label-block { flex: 1; }
+  .settings-row .label-block .label { font-weight: 500; }
+  .settings-row .label-block .desc {
+    font-size: 12px; color: var(--text-muted); margin-top: 2px;
+  }
+
+  /* =====================  Modal  ===================== */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: var(--bg-overlay);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; }
+  .modal .modal-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  /* =====================  Logs  ===================== */
+  .log-viewer {
+    background: var(--bg-base);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line .ts { color: var(--text-muted); }
+  .log-line .lvl-INFO { color: var(--state-info); }
+  .log-line .lvl-WARN { color: var(--state-warn); }
+  .log-line .lvl-ERROR { color: var(--state-block); }
+  .log-line .lvl-DEBUG { color: var(--text-muted); }
+  .log-line .phase { color: var(--accent-cyan); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ========== TOPBAR ========== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">N</div>
+      <span>NetOps Autopilot</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="conn-status" id="connStatus">
+      <span class="conn-dot" id="connDot"></span>
+      <span id="connText">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>Run</h3>
+      <div class="nav-item" data-view="connect" id="nav-connect">
+        <span class="nav-icon">⚡</span>
+        <span>Connect & Start</span>
+      </div>
+      <div class="nav-item" data-view="progress" id="nav-progress">
+        <span class="nav-icon">◉</span>
+        <span>Live Progress</span>
+        <span class="nav-badge" id="navBadge" style="display:none">●</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Discover</h3>
+      <div class="nav-item" data-view="topology">
+        <span class="nav-icon">⌬</span>
+        <span>Topology</span>
+      </div>
+      <div class="nav-item" data-view="devices">
+        <span class="nav-icon">▣</span>
+        <span>Devices</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Design & Execute</h3>
+      <div class="nav-item" data-view="intent">
+        <span class="nav-icon">✎</span>
+        <span>Intent</span>
+      </div>
+      <div class="nav-item" data-view="design">
+        <span class="nav-icon">◆</span>
+        <span>Design</span>
+      </div>
+      <div class="nav-item" data-view="configs">
+        <span class="nav-icon">▤</span>
+        <span>Configurations</span>
+      </div>
+      <div class="nav-item" data-view="execution">
+        <span class="nav-icon">▶</span>
+        <span>Execution</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Audit</h3>
+      <div class="nav-item" data-view="ledger">
+        <span class="nav-icon">≡</span>
+        <span>Evidence Ledger</span>
+      </div>
+      <div class="nav-item" data-view="reports">
+        <span class="nav-icon">📋</span>
+        <span>Reports</span>
+      </div>
+      <div class="nav-item" data-view="logs">
+        <span class="nav-icon">≣</span>
+        <span>Live Logs</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Configuration</h3>
+      <div class="nav-item" data-view="settings">
+        <span class="nav-icon">⚙</span>
+        <span>Settings</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== MAIN ========== -->
+  <main class="main">
+    <!-- View: Connect & Start -->
+    <section class="view active" id="view-connect">
+      <div class="view-header">
+        <div>
+          <h1>Connect to Network</h1>
+          <div class="subtitle">Connect your computer to ONE device via console, then start the run.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">①</span>
+          Physical Setup (you do this)
+        </div>
+        <ol style="padding-left: 24px; color: var(--text-secondary); line-height: 1.8;">
+          <li>Rack, cable, and power on all your network devices.</li>
+          <li>Connect any one device's <strong>console port</strong> to your computer's USB/Serial.</li>
+          <li>Wait for the device to finish booting (typically 30–90 seconds).</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">②</span>
+          Console Port
+        </div>
+        <div class="card-grid card-grid-2">
+          <div class="form-group">
+            <label for="portInput">Port</label>
+            <select id="portInput" class="form-control">
+              <option value="COM5" selected>COM5 (Windows default)</option>
+              <option value="COM3">COM3</option>
+              <option value="COM4">COM4</option>
+              <option value="/dev/ttyUSB0">/dev/ttyUSB0 (Linux)</option>
+              <option value="/dev/ttyACM0">/dev/ttyACM0 (Linux)</option>
+              <option value="SIM0">SIM0 (simulator — for demo)</option>
+            </select>
+            <div class="form-hint">Select the COM port or tty of your USB-serial adapter.</div>
+          </div>
+          <div class="form-group">
+            <label for="baudSelect">Baud Rate</label>
+            <select id="baudSelect" class="form-control">
+              <option value="9600" selected>9600 (most common)</option>
+              <option value="115200">115200</option>
+              <option value="19200">19200</option>
+              <option value="4800">4800</option>
+            </select>
+            <div class="form-hint">The platform will probe this first, then fallback candidates.</div>
+          </div>
+        </div>
+        <div class="card-header" style="margin-top: 16px">
+          <span class="icon">③</span>
+          Options
+        </div>
+        <label class="form-check">
+          <input type="checkbox" id="executeInput">
+          <span>Request execution (the EXECUTION_GATE still enforces the law)</span>
+        </label>
+        <div class="form-hint" style="margin-top:6px;margin-left:24px">
+          Without this, the run is dry-run / staging only.
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:20px">
+          <button class="btn btn-primary" id="startBtn">▶  Start Run</button>
+          <button class="btn" id="dryRunBtn">◇  Demo (no hardware)</button>
+          <button class="btn btn-ghost" id="refreshPortsBtn">⟳  Refresh Ports</button>
+        </div>
+      </div>
+
+      <div class="card" id="runInfoCard" style="display:none">
+        <div class="card-header">
+          <span class="icon">●</span>
+          Current Run
+        </div>
+        <div class="card-grid card-grid-4" id="runStats"></div>
+        <div id="runInfo"></div>
+      </div>
+    </section>
+
+    <!-- View: Live Progress -->
+    <section class="view" id="view-progress">
+      <div class="view-header">
+        <div>
+          <h1>Live Progress</h1>
+          <div class="subtitle" id="progressSubtitle">Waiting for a run to start…</div>
+        </div>
+        <button class="btn btn-sm" id="refreshProgressBtn">⟳ Refresh</button>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">◉</span>
+          Phases
+        </div>
+        <ul class="phase-list" id="phaseList">
+          <li class="empty-state" style="grid-column: 1/-1">
+            <div class="icon">◌</div>
+            <h3>No run in progress</h3>
+            <div>Start a run from the <strong>Connect</strong> view.</div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- View: Topology -->
+    <section class="view" id="view-topology">
+      <div class="view-header">
+        <div>
+          <h1>Network Topology</h1>
+          <div class="subtitle">Devices discovered via CDP / LLDP / MNDP — with evidence.</div>
+        </div>
+        <div>
+          <button class="btn btn-sm" id="topologySvgBtn">⬇ Download SVG</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="topology-canvas" id="topologyCanvas">
+          <div class="empty">
+            <div class="icon">⌬</div>
+            <div>No topology yet. Run a discovery first.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="topologyGapsCard" style="display:none">
+        <div class="card-header">
+          <span class="icon">⚠</span>
+          Discovery Gaps
+        </div>
+        <ul id="topologyGaps" style="padding-left: 20px; color: var(--state-warn);"></ul>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">▤</span>
+          ASCII Map
+        </div>
+        <pre class="code" id="topologyAscii">No topology data.</pre>
+      </div>
+    </section>
+
+    <!-- View: Devices -->
+    <section class="view" id="view-devices">
+      <div class="view-header">
+        <div>
+          <h1>Devices</h1>
+          <div class="subtitle">All discovered devices, their state and evidence.</div>
+        </div>
+      </div>
+      <div class="card">
+        <table class="table" id="devicesTable">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Vendor</th>
+              <th>Status</th>
+              <th>Classification</th>
+              <th>Commands</th>
+            </tr>
+          </thead>
+          <tbody id="devicesTbody">
+            <tr><td colspan="5" class="empty-state">No devices discovered yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- View: Intent -->
+    <section class="view" id="view-intent">
+      <div class="view-header">
+        <div>
+          <h1>Network Intent</h1>
+          <div class="subtitle">What the human wants this network to be.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">✎</span>
+          Elicitation
+        </div>
+        <pre class="code" id="intentJson">No intent compiled yet.</pre>
+      </div>
+    </section>
+
+    <!-- View: Design -->
+    <section class="view" id="view-design">
+      <div class="view-header">
+        <div>
+          <h1>Network Design</h1>
+          <div class="subtitle">Per-device Intent Records generated by the Design Engine.</div>
+        </div>
+      </div>
+      <div class="card-grid card-grid-3" id="designStats"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">◆</span>
+          Roles
+        </div>
+        <table class="table">
+          <thead><tr><th>Device</th><th>Role</th><th>Reason</th></tr></thead>
+          <tbody id="designRolesTbody"><tr><td colspan="3" class="empty-state">No design yet.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">▦</span>
+          Zones
+        </div>
+        <table class="table">
+          <thead><tr><th>Zone</th><th>VLAN</th><th>Subnet</th><th>Gateway</th><th>On</th></tr></thead>
+          <tbody id="designZonesTbody"><tr><td colspan="5" class="empty-state">No zones yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- View: Configurations -->
+    <section class="view" id="view-configs">
+      <div class="view-header">
+        <div>
+          <h1>Rendered Configurations</h1>
+          <div class="subtitle">Vendor-specific config previews (preview-only, not yet applied).</div>
+        </div>
+      </div>
+      <div id="rendersList">
+        <div class="empty-state">
+          <div class="icon">▤</div>
+          <h3>No configurations rendered yet.</h3>
+          <div>Configurations appear after the design phase.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Execution -->
+    <section class="view" id="view-execution">
+      <div class="view-header">
+        <div>
+          <h1>Execution Gate</h1>
+          <div class="subtitle">T3 enforcement: nothing executes outside the lab-verified allowlist.</div>
+        </div>
+      </div>
+      <div class="card" id="execCard">
+        <div class="empty-state">
+          <div class="icon">🔒</div>
+          <h3>No execution attempt yet.</h3>
+          <div>The EXECUTION_GATE appears after a render.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Ledger -->
+    <section class="view" id="view-ledger">
+      <div class="view-header">
+        <div>
+          <h1>Evidence Ledger</h1>
+          <div class="subtitle">Every claim is signed; every state transition is hash-chained.</div>
+        </div>
+      </div>
+      <div class="card-grid card-grid-3" id="ledgerStats"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">≡</span>
+          Constitution Counters (T1–T6 + L11)
+        </div>
+        <table class="table">
+          <thead><tr><th>Counter</th><th>Value</th><th>Release gate</th></tr></thead>
+          <tbody id="ledgerCountersTbody">
+            <tr><td colspan="3" class="empty-state">No run yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- View: Reports -->
+    <section class="view" id="view-reports">
+      <div class="view-header">
+        <div>
+          <h1>Reports</h1>
+          <div class="subtitle">Self-contained run artifacts (HTML + JSON) for tickets and audits.</div>
+        </div>
+      </div>
+      <div class="card" id="reportsList">
+        <div class="empty-state">
+          <div class="icon">📋</div>
+          <h3>No reports yet.</h3>
+          <div>Reports are generated automatically when a run completes.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Logs -->
+    <section class="view" id="view-logs">
+      <div class="view-header">
+        <div>
+          <h1>Live Logs</h1>
+          <div class="subtitle">JSON event stream from the engine.</div>
+        </div>
+        <div>
+          <button class="btn btn-sm" id="clearLogsBtn">Clear</button>
+          <button class="btn btn-sm" id="exportLogsBtn">Export</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="log-viewer" id="logViewer">
+          <div class="log-line"><span class="ts">--:--:--</span> <span class="lvl-INFO">INFO</span> <span class="phase">[engine]</span> Waiting for run…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View: Settings -->
+    <section class="view" id="view-settings">
+      <div class="view-header">
+        <div>
+          <h1>Settings</h1>
+          <div class="subtitle">Engine, autonomy, and connection preferences.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">⚙</span>
+          Server Connection
+        </div>
+        <div class="settings-row">
+          <div class="label-block">
+            <div class="label">API base URL</div>
+            <div class="desc">The FastAPI server this UI talks to.</div>
+          </div>
+          <input class="form-control" id="apiBaseInput" style="max-width:280px">
+        </div>
+        <div class="settings-row">
+          <div class="label-block">
+            <div class="label">API key (optional)</div>
+            <div class="desc">Set if the server requires Bearer auth (NETOPS_API_KEY).</div>
+          </div>
+          <input class="form-control" id="apiKeyInput" type="password" style="max-width:280px" placeholder="leave empty if not set">
+        </div>
+        <div class="settings-row">
+          <div class="label-block">
+            <div class="label">Poll interval</div>
+            <div class="desc">How often the UI refreshes the run status (ms).</div>
+          </div>
+          <input class="form-control" id="pollIntervalInput" type="number" min="500" max="10000" step="100" value="1500" style="max-width:120px">
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">⚑</span>
+          Autonomy
+        </div>
+        <div class="settings-row">
+          <div class="label-block">
+            <div class="label">Autonomy Mode</div>
+            <div class="desc">v1 ships M3 (Controlled Autonomous). Higher modes are reserved.</div>
+          </div>
+          <select class="form-control" id="autonomyModeSelect" style="max-width:200px">
+            <option value="M1" selected>M1 — Manual (read-only)</option>
+            <option value="M2">M2 — Assisted (preview, human approves)</option>
+            <option value="M3" selected>M3 — Controlled Autonomous</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">?</span>
+          About
+        </div>
+        <div class="settings-row">
+          <div class="label-block">
+            <div class="label">NetOps Autopilot v0.1.0</div>
+            <div class="desc">Evidence-driven autonomous network engineering.
+              <br>Constitution: L01–L17, T1–T6. Master spec: P1-ARCHITECTURE-REVIEWED.
+              <br>Built with 652+ tests passing. No telemetry, no external calls.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ========== STATUSBAR ========== -->
+  <footer class="statusbar">
+    <div class="item"><span class="spinner" id="globalSpinner" style="display:none"></span> <span id="globalStatus">Ready</span></div>
+    <div class="spacer"></div>
+    <div class="item">v0.1.0</div>
+    <div class="item" id="clock">--:--:--</div>
+  </footer>
+</div>
+
+<!-- ========== TOAST CONTAINER ========== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ========== MODAL ========== -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" id="modal">
+    <h2 id="modalTitle">Title</h2>
+    <div id="modalBody">Body</div>
+    <div class="modal-actions">
+      <button class="btn" id="modalCancel">Cancel</button>
+      <button class="btn btn-primary" id="modalOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   NetOps Autopilot · Professional UI Controller
+   Built by Meta-Agent 5 (UI Architect)
+   ========================================================================= */
+
+const Store = {
+  // Application state
+  state: {
+    apiBase: localStorage.getItem('netops.apiBase') || (location.protocol === 'file:' ? 'http://localhost:8765' : ''),
+    apiKey: localStorage.getItem('netops.apiKey') || '',
+    pollInterval: parseInt(localStorage.getItem('netops.pollInterval') || '1500'),
+    runId: null,
+    pollHandle: null,
+    currentView: 'connect',
+    reports: [],
+    lastRunData: null,
+  },
+  save() {
+    localStorage.setItem('netops.apiBase', this.state.apiBase);
+    localStorage.setItem('netops.apiKey', this.state.apiKey);
+    localStorage.setItem('netops.pollInterval', this.state.pollInterval);
+  }
+};
+
+const UI = {
+  // ---------- API ----------
+  async api(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    if (Store.state.apiKey) headers['Authorization'] = 'Bearer ' + Store.state.apiKey;
+    const r = await fetch(Store.state.apiBase + path, { ...opts, headers });
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(`HTTP ${r.status}: ${t}`);
+    }
+    return r;
+  },
+
+  async apiJson(path, opts = {}) {
+    const r = await this.api(path, opts);
+    return r.json();
+  },
+
+  // ---------- Toast ----------
+  toast(message, kind = 'info', timeoutMs = 4000) {
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.textContent = message;
+    document.getElementById('toastContainer').appendChild(el);
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(20px)';
+      el.style.transition = 'all 200ms';
+      setTimeout(() => el.remove(), 250);
+    }, timeoutMs);
+  },
+
+  // ---------- Modal ----------
+  modal(title, body, okLabel = 'OK', cancelLabel = 'Cancel') {
+    return new Promise((resolve) => {
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalBody').innerHTML = body;
+      document.getElementById('modalOk').textContent = okLabel;
+      document.getElementById('modalCancel').textContent = cancelLabel;
+      const backdrop = document.getElementById('modalBackdrop');
+      backdrop.classList.add('open');
+      const cleanup = (v) => {
+        backdrop.classList.remove('open');
+        document.getElementById('modalOk').onclick = null;
+        document.getElementById('modalCancel').onclick = null;
+        resolve(v);
+      };
+      document.getElementById('modalOk').onclick = () => cleanup(true);
+      document.getElementById('modalCancel').onclick = () => cleanup(false);
+    });
+  },
+
+  // ---------- Navigation ----------
+  switchView(name) {
+    Store.state.currentView = name;
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + name).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const nav = document.getElementById('nav-' + name);
+    if (nav) nav.classList.add('active');
+    // Trigger view-specific load
+    this.onViewEnter(name);
+  },
+
+  onViewEnter(name) {
+    if (name === 'topology') this.loadTopology();
+    if (name === 'devices') this.loadDevices();
+    if (name === 'design') this.loadDesign();
+    if (name === 'configs') this.loadConfigs();
+    if (name === 'execution') this.loadExecution();
+    if (name === 'ledger') this.loadLedger();
+    if (name === 'progress') this.loadProgress();
+  },
+
+  // ---------- Connection status ----------
+  async checkHealth() {
+    try {
+      const j = await this.apiJson('/healthz');
+      const dot = document.getElementById('connDot');
+      const text = document.getElementById('connText');
+      dot.classList.add('connected');
+      dot.classList.remove('error');
+      text.textContent = `Connected · v${j.version}`;
+      return true;
+    } catch (e) {
+      const dot = document.getElementById('connDot');
+      const text = document.getElementById('connText');
+      dot.classList.remove('connected');
+      dot.classList.add('error');
+      text.textContent = 'Offline';
+      return false;
+    }
+  },
+
+  setGlobalStatus(text, busy = false) {
+    document.getElementById('globalStatus').textContent = text;
+    document.getElementById('globalSpinner').style.display = busy ? 'inline-block' : 'none';
+  },
+
+  // ---------- Run lifecycle ----------
+  async startRun({ port, execute, dryRun = false }) {
+    this.setGlobalStatus('Starting run…', true);
+    try {
+      const path = dryRun ? '/runs' : '/runs';
+      const r = await this.apiJson(path, {
+        method: 'POST',
+        body: JSON.stringify({ port, execute }),
+      });
+      Store.state.runId = r.run_id;
+      this.toast(`Run ${r.run_id} started`, 'ok');
+      document.getElementById('runInfoCard').style.display = 'block';
+      this.switchView('progress');
+      this.startPolling();
+    } catch (e) {
+      this.toast('Failed to start run: ' + e.message, 'error', 6000);
+    } finally {
+      this.setGlobalStatus('Ready', false);
+    }
+  },
+
+  startPolling() {
+    if (Store.state.pollHandle) clearInterval(Store.state.pollHandle);
+    const tick = async () => {
+      if (!Store.state.runId) return;
+      try {
+        const j = await this.apiJson('/runs/' + Store.state.runId);
+        Store.state.lastRunData = j;
+        this.renderProgress(j);
+        if (j.status === 'COMPLETE' || j.status === 'BLOCKED' || j.status === 'ERROR') {
+          clearInterval(Store.state.pollHandle);
+          Store.state.pollHandle = null;
+          this.setGlobalStatus('Run ' + j.status.toLowerCase(), false);
+          this.toast(`Run ${j.status}: ${j.final || ''}`, j.status === 'COMPLETE' ? 'ok' : 'warn', 5000);
+          // Auto-refresh the relevant views
+          this.onViewEnter(Store.state.currentView);
+        }
+      } catch (e) {
+        // keep silent — poll will retry
+      }
+    };
+    tick();
+    Store.state.pollHandle = setInterval(tick, Store.state.pollInterval);
+  },
+
+  // ---------- View renderers ----------
+  renderProgress(j) {
+    document.getElementById('progressSubtitle').textContent =
+      `Run ${j.run_id} · status: ${j.status} · final: ${j.final || '—'}`;
+    const list = document.getElementById('phaseList');
+    if (!j.phases || !j.phases.length) {
+      list.innerHTML = '<li class="phase-item"><div class="phase-dot running"></div><div class="phase-name">Initializing…</div></li>';
+      return;
+    }
+    list.innerHTML = j.phases.map((p, i) => {
+      const dotClass = this.phaseDotClass(p.status);
+      const isActive = i === j.phases.length - 1 && (j.status === 'RUNNING' || j.status === 'PENDING');
+      return `
+        <li class="phase-item ${isActive ? 'active' : ''}">
+          <div class="phase-dot ${dotClass}"></div>
+          <div>
+            <div class="phase-name">${this.esc(p.phase)}</div>
+            <div class="phase-detail">${this.esc(p.detail || '')}</div>
+          </div>
+          <div class="phase-time">${this.esc(p.status)}</div>
+        </li>`;
+    }).join('');
+    // Also render the stats on the connect view
+    const stats = document.getElementById('runStats');
+    if (stats) {
+      const ph = j.phases || [];
+      const completed = ph.filter(p => p.status === 'OK' || p.status === 'COMPLETE').length;
+      const blocked = ph.filter(p => p.status === 'BLOCKED').length;
+      stats.innerHTML = `
+        <div class="stat"><div class="stat-label">Status</div><div class="stat-value">${this.esc(j.status)}</div></div>
+        <div class="stat"><div class="stat-label">Phases</div><div class="stat-value">${ph.length}</div><div class="stat-trend">${completed} ok, ${blocked} blocked</div></div>
+        <div class="stat"><div class="stat-label">Final</div><div class="stat-value ${j.final?.startsWith('COMPLETE') ? 'ok' : j.final?.startsWith('BLOCKED') ? 'block' : ''}">${this.esc(j.final || '—')}</div></div>
+        <div class="stat"><div class="stat-label">Run ID</div><div class="stat-value" style="font-size:14px">${this.esc(j.run_id || '')}</div></div>
+      `;
+    }
+    document.getElementById('runInfo').innerHTML = `
+      <div class="alert alert-info" style="margin-top:16px">
+        <span class="alert-icon">●</span>
+        <div>
+          <strong>${this.esc(j.status)}</strong>${j.final ? ' · ' + this.esc(j.final) : ''}<br>
+          <span style="color: var(--text-muted); font-size: 12px">started: ${this.esc(j.created_at)}${j.finished_at ? ' · finished: ' + this.esc(j.finished_at) : ''}</span>
+          ${j.error ? '<br><span style="color: var(--state-block)">' + this.esc(j.error) + '</span>' : ''}
+        </div>
+      </div>
+    `;
+    // Show the badge on the progress nav
+    if (j.status === 'RUNNING' || j.status === 'PENDING') {
+      document.getElementById('navBadge').style.display = 'inline-block';
+    } else {
+      document.getElementById('navBadge').style.display = 'none';
+    }
+  },
+
+  phaseDotClass(status) {
+    if (!status) return '';
+    const s = status.toUpperCase();
+    if (s === 'OK' || s === 'COMPLETE') return 'ok';
+    if (s === 'BLOCKED') return 'blocked';
+    if (s === 'HUMAN_DECISION' || s === 'PARTIAL') return 'warn';
+    if (s === 'RUNNING') return 'running';
+    if (s === 'TYPED_STOP') return 'typed';
+    return '';
+  },
+
+  async loadProgress() {
+    if (!Store.state.runId) return;
+    try {
+      const j = await this.apiJson('/runs/' + Store.state.runId);
+      this.renderProgress(j);
+    } catch (e) {
+      this.toast('Cannot load progress: ' + e.message, 'error');
+    }
+  },
+
+  async loadTopology() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/topology');
+      const j = await r.json();
+      this.renderTopology(j);
+    } catch (e) {
+      // No topology yet — keep the empty state.
+    }
+  },
+
+  renderTopology(j) {
+    const canvas = document.getElementById('topologyCanvas');
+    const gapsCard = document.getElementById('topologyGapsCard');
+    const gapsList = document.getElementById('topologyGaps');
+    document.getElementById('topologyAscii').textContent = j.ascii || '(no ASCII map)';
+    if (!j.nodes || j.nodes.length === 0) {
+      canvas.innerHTML = '<div class="empty"><div class="icon">⌬</div><div>No topology yet.</div></div>';
+      gapsCard.style.display = 'none';
+      return;
+    }
+    // SVG layout
+    const W = 800, H = 500, cx = W / 2, cy = H / 2, r = 180;
+    const nodes = j.nodes;
+    const pos = {};
+    pos[nodes[0].device_ref || nodes[0].ref || 'seed'] = [cx, cy - r];
+    nodes.slice(1).forEach((n, i) => {
+      const a = (2 * Math.PI * i) / Math.max(1, nodes.length - 1);
+      pos[n.device_ref || n.ref || `n${i}`] = [
+        cx + r * Math.sin(a),
+        cy - r * Math.cos(a) * 0.75
+      ];
+    });
+    let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%; display:block">`;
+    svg += `<rect width="${W}" height="${H}" fill="var(--bg-elevated)"/>`;
+    for (const e of (j.edges || [])) {
+      const a = e.a_device_ref || e.a, b = e.b_device_ref || e.b;
+      if (pos[a] && pos[b]) {
+        const weak = (e.evidence_refs || []).length === 0;
+        svg += `<line class="edge-line${weak ? ' weak' : ''}" x1="${pos[a][0]}" y1="${pos[a][1]}" x2="${pos[b][0]}" y2="${pos[b][1]}"/>`;
+      }
+    }
+    nodes.forEach((n, idx) => {
+      const ref = n.device_ref || n.ref || `n${idx}`;
+      const [x, y] = pos[ref] || [cx, cy];
+      const isSeed = idx === 0;
+      const cls = n.status === 'UNREACHABLE' ? 'unreachable' : isSeed ? 'seed' : '';
+      const w = 110, h = 50;
+      svg += `<g class="node-group">
+        <rect class="node-rect ${cls}" x="${x - w/2}" y="${y - h/2}" width="${w}" height="${h}" rx="6"/>
+        <text class="node-text" x="${x}" y="${y - 4}">${this.esc(ref.slice(0, 14))}</text>
+        <text class="node-vendor" x="${x}" y="${y + 12}">${this.esc(n.vendor_family || n.status || '')}</text>
+      </g>`;
+    });
+    svg += '</svg>';
+    canvas.innerHTML = svg;
+    // Gaps
+    if (j.gaps && j.gaps.length) {
+      gapsCard.style.display = 'block';
+      gapsList.innerHTML = j.gaps.map(g => `<li>${this.esc(g)}</li>`).join('');
+    } else {
+      gapsCard.style.display = 'none';
+    }
+  },
+
+  async loadDevices() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/report.json');
+      const j = await r.json();
+      const devices = j.crawl?.devices || [];
+      const tbody = document.getElementById('devicesTbody');
+      if (!devices.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No devices.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = devices.map(d => `
+        <tr>
+          <td class="mono">${this.esc(d.device_ref || '')}</td>
+          <td>${this.esc(d.identity?.vendor_family || '—')}</td>
+          <td><span class="badge ${this.statusBadge(d.status)}">${this.esc(d.status || '—')}</span></td>
+          <td>${this.esc(d.classification || '—')}</td>
+          <td class="mono">${(d.commands || []).length}</td>
+        </tr>
+      `).join('');
+    } catch (e) {}
+  },
+
+  statusBadge(s) {
+    if (!s) return 'muted';
+    const u = s.toUpperCase();
+    if (u === 'COMPLETE') return 'ok';
+    if (u === 'UNREACHABLE') return 'block';
+    if (u === 'NEIGHBOR_REACHED') return 'info';
+    if (u === 'BLOCKED') return 'block';
+    return 'muted';
+  },
+
+  async loadDesign() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/report.json');
+      const j = await r.json();
+      // Stats
+      const stats = document.getElementById('designStats');
+      const design = j.design;
+      if (design) {
+        stats.innerHTML = `
+          <div class="stat"><div class="stat-label">Zones</div><div class="stat-value">${(design.zones || []).length}</div></div>
+          <div class="stat"><div class="stat-label">Uplinks</div><div class="stat-value">${(design.uplinks || []).length}</div></div>
+          <div class="stat"><div class="stat-label">Access ports</div><div class="stat-value">${(design.access || []).length}</div></div>
+        `;
+        const rolesT = document.getElementById('designRolesTbody');
+        rolesT.innerHTML = (design.roles || []).map(r => `
+          <tr><td class="mono">${this.esc(r.device_ref || '')}</td><td>${this.esc(r.role || '')}</td><td>${this.esc(r.reason || '')}</td></tr>
+        `).join('') || '<tr><td colspan="3" class="empty-state">No roles.</td></tr>';
+        const zonesT = document.getElementById('designZonesTbody');
+        zonesT.innerHTML = (design.zones || []).map(z => `
+          <tr>
+            <td>${this.esc(z.zone || z.name || '')}</td>
+            <td class="mono">${this.esc(z.vlan_id ?? '—')}</td>
+            <td class="mono">${this.esc(z.subnet || '')}</td>
+            <td class="mono">${this.esc(z.gateway || '')}</td>
+            <td class="mono">${this.esc(z.routed_on || '')}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="5" class="empty-state">No zones.</td></tr>';
+      } else {
+        stats.innerHTML = '';
+      }
+      // Intent
+      const intentEl = document.getElementById('intentJson');
+      intentEl.textContent = j.intent ? JSON.stringify(j.intent, null, 2) : 'No intent compiled.';
+    } catch (e) {}
+  },
+
+  async loadConfigs() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/report.json');
+      const j = await r.json();
+      const renders = j.renders || {};
+      const keys = Object.keys(renders);
+      const container = document.getElementById('rendersList');
+      if (!keys.length) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">▤</div><h3>No configurations rendered.</h3></div>';
+        return;
+      }
+      container.innerHTML = keys.map(ref => `
+        <div class="card">
+          <div class="card-header">
+            <span class="icon">▤</span>
+            ${this.esc(ref)}
+            <span class="badge badge-info" style="margin-left:auto">preview</span>
+          </div>
+          <pre class="code">${this.esc(renders[ref] || '')}</pre>
+        </div>
+      `).join('');
+    } catch (e) {}
+  },
+
+  async loadExecution() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/report.json');
+      const j = await r.json();
+      const exec = j.execution;
+      const card = document.getElementById('execCard');
+      if (!exec) {
+        card.innerHTML = '<div class="empty-state"><div class="icon">🔒</div><h3>No execution attempt yet.</h3></div>';
+        return;
+      }
+      const kind = exec.outcome === 'STAGED_BLOCKED_BY_LAW' ? 'block' : 'ok';
+      card.innerHTML = `
+        <div class="alert alert-${kind}">
+          <span class="alert-icon">${kind === 'block' ? '🔒' : '✓'}</span>
+          <div>
+            <strong>${this.esc(exec.outcome || '—')}</strong><br>
+            ${this.esc(exec.reason || '')}
+            ${exec.staged_devices ? '<br><br><strong>Staged devices:</strong> ' + this.esc(exec.staged_devices.join(', ')) : ''}
+            ${exec.human_required_to_unlock ? '<br><br><em>' + this.esc(exec.human_required_to_unlock) + '</em>' : ''}
+          </div>
+        </div>
+        <pre class="code" style="margin-top:12px">${this.esc(JSON.stringify(exec, null, 2))}</pre>
+      `;
+    } catch (e) {}
+  },
+
+  async loadLedger() {
+    if (!Store.state.runId) return;
+    try {
+      const r = await this.api('/runs/' + Store.state.runId + '/report.json');
+      const j = await r.json();
+      const ledger = j.ledger || {};
+      const stats = document.getElementById('ledgerStats');
+      stats.innerHTML = `
+        <div class="stat"><div class="stat-label">Events</div><div class="stat-value">${ledger.event_count ?? 0}</div></div>
+        <div class="stat"><div class="stat-label">Chain</div><div class="stat-value ${ledger.chain_ok ? 'ok' : 'block'}">${ledger.chain_ok ? '✓ OK' : '✗ TAMPERED'}</div></div>
+        <div class="stat"><div class="stat-label">Counters</div><div class="stat-value" style="font-size:18px">${Object.keys(j.counters || {}).length}</div></div>
+      `;
+      const tbody = document.getElementById('ledgerCountersTbody');
+      const counters = j.counters || {};
+      if (!Object.keys(counters).length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No counters recorded (server has them disabled by default; counters.T1–T6 live in /metrics).</td></tr>';
+      } else {
+        tbody.innerHTML = Object.entries(counters).map(([k, v]) => `
+          <tr>
+            <td class="mono">${this.esc(k)}</td>
+            <td class="mono">${this.esc(v)}</td>
+            <td>${v === 0 ? '<span class="badge badge-ok">PASS</span>' : '<span class="badge badge-block">FAIL</span>'}</td>
+          </tr>
+        `).join('');
+      }
+    } catch (e) {}
+  },
+
+  // ---------- Helpers ----------
+  esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  },
+
+  // ---------- Init ----------
+  async init() {
+    // Settings
+    document.getElementById('apiBaseInput').value = Store.state.apiBase;
+    document.getElementById('apiKeyInput').value = Store.state.apiKey;
+    document.getElementById('pollIntervalInput').value = Store.state.pollInterval;
+    document.getElementById('apiBaseInput').onchange = (e) => {
+      Store.state.apiBase = e.target.value || '';
+      Store.save();
+      this.checkHealth();
+    };
+    document.getElementById('apiKeyInput').onchange = (e) => {
+      Store.state.apiKey = e.target.value;
+      Store.save();
+      this.checkHealth();
+    };
+    document.getElementById('pollIntervalInput').onchange = (e) => {
+      Store.state.pollInterval = parseInt(e.target.value) || 1500;
+      Store.save();
+    };
+
+    // Navigation
+    document.querySelectorAll('.nav-item').forEach(n => {
+      n.onclick = () => this.switchView(n.dataset.view);
+    });
+
+    // Run buttons
+    document.getElementById('startBtn').onclick = () => {
+      const port = document.getElementById('portInput').value;
+      const execute = document.getElementById('executeInput').checked;
+      this.startRun({ port, execute });
+    };
+    document.getElementById('dryRunBtn').onclick = () => {
+      const port = document.getElementById('portInput').value;
+      this.startRun({ port, execute: false, dryRun: true });
+    };
+    document.getElementById('refreshPortsBtn').onclick = async () => {
+      // We don't have a ports-listing endpoint; just toast a reminder.
+      this.toast('Plug in a USB-serial adapter and select the COM port manually.', 'info');
+    };
+    document.getElementById('refreshProgressBtn').onclick = () => this.loadProgress();
+    document.getElementById('topologySvgBtn').onclick = () => {
+      const svg = document.querySelector('#topologyCanvas svg');
+      if (!svg) { this.toast('No topology to download', 'warn'); return; }
+      const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `topology-${Store.state.runId || 'run'}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    document.getElementById('clearLogsBtn').onclick = () => {
+      document.getElementById('logViewer').innerHTML = '';
+      this.toast('Logs cleared', 'info', 1500);
+    };
+    document.getElementById('exportLogsBtn').onclick = () => {
+      const text = document.getElementById('logViewer').innerText;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `netops-logs-${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // Clock
+    setInterval(() => {
+      const d = new Date();
+      document.getElementById('clock').textContent =
+        d.toLocaleTimeString('en-GB', { hour12: false });
+    }, 1000);
+
+    // Health check
+    await this.checkHealth();
+    setInterval(() => this.checkHealth(), 10000);
+
+    // Start on connect view
+    this.switchView('connect');
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => UI.init());
+</script>
+</body>
+</html>

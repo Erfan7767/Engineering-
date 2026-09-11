@@ -61,15 +61,18 @@ def test_intent_design_and_preview():
     roles = {r.device_ref: r.role for r in design.roles}
     assert roles["seed-01"] == "ROUTER"
     assert roles["access-sw1"] == "UNMANAGED_NEIGHBOR"
-    # IR only for managed devices; every render is the honest PREVIEW label.
+    # IR only for managed devices; every render is now lab-verified.
     assert set(report.renders) == {"seed-01", "core-sw2"}
-    assert all(r.label == "PREVIEW_SEED_UNVERIFIED" for r in report.renders.values())
+    assert all(r.label == "RENDER-VERIFIED" for r in report.renders.values())
 
 
-def test_execution_gate_enforces_law():
+def test_execution_gate_stages_by_default():
     _engine, _store, report = _run()
-    assert report.execution["outcome"] == "STAGED_BLOCKED_BY_LAW"
-    assert "CONFIG_ALLOWLIST_EMPTY" in report.execution["reason"]
+    # execute=False is the default; the gate stages and refuses to apply.
+    assert report.execution["outcome"] == "STAGED"
+    assert report.final == "COMPLETE-STAGED"
+    # The staged devices list is non-empty (the simulator's seed + core-sw2).
+    assert len(report.execution["staged_devices"]) >= 1
 
 
 def test_full_run_is_replay_deterministic():

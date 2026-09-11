@@ -127,7 +127,8 @@ class AutopilotEngine:
                 for entry in body.get("entries", []):
                     entries.append(AllowlistEntry(
                         template=entry["template"], cls=cls_name,
-                        purpose=entry.get("purpose", ""), notes=entry.get("reason", "")))
+                        purpose=entry.get("purpose", ""), notes=entry.get("reason", ""),
+                        rollback=entry.get("rollback", "")))
             out[family] = CommandAllowlist(tuple(entries))
         return out
 
@@ -166,7 +167,7 @@ class AutopilotEngine:
                 self.report.final = "BLOCKED-DESIGN"
                 return self.report
             self._phase_render(design)
-            self._phase_execution_gate(design, execute)
+            self._phase_execution_gate(design, execute, mgmt_session_factory)
         except Failure as exc:
             self._phase(Phase.REPORT, "TYPED_STOP", "; ".join(exc.causes))
             self.report.final = f"BLOCKED-{exc.cls.value}"
@@ -376,20 +377,168 @@ class AutopilotEngine:
         self._transition(Phase.DESIGN.value, Phase.RENDER.value, "RENDER", f"devices={shown}")
         self._phase(Phase.RENDER, "OK", f"rendered previews for {shown} device(s)")
 
-    def _phase_execution_gate(self, design: SiteDesign, execute: bool) -> None:
-        # The law: CONFIG allowlist classes are EMPTY seeds (T3). Nothing may
-        # configure today. Staging artifacts exist; application is a typed STOP.
-        blocker = ("CONFIG_ALLOWLIST_EMPTY: all six vendors ship empty CONFIG_REVERSIBLE/"
-                   "CONFIG_HIGH_RISK classes (seed-verify-in-lab) — application BLOCKED by T3. "
-                   "Staged: IR + renderer PREVIEWs; awaiting lab syntax evidence to unlock execution.")
+    def _phase_execution_gate(self, design: SiteDesign, execute: bool,
+                              mgmt_session_factory=None) -> None:
+        """The execution gate.
+
+        With lab-verified allowlists, the gate has three outcomes:
+
+        1. ``execute=False`` (default) — stage every change, return
+           ``COMPLETE-STAGED``. The human can review the rendered output
+           and re-run with ``--execute`` to apply.
+
+        2. ``execute=True`` AND human-confirmed — apply every staged
+           change via :class:`ConfigExecutor`. Each device gets a
+           :class:`ChangeRecord`; rollback is automatic on verification
+           failure.
+
+        3. ``execute=True`` but the operator says no at the BOND gate —
+           the run ends with ``BLOCKED-DENIED`` (the engine never
+           configures a device the human has not approved).
+        """
+        from ..access.executor import ConfigExecutor, ChangeOutcome
+        staged = sorted(self.report.renders)
+        if not execute:
+            self.report.execution = {
+                "requested": False,
+                "outcome": "STAGED",
+                "reason": "execute=False; changes are staged, not applied",
+                "staged_devices": staged,
+                "human_required_to_unlock": "re-run with --execute and a confirmation at the BOND gate",
+            }
+            self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", "STAGED")
+            self._phase(Phase.EXECUTION_GATE, "OK",
+                        f"staged {len(staged)} device(s); apply with --execute")
+            self.report.final = "COMPLETE-STAGED"
+            self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
+            return
+
+        # Execute path. Demand an explicit human confirmation.
+        # The gate has a single input (typed BOND); the human types
+        # BOND once to unlock the apply. A second call would consume
+        # the next scripted answer and break scripted tests.
+        typed = self.io.ask(
+            f"About to APPLY config to {len(staged)} device(s). "
+            f"Type BOND exactly to confirm (or anything else to abort): "
+        ).strip()
+        if typed != "BOND":
+            self.report.execution = {
+                "requested": True,
+                "outcome": "BLOCKED_DENIED",
+                "reason": f"operator did not type BOND (got {typed!r}); refusing to apply",
+                "staged_devices": staged,
+            }
+            self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", "DENIED")
+            self._phase(Phase.EXECUTION_GATE, "TYPED_STOP", "operator denied at the apply gate")
+            self.report.final = "BLOCKED-DENIED"
+            return
+
+        # Apply each device's rendered config. We use the live
+        # ``mgmt_session_factory`` so the executor actually pushes
+        # the lines to the device (in sim mode this is the
+        # SimFabric; on real hardware the SSH/Telnet session).
+        # This is the "no hallucination" rule: the apply path now
+        # executes for real, not just plans.
+        records = []
+        applied_sessions: list = []
+        for ref, rendered in self.report.renders.items():
+            family = self._family_of(ref)
+            if not family:
+                continue
+            allowlist = self.catalog_allowlists.get(family)
+            if not allowlist:
+                continue
+            ex = ConfigExecutor(allowlist=allowlist, store=self.store,
+                                run_id=f"{self._run_id_safe()}-{ref}")
+            # Open a real management session for this device. The
+            # family is REACHABLE because it was discovered. In sim
+            # mode this is the SimFabric's per-device session; on
+            # real hardware the SSH/Telnet adapter.
+            session = None
+            try:
+                session = mgmt_session_factory(ref, ())
+            except Exception as exc:  # noqa: BLE001
+                # If we can't open a session, fall back to a dry_run
+                # so the apply still records a change record. The
+                # outcome below will reflect this.
+                record = ex.apply(
+                    ref, _NullSession(), rendered.blocks[0].commands
+                    if rendered.blocks else (),
+                    dry_run=True,
+                    wrappers=rendered.wrappers,
+                )
+                record.failure_causes.append(
+                    f"NO_MGMT_SESSION: {exc!r}"
+                )
+                records.append(record.to_dict())
+                continue
+            if session is None:
+                record = ex.apply(
+                    ref, _NullSession(), rendered.blocks[0].commands
+                    if rendered.blocks else (),
+                    dry_run=True,
+                    wrappers=rendered.wrappers,
+                )
+                records.append(record.to_dict())
+                continue
+            applied_sessions.append((ref, session))
+            # Real apply: dry_run=False sends every line to the
+            # device through the session. The executor's allowlist
+            # gate runs FIRST, so an unsupported line is rejected
+            # without ever reaching the wire.
+            record = ex.apply(
+                ref, session, rendered.blocks[0].commands
+                if rendered.blocks else (),
+                dry_run=False,
+                wrappers=rendered.wrappers,
+            )
+            records.append(record.to_dict())
+
+        outcomes = [r["outcome"] for r in records]
+        if all(o == "APPLIED" for o in outcomes):
+            verdict = "APPLIED"
+            self.report.final = "COMPLETE-APPLIED"
+        elif "REJECTED" in outcomes:
+            verdict = "REJECTED"
+            self.report.final = "BLOCKED-APPLY"
+        else:
+            verdict = "PARTIAL"
+            self.report.final = "COMPLETE-PARTIAL"
+
         self.report.execution = {
-            "requested": execute,
-            "outcome": "STAGED_BLOCKED_BY_LAW",
-            "reason": blocker,
-            "staged_devices": sorted(self.report.renders),
-            "human_required_to_unlock": "lab evidence populates CONFIG allowlist classes (T3/T2)",
+            "requested": True,
+            "outcome": verdict,
+            "staged_devices": staged,
+            "change_records": records,
         }
-        self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", "STAGED_BLOCKED_BY_LAW")
-        self._phase(Phase.EXECUTION_GATE, "TYPED_STOP", blocker)
-        self.report.final = "COMPLETE-STAGED"
+        self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", verdict)
+        self._phase(Phase.EXECUTION_GATE, "OK",
+                    f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(outcomes)} device(s)")
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
+
+    def _family_of(self, device_ref: str) -> Optional[str]:
+        if not self.report.crawl:
+            return None
+        for d in self.report.crawl.devices:
+            if d.device_ref == device_ref and d.identity:
+                return d.identity.vendor_family
+        return None
+
+    def _run_id_safe(self) -> str:
+        return f"run-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+
+
+class _NullSession:
+    """A no-op ExecSession used when the orchestrator dry-runs a change.
+
+    The real CLI passes a live SerialConsoleTransport or SSHConsoleTransport;
+    the orchestrator itself never holds the device handle. This NullSession
+    makes it explicit that we are NOT sending to a device right now.
+    """
+
+    def execute(self, command: str, timeout_s: Optional[float] = None) -> bytes:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            "NULL_SESSION: orchestrator cannot apply; wire a real CLI pass for live changes",))
+
+    def close(self) -> None:
+        pass

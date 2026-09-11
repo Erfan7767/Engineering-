@@ -283,6 +283,12 @@ class DiscoveryCrawlEngine:
         except Failure as exc:
             result.status = DeviceStatus.UNREACHABLE
             result.rejection_reasons.extend(exc.causes)
+            # Even when the management session is refused, we still
+            # know the advertised mgmt address from the neighbor's
+            # LLDP/CDP entry. Record it so the operator can issue
+            # ``ping <neighbor>`` from the chat and reach it later
+            # once credentials are fixed.
+            result.mgmt_addresses = tuple(hints)
             return result
 
         allowlist = allowlist_of(family)

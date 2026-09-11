@@ -11,7 +11,13 @@ from netops_autopilot.adapters.interfaces import AccessAdapter, CapabilityState,
 
 
 class LoopbackSession:
-    """Canned responses keyed by command; supports fault injection."""
+    """Canned responses keyed by command; supports fault injection.
+
+    The session tracks every command it has received in ``self.executed``,
+    so the executor's actual write commands show up in the audit trail.
+    Write commands (anything not in ``outputs``) return a generic
+    success response and are recorded in ``self.written_config``.
+    """
 
     TIMEOUT_SENTINEL = "__TIMEOUT__"
     CONNFAIL_SENTINEL = "__CONNFAIL__"
@@ -20,7 +26,9 @@ class LoopbackSession:
         self.outputs = dict(outputs or {})
         self.fail_times = dict(fail_times or {})
         self.executed: list[str] = []
+        self.written_config: list[str] = []
         self.closed = False
+        self.started_in_config_mode: bool = False
 
     def execute(self, command: str, timeout_s: float) -> bytes:
         self.executed.append(command)
@@ -28,14 +36,65 @@ class LoopbackSession:
             self.fail_times[command] -= 1
             raise ConnectionError("loopback injected transport failure")
         out = self.outputs.get(command, b"")
+        if not out:
+            # Try prefix match: ``ping 10.0.0.1 repeat 5`` → ``ping``
+            head = command.strip().split(None, 1)[0] if command.strip() else ""
+            if head and head in self.outputs:
+                out = self.outputs[head]
+        if not out:
+            # Try "ping <ip>" / "traceroute <ip>" without repeat count.
+            cmd_stripped = command.strip()
+            parts = cmd_stripped.split()
+            if len(parts) == 2 and parts[0].lower() in ("ping", "traceroute"):
+                # If we have a canned response for that verb, return it.
+                verb = parts[0].lower()
+                if verb in self.outputs:
+                    out = self.outputs[verb]
         if out == self.TIMEOUT_SENTINEL.encode():
             raise TimeoutError("loopback injected timeout")
         if out == self.CONNFAIL_SENTINEL.encode():
             raise ConnectionError("loopback injected connection failure")
+        # If the command is a write (not in the read-only canned
+        # outputs), record it as actually written and return a
+        # generic success response. This is what a real device would
+        # do for any well-formed config line.
+        if not out:
+            cmd_stripped = command.strip()
+            head = cmd_stripped.split(None, 1)[0] if cmd_stripped else ""
+            # ``show running-config`` returns the current
+            # running-config (built from written_config). This is
+            # the executor's post-apply verification hook.
+            if cmd_stripped == "show running-config":
+                return self.running_config().encode("utf-8")
+            READ_HEADS = {"show", "ping", "traceroute"}
+            if head and head.lower() not in READ_HEADS and not cmd_stripped.startswith("!"):
+                self.written_config.append(cmd_stripped)
+                # Transition tracking
+                if head.lower() in ("configure", "conf"):
+                    self.started_in_config_mode = True
+                elif cmd_stripped.lower() == "end":
+                    self.started_in_config_mode = False
+                # Standard Cisco IOS-XE success response
+                return b""
         return out
 
     def close(self) -> None:
         self.closed = True
+
+    def running_config(self) -> str:
+        """Return the running-config as a Cisco-style text blob.
+
+        Built from the lines that were written. This is what a real
+        ``show running-config`` would return after the changes were
+        applied.
+        """
+        lines = [
+            "! Last applied by NetOps Autopilot",
+            f"! {len(self.written_config)} command(s) committed",
+            "!",
+        ]
+        lines.extend(self.written_config)
+        return "\n".join(lines) + "\n"
 
 
 class LoopbackAccessAdapter(AccessAdapter):

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetOps Autopilot · Web UI</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a202c; --card2: #2d3748; --text: #e2e8f0;
+    --dim: #a0aec0; --accent: #4a90e2; --green: #48bb78; --red: #f56565;
+    --yellow: #ed8936; --purple: #9f7aea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: linear-gradient(90deg, #1a365d 0%, #2d3748 100%);
+    padding: 16px 24px; border-bottom: 2px solid var(--accent);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { margin: 0; font-size: 20px; color: var(--accent); }
+  header .badge { font-size: 12px; padding: 4px 8px; border-radius: 4px;
+    background: var(--card2); color: var(--dim); }
+  main { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+  .card { background: var(--card); border-radius: 8px; padding: 16px;
+    margin-bottom: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+  .card h2 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  input, select, button {
+    background: var(--card2); color: var(--text); border: 1px solid #4a5568;
+    border-radius: 4px; padding: 8px 12px; font-size: 14px; width: 100%;
+  }
+  button {
+    background: var(--accent); border: none; color: white; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: var(--card2); }
+  .btn-danger { background: var(--red); }
+  pre { background: #0d1117; border: 1px solid var(--card2); border-radius: 4px;
+    padding: 12px; overflow-x: auto; font-size: 12px; color: #c9d1d9; max-height: 300px; }
+  .phase { display: flex; align-items: center; padding: 6px 0;
+    border-bottom: 1px solid var(--card2); }
+  .phase:last-child { border-bottom: none; }
+  .phase-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 12px;
+    background: var(--dim); flex-shrink: 0; }
+  .phase-dot.running { background: var(--accent); animation: pulse 1.5s infinite; }
+  .phase-dot.ok { background: var(--green); }
+  .phase-dot.blocked { background: var(--red); }
+  .phase-dot.human { background: var(--yellow); }
+  .phase-dot.typed { background: var(--purple); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .phase-name { font-weight: 600; min-width: 180px; }
+  .phase-status { color: var(--dim); font-size: 12px; }
+  .topology-svg { background: #1a202c; border-radius: 8px; }
+  .stat { display: flex; align-items: baseline; }
+  .stat .value { font-size: 28px; font-weight: 700; color: var(--accent); margin-right: 8px; }
+  .stat .label { color: var(--dim); font-size: 12px; }
+  .empty { color: var(--dim); font-style: italic; text-align: center; padding: 24px; }
+  .alert { background: #742a2a; border-left: 4px solid var(--red); padding: 12px;
+    border-radius: 4px; margin: 12px 0; }
+  .alert.ok { background: #22543d; border-left-color: var(--green); }
+  .alert.warn { background: #744210; border-left-color: var(--yellow); }
+  details { background: #0d1117; border: 1px solid var(--card2); border-radius: 4px;
+    padding: 8px 12px; margin: 8px 0; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; background: var(--card2); color: var(--dim); margin-right: 4px; }
+  .footer { color: var(--dim); font-size: 12px; text-align: center;
+    margin-top: 32px; padding: 16px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌐 NetOps Autopilot</h1>
+  <div>
+    <span class="badge" id="apiStatus">checking…</span>
+    <span class="badge" id="versionBadge">v0.1.0</span>
+  </div>
+</header>
+
+<main>
+  <div class="row">
+    <div class="card">
+      <h2>1 · Connection</h2>
+      <label for="portInput">Console port (COM5, /dev/ttyUSB0, etc.)</label>
+      <input id="portInput" type="text" value="COM5" placeholder="COM5">
+      <div style="height:8px"></div>
+      <label style="display:flex;align-items:center;cursor:pointer">
+        <input id="executeInput" type="checkbox" style="width:auto;margin-right:8px">
+        Request execution (still gated by T3 / lab evidence)
+      </label>
+      <div style="height:12px"></div>
+      <button id="startBtn" onclick="startRun()">▶ Start Run</button>
+    </div>
+
+    <div class="card">
+      <h2>2 · Live Status</h2>
+      <div id="runInfo" class="empty">No run started yet.</div>
+      <div id="phasesBox" class="hidden">
+        <div class="row-3" style="margin:12px 0">
+          <div class="stat"><div class="value" id="statDevices">0</div><div class="label">Devices</div></div>
+          <div class="stat"><div class="value" id="statZones">0</div><div class="label">Zones</div></div>
+          <div class="stat"><div class="value" id="statEvents">0</div><div class="label">Events</div></div>
+        </div>
+        <div id="phasesList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Topology</h2>
+    <div id="topologyBox" class="empty">Topology will appear after discovery.</div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>4 · Intent Elicitation</h2>
+      <div id="intentBox" class="empty">Intent will appear after topology.</div>
+    </div>
+    <div class="card">
+      <h2>5 · Design</h2>
+      <div id="designBox" class="empty">Design will appear after intent.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>6 · Rendered Configurations</h2>
+    <div id="rendersBox" class="empty">No rendered configs yet.</div>
+  </div>
+
+  <div class="card">
+    <h2>7 · Execution Gate & Report</h2>
+    <div id="execBox" class="empty">Execution outcome appears after render.</div>
+    <div style="height:12px"></div>
+    <button class="btn-secondary" onclick="openHtmlReport()">📄 Open full HTML report</button>
+    <button class="btn-secondary" onclick="downloadJson()">⬇ Download JSON</button>
+  </div>
+</main>
+
+<div class="footer">
+  Evidence-driven · never a guess · no implicit PASS · all data typed
+</div>
+
+<script>
+let currentRunId = null;
+let pollHandle = null;
+
+const API = (() => {
+  // If served from FastAPI, same origin. If opened as a static file, default to :8765.
+  const fromFs = location.protocol === "file:";
+  const base = fromFs ? "http://localhost:8765" : "";
+  const headers = { "Content-Type": "application/json" };
+  const apiKey = (new URLSearchParams(location.search)).get("api_key") || "";
+  if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
+  return { base, headers };
+})();
+
+async function api(path, opts = {}) {
+  const r = await fetch(API.base + path, { headers: API.headers, ...opts });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`HTTP ${r.status}: ${text}`);
+  }
+  return r;
+}
+
+function dotClass(status) {
+  if (!status) return "";
+  const s = status.toUpperCase();
+  if (s === "OK" || s === "COMPLETE") return "ok";
+  if (s === "BLOCKED") return "blocked";
+  if (s === "HUMAN_DECISION") return "human";
+  if (s === "TYPED_STOP") return "typed";
+  if (s === "RUNNING") return "running";
+  return "";
+}
+
+async function checkHealth() {
+  try {
+    const r = await api("/healthz");
+    const j = await r.json();
+    document.getElementById("apiStatus").textContent = "● " + j.status;
+    document.getElementById("apiStatus").style.color = "var(--green)";
+    document.getElementById("versionBadge").textContent = "v" + j.version;
+  } catch (e) {
+    document.getElementById("apiStatus").textContent = "● offline";
+    document.getElementById("apiStatus").style.color = "var(--red)";
+  }
+}
+
+async function startRun() {
+  const port = document.getElementById("portInput").value.trim();
+  const execute = document.getElementById("executeInput").checked;
+  if (!port) { alert("Port is required"); return; }
+  document.getElementById("startBtn").disabled = true;
+  try {
+    const r = await api("/runs", {
+      method: "POST",
+      body: JSON.stringify({ port, execute }),
+    });
+    const j = await r.json();
+    currentRunId = j.run_id;
+    document.getElementById("runInfo").innerHTML =
+      `<div class="alert warn">Run <code>${currentRunId}</code> started on port <code>${port}</code></div>`;
+    document.getElementById("phasesBox").classList.remove("hidden");
+    if (pollHandle) clearInterval(pollHandle);
+    pollHandle = setInterval(pollRun, 1500);
+    pollRun();
+  } catch (e) {
+    alert("Failed to start run: " + e.message);
+    document.getElementById("startBtn").disabled = false;
+  }
+}
+
+async function pollRun() {
+  if (!currentRunId) return;
+  try {
+    const r = await api("/runs/" + currentRunId);
+    const j = await r.json();
+    renderRun(j);
+    if (["COMPLETE", "BLOCKED", "ERROR"].includes(j.status)) {
+      clearInterval(pollHandle);
+      document.getElementById("startBtn").disabled = false;
+      loadTopology();
+      loadDesign();
+      loadRenders();
+    }
+  } catch (e) {
+    console.warn("poll failed", e);
+  }
+}
+
+function renderRun(j) {
+  document.getElementById("runInfo").innerHTML =
+    `<div class="alert ${j.final && j.final.startsWith("COMPLETE") ? "ok" : ""}">
+       <strong>${j.run_id}</strong> · status: <span class="tag">${j.status}</span>
+       final: <span class="tag">${j.final || "—"}</span>
+       <br><small>created: ${j.created_at}${j.finished_at ? " · finished: " + j.finished_at : ""}</small>
+       ${j.error ? "<br><strong>error:</strong> " + j.error : ""}
+     </div>`;
+  const list = document.getElementById("phasesList");
+  if (j.phases && j.phases.length) {
+    list.innerHTML = j.phases.map(p => `
+      <div class="phase">
+        <div class="phase-dot ${dotClass(p.status)}"></div>
+        <div class="phase-name">${p.phase}</div>
+        <div class="phase-status">${p.status} — ${p.detail || ""}</div>
+      </div>
+    `).join("");
+  } else {
+    list.innerHTML = '<div class="phase"><div class="phase-dot running"></div><div class="phase-name">Initializing…</div></div>';
+  }
+}
+
+async function loadTopology() {
+  if (!currentRunId) return;
+  try {
+    const r = await api("/runs/" + currentRunId + "/topology");
+    const j = await r.json();
+    document.getElementById("statDevices").textContent = (j.nodes || []).length;
+    document.getElementById("statZones").textContent = (j.edges || []).length;
+    if ((j.nodes || []).length === 0) {
+      document.getElementById("topologyBox").innerHTML = '<div class="empty">No topology yet.</div>';
+      return;
+    }
+    document.getElementById("topologyBox").innerHTML =
+      '<div class="topology-svg">' + renderSvg(j.nodes, j.edges) + '</div>' +
+      (j.ascii ? '<details><summary>ASCII view</summary><pre>' + j.ascii + '</pre></details>' : '');
+  } catch (e) {
+    document.getElementById("topologyBox").innerHTML = '<div class="alert">' + e.message + '</div>';
+  }
+}
+
+function renderSvg(nodes, edges) {
+  const W = 800, H = 400, cx = W / 2, cy = H / 2, r = 160;
+  if (!nodes.length) return '<svg viewBox="0 0 800 400"></svg>';
+  const pos = {};
+  pos[nodes[0].device_ref || nodes[0].ref || "?"] = [cx, cy - r];
+  const rest = nodes.slice(1);
+  rest.forEach((n, i) => {
+    const a = (2 * Math.PI * i) / Math.max(1, rest.length);
+    pos[n.device_ref || n.ref || "?"] = [cx + r * Math.sin(a), cy - r * Math.cos(a) * 0.7];
+  });
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">`;
+  for (const e of edges || []) {
+    const a = e.a_device_ref || e.a, b = e.b_device_ref || e.b;
+    if (pos[a] && pos[b]) {
+      svg += `<line x1="${pos[a][0]}" y1="${pos[a][1]}" x2="${pos[b][0]}" y2="${pos[b][1]}" stroke="#4a90e2" stroke-width="2"/>`;
+    }
+  }
+  for (const [ref, [x, y]] of Object.entries(pos)) {
+    svg += `<g><circle cx="${x}" cy="${y}" r="26" fill="#2d3748" stroke="#4a90e2" stroke-width="2"/>` +
+           `<text x="${x}" y="${y + 4}" text-anchor="middle" fill="white" font-size="11" font-family="monospace">${ref.slice(0, 12)}</text></g>`;
+  }
+  return svg + "</svg>";
+}
+
+async function loadDesign() {
+  if (!currentRunId) return;
+  try {
+    const r = await api("/runs/" + currentRunId + "/report.json");
+    const j = await r.json();
+    if (j.intent) {
+      document.getElementById("intentBox").innerHTML = `<pre>${JSON.stringify(j.intent, null, 2)}</pre>`;
+    }
+    if (j.design) {
+      document.getElementById("designBox").innerHTML = `<pre>${JSON.stringify(j.design, null, 2)}</pre>`;
+    }
+    if (j.execution) {
+      document.getElementById("execBox").innerHTML = `<pre>${JSON.stringify(j.execution, null, 2)}</pre>`;
+    }
+  } catch (e) {
+    console.warn("loadDesign failed", e);
+  }
+}
+
+async function loadRenders() {
+  if (!currentRunId) return;
+  try {
+    const r = await api("/runs/" + currentRunId + "/report.json");
+    const j = await r.json();
+    const renders = j.renders || {};
+    const keys = Object.keys(renders);
+    if (!keys.length) {
+      document.getElementById("rendersBox").innerHTML = '<div class="empty">No renders.</div>';
+      return;
+    }
+    document.getElementById("rendersBox").innerHTML = keys.map(ref => `
+      <details><summary>${ref}</summary><pre>${renders[ref]}</pre></details>
+    `).join("");
+  } catch (e) {
+    console.warn("loadRenders failed", e);
+  }
+}
+
+function openHtmlReport() {
+  if (!currentRunId) { alert("No run"); return; }
+  window.open(API.base + "/runs/" + currentRunId + "/report", "_blank");
+}
+
+function downloadJson() {
+  if (!currentRunId) { alert("No run"); return; }
+  window.location = API.base + "/runs/" + currentRunId + "/report.json";
+}
+
+checkHealth();
+setInterval(checkHealth, 10000);
+</script>
+</body>
+</html>

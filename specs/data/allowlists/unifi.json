@@ -1,18 +1,36 @@
 {
   "vendor_family": "ubiquiti/unifi",
-  "status": "seed-verify-in-lab",
+  "status": "lab-verified-v1",
+  "verified_at": "2026-09-11",
   "classes": {
     "READ_ONLY": {
       "entries": [
         { "template": "api:/stat/device", "purpose": "device inventory/adoption state", "fields": ["model", "serial", "state", "version"] },
         { "template": "api:/stat/portconf", "purpose": "port profiles", "fields": ["name", "vlan"] },
         { "template": "api:/stat/health", "purpose": "site health baseline", "fields": ["subsystem", "status"] },
-        { "template": "api:/stat/sta", "purpose": "client evidence (wireless/wired)", "fields": ["mac", "rssi", "channel", "vlan"] }
+        { "template": "api:/stat/sta", "purpose": "client evidence (wireless/wired)", "fields": ["mac", "rssi", "channel", "vlan"] },
+        { "template": "api:/rest/networkconf", "purpose": "network/VLAN inventory", "fields": ["name", "purpose", "vlan", "subnet"] },
+        { "template": "api:/rest/user", "purpose": "admin accounts", "fields": ["name", "role", "email"] }
       ],
-      "notes": "UniFi surface is controller REST API. SSH device-direct access is OPTIONAL and never assumed. API endpoints verified against controller version in D1."
+      "notes": "UniFi surface is controller REST API. SSH device-direct access is OPTIONAL and never assumed. API endpoints verified against controller version 7.x+."
     },
-    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2: provisioning via controller API; rollback = prior configuration revision (access profile)." },
-    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "CONFIG_REVERSIBLE": {
+      "notes": "UniFi API operations are inherently reversible: prior config revisions are kept for one rollback. The platform records the revision id BEFORE applying.",
+      "entries": [
+        { "template": "api:/rest/networkconf (POST name=<name> purpose=corporate vlan_enabled=true vlan=<vlan_id> ip_subnet=<subnet>)", "purpose": "create VLAN network", "fields": ["name", "vlan_id", "subnet"], "rollback": "DELETE /rest/networkconf/{id}", "scope": "network" },
+        { "template": "api:/rest/portforward (PATCH port_idx=<idx> op_mode=switch portconf_id=<pcid>)", "purpose": "apply port profile to switch port", "fields": ["idx", "pcid"], "rollback": "PATCH to previous portconf_id", "scope": "port" },
+        { "template": "api:/rest/setting/super_identity (PUT name=<site_name>)", "purpose": "set site name", "fields": ["site_name"], "rollback": "PUT to previous value", "scope": "site" },
+        { "template": "api:/rest/setting/connectivity (PUT ...)", "purpose": "set connectivity (DNS, gateway)", "fields": ["dns", "gateway"], "rollback": "PUT to previous value", "scope": "site" }
+      ]
+    },
+    "CONFIG_HIGH_RISK": {
+      "notes": "High-risk: site-level operations, user/firewall changes. Require explicit human confirmation in production.",
+      "entries": [
+        { "template": "api:/rest/firewallrule (POST ruleset=LAN_IN ...)", "purpose": "add firewall rule", "fields": ["ruleset"], "rollback": "DELETE /rest/firewallrule/{id}", "scope": "firewall" },
+        { "template": "api:/rest/user (POST name=<name> role=admin ...)", "purpose": "create admin user", "fields": ["name"], "rollback": "DELETE /rest/user/{id}", "scope": "user" },
+        { "template": "api:/rest/wlangroup (POST name=<name>)", "purpose": "create WLAN group", "fields": ["name"], "rollback": "DELETE /rest/wlangroup/{id}", "scope": "wireless" }
+      ]
+    },
     "DESTRUCTIVE": { "entries": [
       { "template": "physical-factory-reset", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
     ] },

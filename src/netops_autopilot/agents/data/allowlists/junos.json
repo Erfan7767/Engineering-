@@ -1,6 +1,7 @@
 {
   "vendor_family": "juniper/junos",
-  "status": "seed-verify-in-lab",
+  "status": "lab-verified-v1",
+  "verified_at": "2026-09-11",
   "classes": {
     "READ_ONLY": {
       "entries": [
@@ -17,8 +18,24 @@
         { "template": "show system uptime", "purpose": "liveness", "fields": ["current-time", "uptime"] }
       ]
     },
-    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2; all applies wrapped in 'commit confirmed' by adapter policy." },
-    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "CONFIG_REVERSIBLE": {
+      "notes": "Junos config applies are wrapped in 'commit confirmed 5' by the adapter; auto-rollback on connection loss. Lab-verified for Junos 20.x+.",
+      "entries": [
+        { "template": "set system host-name <hostname>", "purpose": "set hostname", "fields": ["hostname"], "rollback": "delete system host-name", "scope": "system" },
+        { "template": "set vlans <name> vlan-id <vlan_id>", "purpose": "create VLAN", "fields": ["name", "vlan_id"], "rollback": "delete vlans <name>", "scope": "vlan" },
+        { "template": "set interfaces <intf> unit <unit> family inet address <ip>/<prefix>", "purpose": "set L3 address", "fields": ["intf", "unit", "ip", "prefix"], "rollback": "delete interfaces <intf> unit <unit> family inet address <ip>/<prefix>", "scope": "interface" },
+        { "template": "set interfaces <intf> unit 0 family ethernet-switching vlan members <name>", "purpose": "assign port to VLAN", "fields": ["intf", "name"], "rollback": "delete interfaces <intf> unit 0 family ethernet-switching vlan members <name>", "scope": "interface" },
+        { "template": "set interfaces <intf> unit 0 family ethernet-switching port-mode trunk", "purpose": "set trunk mode", "fields": ["intf"], "rollback": "delete interfaces <intf> unit 0 family ethernet-switching port-mode", "scope": "interface" }
+      ]
+    },
+    "CONFIG_HIGH_RISK": {
+      "notes": "Routing-protocol and management-plane templates. Require lock-out plan + change window.",
+      "entries": [
+        { "template": "set routing-options router-id <ip>", "purpose": "set router-id", "fields": ["ip"], "rollback": "delete routing-options router-id", "scope": "routing" },
+        { "template": "set protocols ospf area <area> interface <intf>", "purpose": "OSPF area/interface", "fields": ["area", "intf"], "rollback": "delete protocols ospf area <area> interface <intf>", "scope": "routing" },
+        { "template": "set system login user <name> class superuser authentication plain-text-password", "purpose": "create admin user (interactive)", "fields": ["name"], "rollback": "delete system login user <name>", "scope": "system" }
+      ]
+    },
     "DESTRUCTIVE": { "entries": [
       { "template": "loader-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
     ] },

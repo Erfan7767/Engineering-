@@ -1,25 +1,62 @@
 {
   "vendor_family": "cisco/ios-xe",
-  "status": "seed-verify-in-lab",
+  "status": "lab-verified-v1",
+  "verified_at": "2026-09-11",
   "classes": {
     "READ_ONLY": {
       "entries": [
         { "template": "show version", "purpose": "identity", "fields": ["version", "model", "uptime", "serial"] },
+        { "template": "ping", "purpose": "ICMP reachability from the device", "fields": ["target", "success_rate", "rtt"] },
+        { "template": "traceroute", "purpose": "L3 path trace from the device", "fields": ["target", "hops"] },
         { "template": "show inventory", "purpose": "hardware inventory", "fields": ["pid", "vid", "sn"] },
         { "template": "show interfaces status", "purpose": "L1/L2 port state", "fields": ["port", "status", "vlan", "duplex", "speed", "type"] },
         { "template": "show interfaces", "purpose": "counters/errors", "fields": ["interface", "input_errors", "crc", "output_errors"] },
-        { "template": "show lldp neighbors detail", "purpose": "neighbor evidence", "fields": ["local_intf", "neighbor", "neighbor_intf", "chassis_id"] },
-        { "template": "show cdp neighbors detail", "purpose": "neighbor evidence", "fields": ["device_id", "local_interface", "platform", "port_id"] },
+        { "template": "show interfaces trunk", "purpose": "trunk evidence", "fields": ["port", "mode", "encapsulation", "vlan"] },
+        { "template": "show lldp neighbors detail", "purpose": "neighbor evidence (LLDP)", "fields": ["local_intf", "neighbor", "neighbor_intf", "chassis_id", "mgmt_ip"] },
+        { "template": "show cdp neighbors detail", "purpose": "neighbor evidence (CDP)", "fields": ["device_id", "local_interface", "platform", "port_id", "mgmt_ip"] },
         { "template": "show vlan brief", "purpose": "VLAN model", "fields": ["vlan_id", "name", "status", "ports"] },
         { "template": "show mac address-table", "purpose": "MAC evidence", "fields": ["vlan", "mac", "type", "port"] },
         { "template": "show ip route", "purpose": "routing state", "fields": ["protocol", "network", "next_hop", "interface"] },
+        { "template": "show ip interface brief", "purpose": "L3 interface state", "fields": ["interface", "ip", "ok", "method", "status", "protocol"] },
         { "template": "show running-config", "purpose": "configuration (hash baseline)", "fields": ["__full_text_hash__"] },
         { "template": "show archive config differences", "purpose": "config change detection", "fields": ["__diff__"] },
         { "template": "show clock detail", "purpose": "device clock (untrusted, recorded)", "fields": ["time", "timezone", "clock-source"] }
       ]
     },
-    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 with Config IR templates (archive-backed scope)." },
-    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2; mgmt-plane templates require lock-out plan artifact." },
+    "CONFIG_REVERSIBLE": {
+      "notes": "Lab-verified reversible templates; rollback via 'no <cmd>' or 'default <cmd>'. All entries pass syntax check on IOS-XE 16.x+ / 17.x.",
+      "entries": [
+        { "template": "hostname <hostname>", "purpose": "set device hostname", "fields": ["hostname"], "rollback": "no hostname", "scope": "system" },
+        { "template": "vlan <vlan_id>", "purpose": "create VLAN", "fields": ["vlan_id"], "rollback": "no vlan <vlan_id>", "scope": "vlan" },
+        { "template": "name <name>", "purpose": "set VLAN name (in vlan context)", "fields": ["name"], "rollback": "no name", "scope": "vlan" },
+        { "template": "interface Vlan<vlan_id>", "purpose": "enter SVI", "fields": ["vlan_id"], "rollback": "default interface Vlan<vlan_id>", "scope": "svi" },
+        { "template": "ip address <ip> <mask>", "purpose": "set SVI IPv4", "fields": ["ip", "mask"], "rollback": "no ip address", "scope": "svi" },
+        { "template": "no shutdown", "purpose": "enable interface", "fields": [], "rollback": "shutdown", "scope": "interface" },
+        { "template": "interface <intf>", "purpose": "enter interface", "fields": ["intf"], "rollback": "default interface <intf>", "scope": "interface" },
+        { "template": "description <text>", "purpose": "set interface description", "fields": ["text"], "rollback": "no description", "scope": "interface" },
+        { "template": "switchport mode access", "purpose": "set access mode", "fields": [], "rollback": "no switchport mode", "scope": "interface" },
+        { "template": "switchport access vlan <vlan_id>", "purpose": "assign access VLAN", "fields": ["vlan_id"], "rollback": "no switchport access vlan", "scope": "interface" },
+        { "template": "switchport mode trunk", "purpose": "set trunk mode", "fields": [], "rollback": "no switchport mode", "scope": "interface" },
+        { "template": "switchport trunk allowed vlan <list>", "purpose": "set trunk allowed VLANs", "fields": ["list"], "rollback": "no switchport trunk allowed vlan", "scope": "interface" },
+        { "template": "switchport trunk native vlan <vlan_id>", "purpose": "set trunk native VLAN", "fields": ["vlan_id"], "rollback": "no switchport trunk native vlan", "scope": "interface" },
+        { "template": "ip routing", "purpose": "enable L3 routing on multilayer switch", "fields": [], "rollback": "no ip routing", "scope": "system" },
+        { "template": "interface Loopback0", "purpose": "enter loopback 0 (router-id source)", "fields": [], "rollback": "no interface Loopback0", "scope": "interface" },
+        { "template": "ip address <ip> 255.255.255.255", "purpose": "set /32 on loopback", "fields": ["ip"], "rollback": "no ip address", "scope": "interface" }
+      ]
+    },
+    "CONFIG_HIGH_RISK": {
+      "notes": "High-risk templates — require a lock-out plan artifact + explicit human confirmation in production. Lab-verified for syntax; deploy only with adequate change window.",
+      "entries": [
+        { "template": "router ospf <pid>", "purpose": "enter OSPF process", "fields": ["pid"], "rollback": "no router ospf <pid>", "scope": "routing" },
+        { "template": "network <net> <wc> area <area>", "purpose": "OSPF network statement", "fields": ["net", "wc", "area"], "rollback": "no network <net> <wc> area <area>", "scope": "routing" },
+        { "template": "router bgp <asn>", "purpose": "enter BGP process", "fields": ["asn"], "rollback": "no router bgp <asn>", "scope": "routing" },
+        { "template": "neighbor <ip> remote-as <asn>", "purpose": "BGP neighbor", "fields": ["ip", "asn"], "rollback": "no neighbor <ip>", "scope": "routing" },
+        { "template": "address-family ipv4", "purpose": "BGP address-family", "fields": [], "rollback": "exit-address-family", "scope": "routing" },
+        { "template": "username <name> privilege 15 secret <hash>", "purpose": "create local admin", "fields": ["name", "hash"], "rollback": "no username <name>", "scope": "system" },
+        { "template": "enable secret <hash>", "purpose": "set enable secret", "fields": ["hash"], "rollback": "no enable secret", "scope": "system" },
+        { "template": "ip domain-name <name>", "purpose": "set domain name", "fields": ["name"], "rollback": "no ip domain-name", "scope": "system" }
+      ]
+    },
     "DESTRUCTIVE": { "entries": [
       { "template": "rommon-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
     ] },
@@ -27,7 +64,9 @@
       { "template": "erase <args>", "reason": "destructive" },
       { "template": "write erase", "reason": "destructive" },
       { "template": "format <args>", "reason": "destructive" },
-      { "template": "delete /force /recursive <args>", "reason": "artifact destruction" }
+      { "template": "delete /force /recursive <args>", "reason": "artifact destruction" },
+      { "template": "reload", "reason": "service-disruptive; needs explicit human task with maintenance window" },
+      { "template": "no router <args>", "reason": "removes entire routing process" }
     ] }
   }
 }

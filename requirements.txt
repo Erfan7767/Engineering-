@@ -1,9 +1,26 @@
-# Runtime dependencies (D1 scope). Pinned lower bounds per ADR-0001.
-# The §20 full stack (Scrapli, Netmiko, NAPALM, pySerial, pyATS, pybatfish,
-# LangGraph, …) lands adapter-by-adapter with the phases that need them.
+# Runtime dependencies.
+# Pinned lower bounds per ADR-0001; everything listed is required for v1.
 pydantic>=2.5
 cryptography>=42.0
 jsonschema>=4.20
 
+# Console transports (ADR-0008: bundled in the MSI)
+pyserial>=3.5            # physical console (direct-connect, the v1 path)
+# netmiko>=4.3           # SSH (optional, modeled; see ADR-0004)
+# telnetlib is stdlib on Py ≤3.12, removed in 3.13+ (PEP 594)
+
+# Web UI / API
+fastapi>=0.115           # REST + WebSocket surface (optional, only for `webui` subcommand)
+uvicorn[standard]>=0.30  # ASGI server (required when fastapi is installed)
+httpx<0.28               # required by Starlette TestClient for the web tests
+
+# Reporting
+# (no new deps: HTML/JSON report writers use only the stdlib)
+
+# Configuration formats (each is optional; the loader degrades with typed errors)
+pyyaml>=6.0              # YAML config files
+# tomli>=2.0             # TOML on Python <3.11 (stdlib tomllib from 3.11+)
+
 # Development / harness
 pytest>=8.0
+pytest-asyncio>=0.23     # for anyio-based async tests (used by FastAPI TestClient)

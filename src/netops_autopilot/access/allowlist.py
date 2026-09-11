@@ -24,6 +24,7 @@ class AllowlistEntry:
     cls: str
     purpose: str = ""
     notes: str = ""
+    rollback: str = ""
 
 
 class CommandAllowlist:
@@ -52,6 +53,7 @@ class CommandAllowlist:
                             cls=cls_name,
                             purpose=raw.get("purpose", ""),
                             notes=raw.get("notes", "") if cls_name != "FORBIDDEN" else raw.get("reason", ""),
+                            rollback=raw.get("rollback", ""),
                         )
                     )
         return cls(tuple(entries))

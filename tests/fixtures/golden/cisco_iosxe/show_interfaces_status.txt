@@ -1,0 +1,13 @@
+Port      Status         Vlan       Duplex  Speed Type
+Gi1/0/1   connected      10         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/2   connected      trunk      a-full  a-1000 10/100/1000BaseTX
+Gi1/0/3   notconnect     1          auto    auto   10/100/1000BaseTX
+Gi1/0/4   connected      10         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/5   connected      10         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/6   connected      20         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/7   connected      20         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/8   connected      30         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/9   connected      40         a-full  a-1000 10/100/1000BaseTX
+Gi1/0/10  disabled       1          auto    auto   10/100/1000BaseTX
+Gi1/0/11  disabled       1          auto    auto   10/100/1000BaseTX
+Gi1/0/12  disabled       1          auto    auto   10/100/1000BaseTX

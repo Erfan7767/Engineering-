@@ -66,6 +66,16 @@ def seed_session() -> LoopbackSession:
         "show version": _fx("show_version"),
         "show lldp neighbors detail": _fx("show_lldp_neighbors_detail"),
         "show cdp neighbors detail": _fx("show_cdp_neighbors_detail"),
+        "show ip route": _fx("show_ip_route"),
+        "show clock detail": _fx("show_clock"),
+        "show vlan brief": _fx("show_vlan_brief"),
+        "show interfaces status": _fx("show_interfaces_status"),
+        "ping": _fx("ping"),
+        "ping 10.0.0.1 repeat 5": _fx("ping"),
+        "ping 10.99.0.2 repeat 5": _fx("ping"),
+        "ping 10.99.0.3 repeat 5": _fx("ping"),
+        "traceroute": _fx("traceroute"),
+        "traceroute 8.8.8.8": _fx("traceroute"),
     })
 
 
@@ -74,6 +84,8 @@ def core_sw2_session() -> LoopbackSession:
         "show version": BACK_VERSION,
         "show lldp neighbors detail": BACK_TABLE,
         "show cdp neighbors detail": b"",
+        "show ip route": _fx("show_ip_route"),
+        "show clock detail": _fx("show_clock"),
     })
 
 
@@ -107,6 +119,18 @@ class SimFabricFactory:
     def grant(self) -> None:
         """The operator fixed credentials: core-sw2 now answers."""
         self._access_behavior = "allow"
+
+    def device_session(self, device_ref: str) -> LoopbackSession:
+        """Return a LoopbackSession that answers show commands for the
+        given device_ref. Used by the chat's DeviceCommandRunner so
+        ``ping``, ``traceroute``, ``show ip route`` etc. actually
+        execute against the sim-fabric and return real bytes.
+        """
+        if "core-sw2" in device_ref:
+            return self._core
+        if "access" in device_ref:
+            return self._seed  # access-sw1 echoes seed for testing
+        return self._seed
 
     # ---------------------------------------------------------- boot session
     def probe(self, port: str):

@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5" />
+<meta name="color-scheme" content="dark" />
+<title>NetOps Autopilot · Network Operator</title>
+<style>
+/* ==========================================================================
+   NetOps Autopilot v6 — Production-grade chat-driven network operator
+   World-class dark UI · live SSE execution stream · full RTL
+   Single-file, zero external deps.
+   ========================================================================== */
+:root {
+  --bg-0:        #06080e;
+  --bg-1:        #0b0e16;
+  --bg-2:        #11151f;
+  --bg-3:        #161b28;
+  --bg-4:        #1c2231;
+  --line:        #232a3a;
+  --line-2:      #2a3247;
+  --text:        #e7ecf5;
+  --text-2:      #a4adc1;
+  --text-3:      #6b7588;
+  --text-4:      #444c5e;
+  --accent:      #5b8def;
+  --accent-2:    #38d9a9;
+  --accent-3:    #b388ff;
+  --ok:          #2dd4bf;
+  --warn:        #f59e0b;
+  --err:         #ef4444;
+  --info:        #38bdf8;
+  --purple:      #a78bfa;
+  --r-sm:        6px;
+  --r:           10px;
+  --r-lg:        14px;
+  --r-xl:        20px;
+  --shadow-sm:   0 2px 8px rgba(0,0,0,.25);
+  --shadow:      0 4px 20px rgba(0,0,0,.32);
+  --shadow-lg:   0 12px 40px rgba(0,0,0,.45);
+  --ease:        cubic-bezier(.2,.7,.2,1);
+  --mono:        ui-monospace, SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans:        -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "SF Pro Text", "Noto Sans Arabic", "Cairo", "Tajawal", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font: 14px/1.55 var(--sans);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 0% -10%, rgba(91,141,239,.08), transparent 50%),
+    radial-gradient(900px 600px at 100% 110%, rgba(167,139,250,.06), transparent 50%),
+    var(--bg-0);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+[dir="rtl"] body { font-family: "Noto Sans Arabic", "Cairo", "Tajawal", -apple-system, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: none; cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+code, pre, .mono { font-family: var(--mono); }
+
+/* ============================================================ layout shell */
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr 380px;
+  grid-template-rows: 56px 1fr;
+  grid-template-areas:
+    "tb tb tb"
+    "sb main ctx";
+  height: 100vh;
+}
+@media (max-width: 1100px) { .app { grid-template-columns: 1fr; grid-template-areas: "tb" "main"; } .sidebar, .ctx { display: none; } }
+
+/* ============================================================ topbar */
+.tb {
+  grid-area: tb;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 18px;
+  background: rgba(7,9,15,.75);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+  z-index: 10;
+}
+.tb .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; letter-spacing: .2px; }
+.tb .brand .mark {
+  width: 26px; height: 26px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  border-radius: 7px;
+  display: grid; place-items: center;
+  color: white; font-weight: 700; font-size: 12px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 4px 12px rgba(91,141,239,.4);
+}
+.tb .brand .ver { color: var(--text-3); font-size: 11px; font-weight: 500; margin-left: 4px; }
+[dir="rtl"] .tb .brand .ver { margin-left: 0; margin-right: 4px; }
+.tb .sep { width: 1px; height: 18px; background: var(--line); }
+
+.tb .pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  font-size: 12px; color: var(--text-2);
+  transition: all .12s var(--ease);
+}
+.tb .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-4); }
+.tb .pill.ok .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.tb .pill.warn .dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.tb .pill.err .dot { background: var(--err); box-shadow: 0 0 8px var(--err); }
+.tb .pill.run .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.4s var(--ease) infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+.tb .sp { flex: 1; }
+.tb .icon-btn {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  transition: background .12s var(--ease), color .12s var(--ease);
+}
+.tb .icon-btn:hover { background: var(--bg-3); color: var(--text); }
+.tb .icon-btn svg { width: 16px; height: 16px; }
+.tb .lang-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: var(--r-sm);
+  background: var(--bg-2); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 500;
+  color: var(--text-2);
+  transition: all .12s var(--ease);
+}
+.tb .lang-btn:hover { background: var(--bg-3); color: var(--text); }
+.tb .lang-btn .flag { font-size: 13px; line-height: 1; }
+
+/* ============================================================ sidebar */
+.sb {
+  grid-area: sb;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+[dir="rtl"] .sb { border-right: none; border-left: 1px solid var(--line); }
+.sb-section { padding: 16px 14px; }
+.sb-section + .sb-section { border-top: 1px solid var(--line); }
+.sb-h {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text-3);
+}
+.sb-h .more { color: var(--text-3); font-size: 10px; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.sb-h .more:hover { color: var(--text); }
+
+.sb-search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 8px 10px;
+  margin: 0 14px 12px;
+}
+.sb-search svg { width: 14px; height: 14px; color: var(--text-3); flex-shrink: 0; }
+.sb-search input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 13px; }
+.sb-search input::placeholder { color: var(--text-3); }
+.sb-search kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bg-3); border: 1px solid var(--line); color: var(--text-3); }
+
+.sb-quick { display: flex; flex-direction: column; gap: 4px; }
+.sb-quick button {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 10px;
+  border-radius: var(--r-sm);
+  text-align: start; color: var(--text);
+  font-size: 12.5px;
+  transition: background .1s var(--ease);
+}
+.sb-quick button:hover { background: var(--bg-2); }
+.sb-quick button .em { font-size: 14px; line-height: 1; width: 18px; text-align: center; }
+.sb-quick button .kbd { margin-inline-start: auto; font-family: var(--mono); font-size: 10px; color: var(--text-3); padding: 1px 5px; background: var(--bg-3); border-radius: 4px; border: 1px solid var(--line); }
+.sb-spacer { flex: 1; }
+
+.sb-me {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}
+.sb-me .av { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-2), var(--accent)); display: grid; place-items: center; color: white; font-weight: 600; font-size: 12px; }
+.sb-me .meta { flex: 1; min-width: 0; }
+.sb-me .n { font-size: 12.5px; color: var(--text); font-weight: 500; }
+.sb-me .r { font-size: 10.5px; color: var(--text-3); }
+
+/* ============================================================ main chat */
+.main {
+  grid-area: main;
+  display: grid; grid-template-rows: 1fr auto;
+  min-width: 0; min-height: 0;
+  background: var(--bg-0);
+  position: relative;
+}
+.main::before {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none; opacity: .5;
+}
+
+.msgs {
+  position: relative;
+  overflow-y: auto;
+  padding: 32px 24px 16px;
+  display: flex; flex-direction: column; gap: 22px;
+  scroll-behavior: smooth;
+}
+.msgs::-webkit-scrollbar { width: 6px; }
+.msgs::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.msg { display: flex; gap: 14px; max-width: 880px; width: 100%; margin: 0 auto; }
+.msg.user { flex-direction: row-reverse; }
+.msg .av { width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-sm); }
+.msg.user .av { background: linear-gradient(135deg, var(--accent), var(--accent-3)); color: white; }
+.msg.bot .av { background: var(--bg-3); color: var(--accent-2); border: 1px solid var(--line); }
+.msg .bubble {
+  flex: 1; min-width: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+.msg.user .bubble {
+  background: linear-gradient(135deg, rgba(91,141,239,.12), rgba(167,139,250,.08));
+  border-color: rgba(91,141,239,.25);
+}
+.msg .meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--text-3); }
+.msg .meta .name { font-weight: 600; color: var(--text-2); font-size: 12px; }
+.msg .meta .badge { padding: 2px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; font-family: var(--mono); }
+.badge.ok          { background: rgba(45,212,191,.15); color: var(--ok); }
+.badge.blocked     { background: rgba(239,68,68,.15); color: var(--err); }
+.badge.info        { background: rgba(56,189,248,.15); color: var(--info); }
+.badge.needs_input { background: rgba(245,158,11,.15); color: var(--warn); }
+.badge.failure     { background: rgba(239,68,68,.2); color: var(--err); }
+.badge.running     { background: rgba(91,141,239,.2); color: var(--accent); }
+
+.msg .body { font-size: 14px; line-height: 1.6; color: var(--text); }
+.msg .body p + p { margin-top: 8px; }
+.msg .body strong { font-weight: 600; color: var(--text); }
+.msg .body pre {
+  margin-top: 10px; padding: 12px 14px;
+  background: var(--bg-0); border: 1px solid var(--line);
+  border-radius: var(--r); overflow-x: auto;
+  font-size: 12.5px; line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+.msg .body pre .c { color: var(--text-4); font-style: italic; }
+.msg .body pre .k { color: var(--accent); font-weight: 500; }
+.msg .body pre .s { color: var(--ok); }
+.msg .body pre .n { color: var(--purple); }
+.msg .body pre .d { color: var(--warn); }
+
+.msg .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.msg .chip {
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--bg-3); border: 1px solid var(--line-2);
+  color: var(--text-2); font-size: 12px;
+  cursor: pointer;
+  transition: all .1s var(--ease);
+}
+.msg .chip:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.msg .chip.primary { background: rgba(91,141,239,.12); border-color: rgba(91,141,239,.3); color: var(--accent); }
+.msg .chip.primary:hover { background: var(--accent); color: white; }
+
+/* live execution card */
+.exec {
+  margin-top: 12px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.exec .l { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; line-height: 1.45; }
+.exec .l .t { color: var(--text-4); flex-shrink: 0; font-weight: 600; }
+.exec .l .m { color: var(--text-2); flex: 1; }
+.exec .l .m.cfg { color: var(--accent); }
+.exec .l.ok .t { color: var(--ok); }
+.exec .l.err .t { color: var(--err); }
+.exec .l.run .t { color: var(--accent); }
+.exec .l .spin {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1.5px solid var(--accent); border-top-color: transparent;
+  border-radius: 50%; animation: spin .7s linear infinite;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.exec .l.done { opacity: .55; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* device table inline */
+.devtbl {
+  margin-top: 10px; width: 100%;
+  border-collapse: separate; border-spacing: 0;
+  font-size: 12px;
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+.devtbl th, .devtbl td { padding: 8px 12px; text-align: start; border-bottom: 1px solid var(--line); }
+.devtbl th { background: var(--bg-3); color: var(--text-3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.devtbl tr:last-child td { border-bottom: none; }
+.devtbl td.mono { font-family: var(--mono); }
+.devtbl .st { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; }
+.st.ok { background: rgba(45,212,191,.15); color: var(--ok); }
+.st.warn { background: rgba(245,158,11,.15); color: var(--warn); }
+.st.err { background: rgba(239,68,68,.15); color: var(--err); }
+.st.info { background: rgba(56,189,248,.15); color: var(--info); }
+
+/* config preview */
+.cfg {
+  margin-top: 10px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.cfg .head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px; color: var(--text-3);
+  font-family: var(--mono);
+}
+.cfg .head .label { color: var(--text-2); font-weight: 500; }
+.cfg .head .ok { color: var(--ok); }
+.cfg pre {
+  margin: 0; padding: 12px 14px;
+  font-family: var(--mono); font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre; overflow-x: auto;
+}
+.cfg pre .cm { color: var(--text-4); }
+.cfg pre .kw { color: var(--accent); }
+.cfg pre .nm { color: var(--purple); }
+.cfg pre .ok { color: var(--ok); }
+
+/* topology svg */
+.topo { margin-top: 10px; background: var(--bg-0); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; width: 100%; }
+
+/* composer */
+.composer {
+  position: relative;
+  padding: 16px 24px 22px;
+  background: linear-gradient(180deg, transparent, var(--bg-0) 30%);
+}
+.composer .box {
+  max-width: 880px; margin: 0 auto;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 6px 6px 6px 14px;
+  display: flex; align-items: end; gap: 8px;
+  box-shadow: var(--shadow);
+  transition: border-color .12s var(--ease);
+}
+.composer .box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,141,239,.12), var(--shadow); }
+.composer textarea {
+  flex: 1; resize: none; outline: none;
+  background: none; border: none;
+  color: var(--text);
+  font-size: 14px; line-height: 1.5;
+  min-height: 26px; max-height: 180px;
+  padding: 8px 0;
+  font-family: inherit;
+}
+.composer textarea::placeholder { color: var(--text-3); }
+.composer .tools { display: flex; align-items: center; gap: 4px; padding-bottom: 4px; }
+.composer .tools button {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  transition: all .1s var(--ease);
+}
+.composer .tools button:hover { background: var(--bg-3); color: var(--text); }
+.composer .tools button svg { width: 16px; height: 16px; }
+.composer .send {
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  background: var(--accent); color: white;
+  border-radius: var(--r-sm);
+  transition: all .12s var(--ease);
+  margin-bottom: 2px;
+}
+.composer .send:hover:not(:disabled) { background: #4a7be0; transform: scale(1.05); }
+.composer .send:disabled { background: var(--bg-4); color: var(--text-4); cursor: not-allowed; }
+.composer .send svg { width: 16px; height: 16px; }
+
+.composer .hints {
+  max-width: 880px; margin: 8px auto 0;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  justify-content: center;
+}
+.composer .hints button {
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  color: var(--text-3); font-size: 11.5px;
+  cursor: pointer;
+  transition: all .1s var(--ease);
+}
+.composer .hints button:hover { background: var(--bg-3); color: var(--text); }
+
+/* ============================================================ right context */
+.ctx {
+  grid-area: ctx;
+  background: var(--bg-1);
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+[dir="rtl"] .ctx { border-left: none; border-right: 1px solid var(--line); }
+.ctx::-webkit-scrollbar { width: 6px; }
+.ctx::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.ctx-tabs {
+  display: flex; align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.ctx-tab {
+  padding: 14px 12px;
+  font-size: 12px; font-weight: 500;
+  color: var(--text-3);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all .1s var(--ease);
+}
+.ctx-tab:hover { color: var(--text-2); }
+.ctx-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.ctx-body { padding: 16px 14px; flex: 1; }
+.kv { display: flex; flex-direction: column; gap: 10px; }
+.kv .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.kv .row .k { color: var(--text-3); }
+.kv .row .v { color: var(--text); font-family: var(--mono); font-size: 11.5px; }
+
+.card { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; margin-bottom: 10px; }
+.card .h { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-3); margin-bottom: 8px; }
+.card .h .em { font-size: 12px; line-height: 1; }
+
+.device-card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all .1s var(--ease);
+}
+.device-card:hover { border-color: var(--line-2); background: var(--bg-3); }
+.device-card .row1 { display: flex; align-items: center; justify-content: space-between; }
+.device-card .name { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--text); }
+.device-card .role { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-3); margin-top: 3px; }
+.device-card .row2 { display: flex; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--text-3); }
+.device-card .row2 .v { color: var(--text-2); font-family: var(--mono); }
+
+.empty { display: flex; flex-direction: column; align-items: center; padding: 32px 16px; text-align: center; color: var(--text-3); }
+.empty .em { font-size: 24px; margin-bottom: 8px; opacity: .5; }
+.empty .t { font-size: 12px; }
+
+/* ============================================================ welcome */
+.welcome { max-width: 760px; margin: 60px auto 40px; padding: 0 24px; text-align: center; }
+.welcome .badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  font-size: 11.5px; color: var(--text-2);
+  margin-bottom: 16px;
+}
+.welcome .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.welcome h1 {
+  font-size: 32px; font-weight: 700; letter-spacing: -.8px;
+  background: linear-gradient(180deg, #fff, #a4adc1);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px; line-height: 1.15;
+}
+[dir="rtl"] .welcome h1 { font-size: 30px; }
+.welcome p { color: var(--text-2); font-size: 15px; max-width: 540px; margin: 0 auto 28px; line-height: 1.6; }
+.welcome .steps {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  text-align: start;
+  margin-bottom: 24px;
+}
+@media (max-width: 700px) { .welcome .steps { grid-template-columns: 1fr; } }
+.welcome .step {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px;
+}
+.welcome .step .num {
+  display: inline-grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: white;
+  font-size: 11px; font-weight: 600; margin-bottom: 8px;
+}
+.welcome .step .ti { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.welcome .step .de { font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
+.welcome .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; text-align: start; }
+@media (max-width: 600px) { .welcome .grid { grid-template-columns: 1fr; } }
+.welcome .card-h {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px;
+  cursor: pointer;
+  transition: all .12s var(--ease);
+}
+.welcome .card-h:hover { border-color: var(--line-2); background: var(--bg-3); transform: translateY(-1px); }
+.welcome .card-h .ic {
+  width: 30px; height: 30px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: var(--bg-3); color: var(--accent-2);
+  margin-bottom: 10px; font-size: 15px;
+}
+.welcome .card-h .ti { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.welcome .card-h .de { font-size: 12px; color: var(--text-3); line-height: 1.5; }
+
+/* ============================================================ typing */
+.typing { display: flex; gap: 6px; padding: 12px 0; }
+.typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); animation: bounce 1.2s var(--ease) infinite; }
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-5px); opacity: 1; } }
+
+/* ============================================================ toast */
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-3); border: 1px solid var(--line);
+  padding: 10px 16px; border-radius: var(--r);
+  font-size: 13px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  display: flex; align-items: center; gap: 8px;
+  animation: toastIn .25s var(--ease);
+}
+[dir="rtl"] .toast { transform: translateX(50%); }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+[dir="rtl"] @keyframes toastIn { from { opacity: 0; transform: translate(50%, 10px); } to { opacity: 1; transform: translate(50%, 0); } }
+.toast.ok { border-color: rgba(45,212,191,.3); }
+.toast.err { border-color: rgba(239,68,68,.3); }
+
+/* ============================================================ boot */
+.boot { position: fixed; inset: 0; background: var(--bg-0); display: grid; place-items: center; z-index: 9999; transition: opacity .3s var(--ease); }
+.boot.gone { opacity: 0; pointer-events: none; }
+.boot .spin { width: 36px; height: 36px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+
+/* ============================================================ streaming indicator */
+.live-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1.4s var(--ease) infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+</style>
+</head>
+<body>
+<div class="boot" id="boot"><div class="spin"></div></div>
+
+<div class="app">
+  <!-- ============================ TOPBAR ============================ -->
+  <header class="tb">
+    <div class="brand">
+      <div class="mark">N</div>
+      <span>NetOps Autopilot</span>
+      <span class="ver" id="ver">v6.0</span>
+    </div>
+    <div class="sep"></div>
+    <div class="pill" id="pill-bond"><span class="dot"></span><span data-i18n="bond_no">⚠ unbonded</span></div>
+    <div class="pill" id="pill-net"><span class="dot"></span><span data-i18n="net_none">○ no network</span></div>
+    <div class="pill" id="pill-ledger"><span class="dot"></span><span>0 events</span></div>
+    <div class="sp"></div>
+    <button class="lang-btn" id="lang-btn"><span class="flag" id="lang-flag">🇺🇸</span><span id="lang-label">EN</span></button>
+    <button class="icon-btn" id="help-btn" title="Help">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </button>
+    <button class="icon-btn" id="settings-btn" title="Status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <aside class="sb">
+    <div class="sb-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="search" data-i18n-ph="search_ph" placeholder="Search devices, commands…" />
+      <kbd>⌘K</kbd>
+    </div>
+    <div class="sb-section">
+      <div class="sb-h"><span data-i18n="sb_quick">Quick actions</span></div>
+      <div class="sb-quick" id="quick"></div>
+    </div>
+    <div class="sb-spacer"></div>
+    <div class="sb-me">
+      <div class="av">O</div>
+      <div class="meta">
+        <div class="n" data-i18n="me_name">Operator</div>
+        <div class="r" data-i18n="me_role">Network Engineer</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================ MAIN CHAT ============================ -->
+  <main class="main">
+    <div class="msgs" id="msgs">
+      <div class="welcome" id="welcome">
+        <div class="badge"><span class="dot"></span><span data-i18n="w_badge">Live SSE execution · Real-device config</span></div>
+        <h1 data-i18n="w_h">Talk to the network.</h1>
+        <p data-i18n="w_p">Type anything in English or Arabic. The operator discovers devices, designs a topology, renders a verified configuration, and pushes it to the real network — all in natural language, all cryptographically audited.</p>
+        <div class="steps" id="welcome-steps"></div>
+        <div class="grid" id="welcome-cards"></div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="box">
+        <textarea id="input" rows="1" data-i18n-ph="composer_ph"
+                  placeholder="Try: 'discover' · 'show devices' · 'apply hotel'…"></textarea>
+        <div class="tools">
+          <button id="send" class="send" title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="hints" id="hints"></div>
+    </div>
+  </main>
+
+  <!-- ============================ CONTEXT ============================ -->
+  <aside class="ctx">
+    <div class="ctx-tabs">
+      <div class="ctx-tab active" data-tab="state" data-i18n="ctx_state">State</div>
+      <div class="ctx-tab" data-tab="topo" data-i18n="ctx_topo">Topology</div>
+      <div class="ctx-tab" data-tab="evidence" data-i18n="ctx_evidence">Evidence</div>
+    </div>
+    <div class="ctx-body" id="ctx-body"></div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   i18n
+   ========================================================================= */
+const I18N = {
+  en: {
+    flag: "🇺🇸", code: "EN", dir: "ltr",
+    bond_no: "⚠ unbonded", bond_yes: "✓ bonded",
+    net_none: "○ no network", net_n: n => `${n} device${n!==1?'s':''}`,
+    ledger_n: n => `${n} event${n!==1?'s':''}`,
+    search_ph: "Search devices, commands…",
+    sb_quick: "Quick actions",
+    me_name: "Operator", me_role: "Network Engineer",
+    w_badge: "Live SSE execution · Real-device config",
+    w_h: "Talk to the network.",
+    w_p: "Type anything in English or Arabic. The operator discovers devices, designs a topology, renders a verified configuration, and pushes it to the real network — all in natural language, all cryptographically audited.",
+    composer_ph: "Try: 'discover' · 'show devices' · 'apply hotel'…",
+    ctx_state: "State", ctx_topo: "Topology", ctx_evidence: "Evidence",
+    steps: [
+      {n:1, ti:"Mount your devices", de:"Connect your real switches, routers, and APs. Power them on. Wire them to each other and to the WAN."},
+      {n:2, ti:"Link one to the PC", de:"Console-cable any single device to the computer running NetOps. That device is the seed."},
+      {n:3, ti:"Type a command", de:"Open this chat. Type 'discover' to walk the network, then 'apply hotel' (or any blueprint) to push config."},
+    ],
+    cards: [
+      {em:"🔍", ti:"Discover", de:"Walk the network from the seed port and inventory every device, every link, every gap.", q:"discover"},
+      {em:"🗺", ti:"Show topology", de:"Render the network map with device roles, link evidence, and unresolved gaps.", q:"show topology"},
+      {em:"⚙", ti:"Design a branch", de:"Build a branch-office design (L3 WAN, L2 access, mgmt) without applying it.", q:"design branch"},
+      {em:"🚀", ti:"Apply hotel", de:"Design + render + push the configuration to every device. Requires BOND.", q:"apply hotel"},
+      {em:"🔎", ti:"Show devices", de:"List every device discovered, with vendor, model, role, and status.", q:"show devices"},
+      {em:"📡", ti:"Diagnose", de:"Identify gaps, stale evidence, and connectivity failures with a typed verdict.", q:"diagnose"},
+    ],
+    quick: [
+      {em:"🔍", t:"discover", k:"⌘1", q:"discover"},
+      {em:"📋", t:"show devices", k:"⌘2", q:"show devices"},
+      {em:"🗺", t:"show topology", k:"⌘3", q:"show topology"},
+      {em:"⚙", t:"design branch", k:"⌘4", q:"design branch"},
+      {em:"🚀", t:"apply branch", k:"⌘5", q:"apply branch"},
+      {em:"🔄", t:"status", k:"⌘6", q:"status"},
+    ],
+    hints: ["show devices", "show interfaces", "show version", "design hotel", "apply branch", "diagnose", "verify", "help"],
+    state_empty: "Run 'discover' to see the live network state.",
+    state_kv: {Bonded:"bonded", Network:"network", Devices:"devices", Links:"links", Topology:"topology", Design:"design", Run:"run", Ledger:"ledger"},
+    ctx_topo_empty: "No topology yet. Run 'discover' or 'show topology'.",
+    ctx_evidence_empty: "No evidence collected yet. Evidence is appended on every executed operation.",
+    you: "You", op: "Operator",
+    sending: "Operator is working…",
+    err: "Network error",
+  },
+  ar: {
+    flag: "🇸🇦", code: "AR", dir: "rtl",
+    bond_no: "⚠ غير مربوط", bond_yes: "✓ مربوط",
+    net_none: "○ لا توجد شبكة", net_n: n => `${n} جهاز`,
+    ledger_n: n => `${n} حدث`,
+    search_ph: "ابحث عن الأجهزة، الأوامر…",
+    sb_quick: "إجراءات سريعة",
+    me_name: "المشغّل", me_role: "مهندس شبكات",
+    w_badge: "تنفيذ مباشر · إعدادات حقيقية",
+    w_h: "تحدّث مع الشبكة.",
+    w_p: "اكتب أي شيء بالعربية أو الإنجليزية. المشغّل يكتشف الأجهزة، يصمّم الشبكة، يرسم إعدادات موثّقة، ويدفعها للأجهزة الحقيقية — بلغة طبيعية، مع تدقيق مشفّر.",
+    composer_ph: "جرّب: 'اكتشف' · 'اعرض الأجهزة' · 'طبق فندق'…",
+    ctx_state: "الحالة", ctx_topo: "الخريطة", ctx_evidence: "الأدلة",
+    steps: [
+      {n:1, ti:"ركّب أجهزتك", de:"وصّل السويتشات والراوترات ونقاط الوصول. شغّلها. اربطها ببعض والـ WAN."},
+      {n:2, ti:"اربط واحدًا بالكمبيوتر", de:"اربط كابل console من أي جهاز للكمبيوتر. هذا الجهاز هو البذرة."},
+      {n:3, ti:"اكتب أمرًا", de:"افتح هذه المحادثة. اكتب 'اكتشف' لاجتياز الشبكة، ثم 'طبق فندق' لدفع الإعدادات."},
+    ],
+    cards: [
+      {em:"🔍", ti:"اكتشف", de:"امسح الشبكة من البذرة واعرف كل جهاز وكل رابط وثغرة.", q:"اكتشف"},
+      {em:"🗺", ti:"اعرض الخريطة", de:"ارسم خريطة الشبكة بأدوار الأجهزة وأدلة الروابط.", q:"اعرض الخريطة"},
+      {em:"⚙", ti:"صمم فرع", de:"صمم شبكة مكتب فرعي (L3 WAN، L2 access، mgmt) بدون تطبيق.", q:"صمم فرع"},
+      {em:"🚀", ti:"طبّق فندق", de:"صمّم وارسم وادفع الإعدادات. يتطلب BOND.", q:"طبق فندق"},
+      {em:"🔎", ti:"اعرض الأجهزة", de:"قائمة بكل جهاز مكتشف مع البائع والموديل والحالة.", q:"اعرض الأجهزة"},
+      {em:"📡", ti:"شخّص", de:"حدّد الثغرات والأدلة القديمة وحالات فشل الاتصال.", q:"شخّص"},
+    ],
+    quick: [
+      {em:"🔍", t:"اكتشف", k:"⌘1", q:"اكتشف"},
+      {em:"📋", t:"اعرض الأجهزة", k:"⌘2", q:"اعرض الأجهزة"},
+      {em:"🗺", t:"اعرض الخريطة", k:"⌘3", q:"اعرض الخريطة"},
+      {em:"⚙", t:"صمم فرع", k:"⌘4", q:"صمم فرع"},
+      {em:"🚀", t:"طبق فرع", k:"⌘5", q:"طبق فرع"},
+      {em:"🔄", t:"الحالة", k:"⌘6", q:"الحالة"},
+    ],
+    hints: ["اعرض الأجهزة", "اعرض المنافذ", "اعرض الإصدار", "صمم فندق", "طبق فرع", "شخّص", "تحقق", "مساعدة"],
+    state_empty: "شغّل 'اكتشف' لرؤية حالة الشبكة.",
+    state_kv: {Bonded:"مربوط", Network:"الشبكة", Devices:"الأجهزة", Links:"الروابط", Topology:"الخريطة", Design:"التصميم", Run:"تشغيل", Ledger:"السجل"},
+    ctx_topo_empty: "لا توجد خريطة بعد. شغّل 'اكتشف' أو 'اعرض الخريطة'.",
+    ctx_evidence_empty: "لا توجد أدلة بعد. تُسجّل الأدلة مع كل عملية تنفيذ.",
+    you: "أنت", op: "المشغّل",
+    sending: "المشغّل يعمل…",
+    err: "خطأ في الشبكة",
+  }
+};
+
+const S = {
+  lang: localStorage.getItem("netops.lang") || "en",
+  bonded: false,
+  devices: [],
+  links: 0,
+  topology: null,
+  design: null,
+  ledger: 0,
+  lastRun: null,
+  evidence: [],
+  sending: false,
+  tab: "state",
+};
+
+const T = () => I18N[S.lang];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* =========================================================================
+   syntax highlight (very lightweight, no deps)
+   ========================================================================= */
+function hl(s) {
+  if (!s) return "";
+  // Escape HTML
+  let h = esc(s);
+  // Cisco-style: keywords + line prefixes.
+  h = h.replace(/^(! .*?)$/gm, '<span class="cm">$1</span>');
+  h = h.replace(/^(interface \S+)/gm, '<span class="kw">$1</span>');
+  h = h.replace(/^(vlan \d+|ip routing|enable|configure terminal|end|switchport .+|ip address .+|router .+|network .+| name .+)/gm, '<span class="kw">$1</span>');
+  h = h.replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\/\d+)?)\b/g, '<span class="nm">$1</span>');
+  return h;
+}
+
+/* =========================================================================
+   language
+   ========================================================================= */
+function applyLang() {
+  const t = T();
+  document.documentElement.lang = S.lang;
+  document.documentElement.dir = t.dir;
+  $("lang-flag").textContent = t.flag;
+  $("lang-label").textContent = t.code;
+  $("pill-bond").lastElementChild.textContent = S.bonded ? t.bond_yes : t.bond_no;
+  $("pill-net").lastElementChild.textContent = S.devices.length ? t.net_n(S.devices.length) : t.net_none;
+  $("pill-ledger").lastElementChild.textContent = t.ledger_n(S.ledger);
+  $("search").placeholder = t.search_ph;
+  $("input").placeholder = t.composer_ph;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.dataset.i18n;
+    if (T()[k]) el.textContent = T()[k];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    const k = el.dataset.i18nPh;
+    if (T()[k]) el.placeholder = T()[k];
+  });
+  renderWelcomeSteps();
+  renderWelcomeCards();
+  renderQuickActions();
+  renderHints();
+  renderContext();
+  localStorage.setItem("netops.lang", S.lang);
+}
+
+function renderWelcomeSteps() {
+  const t = T();
+  $("welcome-steps").innerHTML = t.steps.map(s => `
+    <div class="step">
+      <div class="num">${s.n}</div>
+      <div class="ti">${esc(s.ti)}</div>
+      <div class="de">${esc(s.de)}</div>
+    </div>`).join("");
+}
+
+function renderWelcomeCards() {
+  const t = T();
+  $("welcome-cards").innerHTML = t.cards.map(c => `
+    <div class="card-h" data-q="${esc(c.q)}">
+      <div class="ic">${c.em}</div>
+      <div class="ti">${esc(c.ti)}</div>
+      <div class="de">${esc(c.de)}</div>
+    </div>`).join("");
+  $("welcome-cards").querySelectorAll(".card-h").forEach(el =>
+    el.addEventListener("click", () => send(el.dataset.q)));
+}
+
+function renderQuickActions() {
+  const t = T();
+  $("quick").innerHTML = t.quick.map(q => `
+    <button data-q="${esc(q.q)}">
+      <span class="em">${q.em}</span>
+      <span>${esc(q.t)}</span>
+      <span class="kbd">${esc(q.k)}</span>
+    </button>`).join("");
+  $("quick").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => send(b.dataset.q)));
+}
+
+function renderHints() {
+  const t = T();
+  $("hints").innerHTML = t.hints.map(h =>
+    `<button data-q="${esc(h)}">${esc(h)}</button>`).join("");
+  $("hints").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => send(b.dataset.q)));
+}
+
+/* =========================================================================
+   context panel
+   ========================================================================= */
+function renderContext() {
+  if (S.tab === "state") renderState();
+  else if (S.tab === "topo") renderTopo();
+  else renderEvidence();
+}
+
+function renderState() {
+  const t = T();
+  if (!S.bonded && !S.devices.length && !S.lastRun) {
+    $("ctx-body").innerHTML = `
+      <div class="empty">
+        <div class="em">○</div>
+        <div class="t">${esc(t.state_empty)}</div>
+      </div>`;
+    return;
+  }
+  const kv = t.state_kv;
+  const row = (k, v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
+  let html = `<div class="card"><div class="h"><span class="em">📡</span><span>${esc(kv.Network)}</span></div><div class="kv">`;
+  html += row(kv.Bonded, S.bonded ? "✓" : "—");
+  html += row(kv.Devices, S.devices.length);
+  html += row(kv.Links, S.links);
+  html += row(kv.Topology, S.topology ? `${S.topology.nodes?.length || 0} nodes` : "—");
+  html += row(kv.Design, S.design ? (S.design.roles?.[0]?.role || "—") : "—");
+  html += row(kv.Run, S.lastRun?.final || "—");
+  html += row(kv.Ledger, S.ledger);
+  html += `</div></div>`;
+  if (S.devices.length) {
+    html += `<div class="card"><div class="h"><span class="em">🖧</span><span>${esc(kv.Devices)}</span></div>`;
+    S.devices.forEach(d => {
+      html += `<div class="device-card" data-q="show device ${esc(d.device_ref)}">
+        <div class="row1"><div class="name">${esc(d.device_ref)}</div>
+          <span class="st ${d.status==='COMPLETE'?'ok':d.status==='UNREACHABLE'?'err':'warn'}">${esc(d.status || d.classification)}</span></div>
+        <div class="role">${esc(d.classification || d.role || "—")} · ${esc(d.vendor || d.vendor_family || "?")}</div>
+        ${d.model ? `<div class="row2"><span>${esc(d.model)}</span><span class="v">${esc(d.version || "")}</span></div>` : ""}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  $("ctx-body").innerHTML = html;
+  $("ctx-body").querySelectorAll("[data-q]").forEach(el =>
+    el.addEventListener("click", () => send(el.dataset.q)));
+}
+
+function renderTopo() {
+  const t = T();
+  if (!S.topology || !S.topology.nodes?.length) {
+    $("ctx-body").innerHTML = `
+      <div class="empty">
+        <div class="em">🗺</div>
+        <div class="t">${esc(t.ctx_topo_empty)}</div>
+      </div>`;
+    return;
+  }
+  const W = 360, H = 240;
+  const nodes = S.topology.nodes;
+  const edges = S.topology.edges || [];
+  const cx = W/2, cy = H/2;
+  const pos = {};
+  const seed = nodes.find(n => n.classification === "SEED") || nodes[0];
+  pos[seed.device_ref] = {x: cx, y: cy};
+  const ring1 = nodes.filter(n => n !== seed);
+  const R = 80;
+  ring1.forEach((n, i) => {
+    const a = (i / Math.max(1, ring1.length)) * Math.PI * 2;
+    pos[n.device_ref] = {x: cx + Math.cos(a)*R, y: cy + Math.sin(a)*R};
+  });
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="topo" style="height:240px">`;
+  edges.forEach(e => {
+    const a = pos[e.a_ref], b = pos[e.b_ref];
+    if (!a || !b) return;
+    const color = e.evidence_state === "CONFIRMED" ? "#2dd4bf" :
+                  e.evidence_state === "ONE_SIDED" ? "#f59e0b" : "#6b7588";
+    const dash = e.evidence_state === "ONE_SIDED" ? "4 4" : "";
+    svg += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${color}" stroke-width="1.5" stroke-dasharray="${dash}"/>`;
+  });
+  nodes.forEach(n => {
+    const p = pos[n.device_ref];
+    if (!p) return;
+    const isSeed = n === seed;
+    const fill = isSeed ? "#5b8def" : n.classification === "UNREACHABLE" ? "#ef4444" : "#1c2231";
+    svg += `<g>
+      <circle cx="${p.x}" cy="${p.y}" r="${isSeed?18:14}" fill="${fill}" stroke="#2a3247" stroke-width="2"/>
+      <text x="${p.x}" y="${p.y+4}" text-anchor="middle" font-size="10" font-family="ui-monospace" fill="${isSeed?'#fff':'#e7ecf5'}">${esc(n.device_ref.split('-')[0])}</text>
+      <text x="${p.x}" y="${p.y+30}" text-anchor="middle" font-size="9" fill="#a4adc1">${esc(n.device_ref)}</text>
+    </g>`;
+  });
+  svg += `</svg>`;
+  $("ctx-body").innerHTML = `
+    <div class="card">${svg}</div>
+    <div class="card">
+      <div class="h"><span class="em">📊</span><span>Summary</span></div>
+      <div class="kv">
+        <div class="row"><span class="k">Nodes</span><span class="v">${nodes.length}</span></div>
+        <div class="row"><span class="k">Links</span><span class="v">${edges.length}</span></div>
+        <div class="row"><span class="k">Gaps</span><span class="v">${S.topology.gaps?.length || 0}</span></div>
+      </div>
+    </div>
+    ${S.topology.gaps?.length ? `<div class="card">
+      <div class="h"><span class="em">⚠</span><span>Gaps</span></div>
+      <div style="font-size:11.5px;color:var(--text-2);line-height:1.6">
+        ${S.topology.gaps.slice(0,6).map(g => `<div>· ${esc(g)}</div>`).join("")}
+        ${S.topology.gaps.length > 6 ? `<div style="color:var(--text-3)">+ ${S.topology.gaps.length-6} more</div>` : ""}
+      </div>
+    </div>` : ""}
+  `;
+}
+
+function renderEvidence() {
+  const t = T();
+  if (!S.evidence.length) {
+    $("ctx-body").innerHTML = `
+      <div class="empty">
+        <div class="em">📜</div>
+        <div class="t">${esc(t.ctx_evidence_empty)}</div>
+      </div>`;
+    return;
+  }
+  let html = `<div class="card"><div class="h"><span class="em">📜</span><span>Recent events</span></div>`;
+  S.evidence.slice(0,30).forEach(e => {
+    html += `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
+      <span class="k mono" style="font-size:10.5px">${esc(e.id.slice(0,16))}</span>
+      <span class="v" style="font-size:11px">${esc(e.type)}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  $("ctx-body").innerHTML = html;
+}
+
+/* =========================================================================
+   messaging
+   ========================================================================= */
+function addMsg(role, content) {
+  const welcome = $("welcome");
+  if (welcome) welcome.remove();
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${role}`;
+  const t = T();
+  const av = role === "user" ? "U" : "⚡";
+  const name = role === "user" ? t.you : t.op;
+  let inner = "";
+  if (role === "user") {
+    inner = `<div class="meta"><span class="name">${esc(name)}</span><span>${now()}</span></div>
+             <div class="bubble"><div class="body">${esc(content)}</div></div>`;
+  } else {
+    const r = content;
+    const badge = r.status || "INFO";
+    const head = `<div class="meta">
+      <span class="name">${esc(name)}</span>
+      <span class="badge ${esc(badge.toLowerCase())}">${esc(badge)}</span>
+      <span class="mono" style="font-size:10.5px">${esc(r.intent || "")}</span>
+      <span>${now()}</span>
+    </div>`;
+    let body = "";
+    if (r.summary) body += `<p><strong>${esc(r.summary)}</strong></p>`;
+    if (r.detail) body += `<pre>${hl(r.detail)}</pre>`;
+    if (r.data && r.data.devices) {
+      body += renderDeviceTable(r.data.devices);
+    }
+    if (r.data && r.data.topology) {
+      body += renderInlineTopo(r.data.topology);
+    }
+    if (r.data && r.data.execution) {
+      body += renderExecReport(r.data.execution);
+    }
+    if (r.data && r.data.config) {
+      body += renderConfig(r.data.config, r.data.label);
+    }
+    let chips = "";
+    if (r.actions && r.actions.length) {
+      chips = `<div class="chips">${r.actions.map(a =>
+        `<button class="chip ${a.primary ? 'primary' : ''}" data-q="${esc(a.label)}">${esc(a.label)}</button>`).join("")}</div>`;
+    }
+    let ev = "";
+    if (r.evidence_ids && r.evidence_ids.length) {
+      ev = `<div class="ev">${r.evidence_ids.map(id => `<span class="e">${esc(id.slice(0,16))}</span>`).join("")}</div>`;
+    }
+    inner = `${head}<div class="bubble"><div class="body">${body}</div>${chips}${ev}</div>`;
+  }
+  wrap.innerHTML = `<div class="av">${av}</div>${inner}`;
+  $("msgs").appendChild(wrap);
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+  wrap.querySelectorAll("[data-q]").forEach(el =>
+    el.addEventListener("click", () => send(el.dataset.q)));
+  return wrap;
+}
+
+function addStreamMsg(text) {
+  // Streaming: a single bubble that grows as phases arrive.
+  const welcome = $("welcome");
+  if (welcome) welcome.remove();
+  let wrap = $("stream-msg");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.className = "msg bot";
+    wrap.id = "stream-msg";
+    wrap.innerHTML = `<div class="av">⚡</div><div class="bubble">
+      <div class="meta"><span class="name">${esc(T().op)}</span>
+        <span class="badge running"><span class="live-dot"></span>running</span>
+        <span>${now()}</span>
+      </div>
+      <div class="body"><div class="exec" id="stream-exec"></div></div>
+    </div>`;
+    $("msgs").appendChild(wrap);
+  }
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+  return wrap;
+}
+
+function appendPhase(text) {
+  let ex = $("stream-exec");
+  if (!ex) { addStreamMsg(); ex = $("stream-exec"); }
+  // Parse "[PHASE] STATUS — detail"
+  const m = text.match(/^\[([^\]]+)\]\s+(\S+)\s+—\s+(.*)$/s);
+  if (m) {
+    const [_, phase, status, detail] = m;
+    const cls = status === "OK" ? "ok" :
+                status === "BLOCKED" || status === "TYPED_STOP" ? "err" :
+                status === "HUMAN_DECISION" ? "run" : "run";
+    const row = document.createElement("div");
+    row.className = `l ${cls}`;
+    row.innerHTML = `<span class="t">[${esc(phase)}] ${esc(status)}</span><span class="m">${esc(detail.split("\n")[0])}</span>`;
+    ex.appendChild(row);
+  } else if (text.startsWith("!")) {
+    // Rendered config — show in a syntax-highlighted block.
+    const row = document.createElement("div");
+    row.className = "l done";
+    row.innerHTML = `<span class="t">render</span><span class="m cfg">${esc(text).slice(0,200)}</span>`;
+    ex.appendChild(row);
+  } else {
+    // Free-form (network map, design summary).
+    const row = document.createElement("div");
+    row.className = "l done";
+    const preview = text.length > 300 ? text.slice(0, 300) + "…" : text;
+    row.innerHTML = `<span class="t">·</span><span class="m">${esc(preview).replace(/\n/g, "<br>")}</span>`;
+    ex.appendChild(row);
+  }
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+
+function finalizeStream(reply) {
+  const wrap = $("stream-msg");
+  if (!wrap) { addMsg("bot", reply); return; }
+  // Replace the streaming bubble with a final reply bubble.
+  wrap.remove();
+  addMsg("bot", reply);
+}
+
+function addTyping() {
+  const t = T();
+  const w = document.createElement("div");
+  w.className = "msg bot";
+  w.id = "typing-msg";
+  w.innerHTML = `<div class="av">⚡</div>
+    <div class="bubble"><div class="meta">
+      <span class="name">${esc(t.op)}</span><span>${now()}</span>
+    </div>
+    <div class="body"><div class="typing"><span></span><span></span><span></span></div>
+    <p style="margin-top:8px;color:var(--text-3);font-size:12.5px">${esc(t.sending)}</p></div></div>`;
+  $("msgs").appendChild(w);
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+function removeTyping() { const t = $("typing-msg"); if (t) t.remove(); }
+
+function renderDeviceTable(devices) {
+  if (!devices.length) return "";
+  let h = `<table class="devtbl"><thead><tr>
+    <th>Device</th><th>Vendor</th><th>Status</th><th>Model</th><th>Mgmt IP</th>
+  </tr></thead><tbody>`;
+  devices.forEach(d => {
+    const st = d.status || d.classification || "—";
+    const cls = st === "COMPLETE" ? "ok" : st === "UNREACHABLE" ? "err" : "warn";
+    h += `<tr>
+      <td class="mono">${esc(d.device_ref)}</td>
+      <td>${esc(d.vendor || d.vendor_family || "—")}</td>
+      <td><span class="st ${cls}">${esc(st)}</span></td>
+      <td>${esc(d.model || "—")}</td>
+      <td class="mono">${esc(d.mgmt_ip || "—")}</td>
+    </tr>`;
+  });
+  h += `</tbody></table>`;
+  return h;
+}
+
+function renderInlineTopo(topo) {
+  if (!topo.nodes || !topo.nodes.length) return "";
+  const W = 360, H = 200;
+  const nodes = topo.nodes;
+  const edges = topo.edges || [];
+  const cx = W/2, cy = H/2;
+  const pos = {};
+  const seed = nodes.find(n => n.classification === "SEED") || nodes[0];
+  pos[seed.device_ref] = {x: cx, y: cy};
+  const ring1 = nodes.filter(n => n !== seed);
+  const R = 65;
+  ring1.forEach((n, i) => {
+    const a = (i / Math.max(1, ring1.length)) * Math.PI * 2;
+    pos[n.device_ref] = {x: cx + Math.cos(a)*R, y: cy + Math.sin(a)*R};
+  });
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="topo" style="height:200px;margin-top:8px">`;
+  edges.forEach(e => {
+    const a = pos[e.a_ref], b = pos[e.b_ref];
+    if (!a || !b) return;
+    svg += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#5b8def" stroke-width="1.5" stroke-dasharray="${e.evidence_state==='ONE_SIDED'?'4 4':''}"/>`;
+  });
+  nodes.forEach(n => {
+    const p = pos[n.device_ref];
+    if (!p) return;
+    const isSeed = n === seed;
+    svg += `<g>
+      <circle cx="${p.x}" cy="${p.y}" r="${isSeed?16:12}" fill="${isSeed?'#5b8def':'#1c2231'}" stroke="#2a3247" stroke-width="2"/>
+      <text x="${p.x}" y="${p.y+4}" text-anchor="middle" font-size="9" font-family="ui-monospace" fill="#fff">${esc(n.device_ref.split('-')[0])}</text>
+    </g>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderExecReport(exec) {
+  let h = `<div class="card" style="margin-top:10px;background:var(--bg-0);border:1px solid var(--line)">
+    <div class="h"><span class="em">🚀</span><span>Execution</span></div>
+    <div style="font-size:12px;color:var(--text-2)">
+      <div><span style="color:var(--text-3)">outcome:</span> <span class="st ${exec.outcome==='APPLIED'?'ok':exec.outcome==='STAGED'?'warn':'info'}">${esc(exec.outcome || "—")}</span></div>
+      ${exec.staged_devices ? `<div><span style="color:var(--text-3)">staged devices:</span> ${exec.staged_devices.map(d => `<span class="st ok">${esc(d)}</span>`).join(" ")}</div>` : ""}
+      ${exec.change_records ? `<div style="margin-top:6px">${exec.change_records.map(r => `<div>· <code>${esc(r.device_ref)}</code> — ${esc(r.outcome)} (${r.command_count} cmd)</div>`).join("")}</div>` : ""}
+    </div>
+  </div>`;
+  return h;
+}
+
+function renderConfig(configText, label) {
+  if (!configText) return "";
+  return `<div class="cfg">
+    <div class="head">
+      <span class="em">⚙</span>
+      <span class="label">${esc(label || "rendered config")}</span>
+      <span class="ok">✓ verified</span>
+    </div>
+    <pre>${hl(configText)}</pre>
+  </div>`;
+}
+
+function now() { const d = new Date(); return d.toTimeString().slice(0,5); }
+function toast(msg, kind) {
+  const t = document.createElement("div");
+  t.className = `toast ${kind || ""}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2400);
+}
+
+/* =========================================================================
+   network — SSE streaming
+   ========================================================================= */
+async function send(text) {
+  text = (text ?? $("input").value ?? "").trim();
+  if (!text || S.sending) return;
+  $("input").value = "";
+  autosize();
+  S.sending = true;
+  $("send").disabled = true;
+  addMsg("user", text);
+
+  // Decide: use SSE stream or simple POST.
+  // Use the stream for engine-driving verbs; use POST for simple reads.
+  const streamVerbs = ["discover", "apply", "design", "diagnose", "verify", "execute"];
+  const useStream = streamVerbs.some(v => text.toLowerCase().includes(v));
+
+  if (useStream) {
+    await sendStream(text);
+  } else {
+    await sendSimple(text);
+  }
+
+  S.sending = false;
+  $("send").disabled = false;
+  $("input").focus();
+}
+
+async function sendStream(text) {
+  // Open the SSE stream. Each line is a JSON event.
+  const url = `/chat/stream?message=${encodeURIComponent(text)}&lang=${encodeURIComponent(S.lang)}`;
+  let es;
+  try {
+    es = new EventSource(url);
+  } catch (e) {
+    addMsg("bot", {status:"FAILURE", intent:"ERROR", summary: T().err, detail: String(e)});
+    return;
+  }
+  // Show streaming bubble.
+  addStreamMsg();
+  await new Promise((resolve) => {
+    es.onmessage = (ev) => {
+      let data;
+      try { data = JSON.parse(ev.data); } catch { return; }
+      if (data.type === "start") return;
+      if (data.type === "show") appendPhase(data.text);
+      else if (data.type === "ask") appendPhase(`? ${data.prompt.split("\n")[0]}`);
+      else if (data.type === "answer") appendPhase(`→ ${data.value}`);
+      else if (data.type === "confirm") appendPhase(`? ${data.prompt}`);
+      else if (data.type === "reply") {
+        finalizeStream(data);
+        es.close();
+        resolve();
+        return;
+      } else if (data.type === "error") {
+        addMsg("bot", {status:"FAILURE", intent:"ERROR", summary:"Stream error", detail: data.detail});
+        es.close();
+        resolve();
+        return;
+      } else if (data.type === "done") {
+        es.close();
+        resolve();
+        return;
+      }
+    };
+    es.onerror = () => {
+      // Browser auto-reconnects — we want to close instead.
+      es.close();
+      resolve();
+    };
+  });
+  await refreshState();
+}
+
+async function sendSimple(text) {
+  addTyping();
+  try {
+    const r = await fetch("/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: text, lang: S.lang}),
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+    const reply = await r.json();
+    removeTyping();
+    addMsg("bot", reply);
+  } catch (e) {
+    removeTyping();
+    addMsg("bot", {status:"FAILURE", intent:"ERROR", summary: T().err, detail: String(e)});
+  }
+  await refreshState();
+}
+
+async function refreshState() {
+  try {
+    const r = await fetch("/state");
+    if (!r.ok) return;
+    const st = await r.json();
+    S.bonded = !!st.bonded;
+    S.devices = st.devices || [];
+    S.links = st.links || 0;
+    S.ledger = st.ledger || 0;
+    if (st.topology) S.topology = st.topology;
+    if (st.design) S.design = st.design;
+    if (st.lastRun) S.lastRun = st.lastRun;
+    S.evidence = st.evidence || [];
+    $("pill-bond").lastElementChild.textContent = S.bonded ? T().bond_yes : T().bond_no;
+    $("pill-bond").classList.toggle("ok", S.bonded);
+    $("pill-net").lastElementChild.textContent = S.devices.length ? T().net_n(S.devices.length) : T().net_none;
+    $("pill-ledger").lastElementChild.textContent = T().ledger_n(S.ledger);
+    renderContext();
+  } catch (e) { /* ignore */ }
+}
+
+function autosize() {
+  const el = $("input");
+  el.style.height = "auto";
+  el.style.height = Math.min(180, el.scrollHeight) + "px";
+}
+
+/* =========================================================================
+   wire-up
+   ========================================================================= */
+$("send").addEventListener("click", () => send());
+$("input").addEventListener("input", autosize);
+$("input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$("lang-btn").addEventListener("click", () => {
+  S.lang = S.lang === "en" ? "ar" : "en";
+  applyLang();
+  toast(S.lang === "ar" ? "تم التبديل إلى العربية" : "Switched to English", "ok");
+});
+$("help-btn").addEventListener("click", () => send("help"));
+$("settings-btn").addEventListener("click", () => send("status"));
+document.querySelectorAll(".ctx-tab").forEach(t =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".ctx-tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    S.tab = t.dataset.tab;
+    renderContext();
+  }));
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); $("search").focus(); }
+  if ((e.metaKey || e.ctrlKey) && /[1-6]/.test(e.key)) {
+    e.preventDefault();
+    const t = T();
+    const idx = parseInt(e.key) - 1;
+    if (t.quick[idx]) send(t.quick[idx].q);
+  }
+});
+
+applyLang();
+refreshState().then(() => $("boot").classList.add("gone"));
+setTimeout(() => $("boot").classList.add("gone"), 800);
+</script>
+</body>
+</html>

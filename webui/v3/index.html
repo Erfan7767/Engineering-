@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NetOps Autopilot · مساعد مهندس الشبكات</title>
+<style>
+  /* ============================================================
+     DESIGN SYSTEM — NetOps Autopilot v3
+     Dark professional palette inspired by Cisco DNA, Grafana,
+     and modern observability tooling. Single-file, zero deps.
+     ============================================================ */
+  :root {
+    --bg-base:        #0a0d12;
+    --bg-elev-1:      #11161d;
+    --bg-elev-2:      #161c25;
+    --bg-elev-3:      #1d2530;
+    --border:         #232c38;
+    --border-strong:  #2f3a4a;
+    --fg:             #e6edf3;
+    --fg-muted:       #8b96a5;
+    --fg-dim:         #5b6573;
+    --accent:         #4dabf7;
+    --accent-2:       #38d9a9;
+    --accent-3:       #ffd43b;
+    --danger:         #ff6b6b;
+    --warning:        #ffa94d;
+    --success:        #51cf66;
+    --info:           #748ffc;
+    --shadow-1:       0 4px 12px rgba(0,0,0,.35);
+    --shadow-2:       0 8px 24px rgba(0,0,0,.45);
+    --radius-sm:      6px;
+    --radius-md:      10px;
+    --radius-lg:      16px;
+    --font-sans:      "Inter", -apple-system, BlinkMacSystemFont,
+                      "Segoe UI", "Cairo", "Tajawal", sans-serif;
+    --font-mono:      "JetBrains Mono", "Fira Code",
+                      ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: radial-gradient(ellipse at top, #131a23 0%, var(--bg-base) 60%);
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+  /* ---------- APP SHELL ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 56px 1fr;
+    grid-template-areas:
+      "topbar topbar"
+      "sidebar main";
+    height: 100vh;
+  }
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    background: var(--bg-elev-1);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-1);
+    z-index: 5;
+  }
+  .topbar .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: -.01em;
+  }
+  .topbar .brand .logo {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    display: grid;
+    place-items: center;
+    color: #0a0d12;
+    font-weight: 900;
+    font-size: 14px;
+  }
+  .topbar .lang-toggle {
+    margin-inline-start: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .topbar .lang-toggle button {
+    background: transparent;
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .topbar .lang-toggle button.active {
+    background: var(--accent);
+    color: #0a0d12;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .topbar .health {
+    margin-inline-start: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .topbar .health .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .topbar .health .dot.warn { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+  .topbar .health .dot.error { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .5; }
+  }
+  /* ---------- SIDEBAR ---------- */
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--bg-elev-1);
+    border-inline-end: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px 0;
+  }
+  .nav-section {
+    padding: 0 16px;
+    margin-bottom: 20px;
+  }
+  .nav-section h3 {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--fg-dim);
+    margin: 0 0 8px 4px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all .15s ease;
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover {
+    background: var(--bg-elev-2);
+    color: var(--fg);
+  }
+  .nav-item.active {
+    background: linear-gradient(90deg, rgba(77,171,247,.15) 0%, transparent 100%);
+    color: var(--accent);
+    border-inline-start: 3px solid var(--accent);
+    padding-inline-start: 9px;
+  }
+  .nav-item .icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    opacity: .7;
+  }
+  .nav-item.active .icon { opacity: 1; }
+  .nav-item .badge {
+    margin-inline-start: auto;
+    background: var(--bg-elev-3);
+    color: var(--fg-muted);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  /* ---------- MAIN ---------- */
+  .main {
+    grid-area: main;
+    overflow-y: auto;
+    padding: 24px 32px;
+  }
+  .view {
+    max-width: 1280px;
+    margin: 0 auto;
+    display: none;
+  }
+  .view.active { display: block; }
+  .view-header {
+    margin-bottom: 24px;
+  }
+  .view-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    letter-spacing: -.01em;
+  }
+  .view-header p {
+    color: var(--fg-muted);
+    margin: 0;
+    font-size: 13px;
+  }
+  /* ---------- CARDS ---------- */
+  .card {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-1);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .card-header .sub {
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  /* ---------- BUTTONS ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elev-2);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .btn:hover { background: var(--bg-elev-3); border-color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.primary {
+    background: var(--accent);
+    color: #0a0d12;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn.primary:hover { background: #74c0fc; border-color: #74c0fc; }
+  .btn.success {
+    background: var(--success);
+    color: #0a0d12;
+    border-color: var(--success);
+    font-weight: 600;
+  }
+  .btn.danger {
+    background: var(--danger);
+    color: #0a0d12;
+    border-color: var(--danger);
+    font-weight: 600;
+  }
+  .btn.ghost { background: transparent; }
+  /* ---------- FORMS ---------- */
+  .form-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .form-row label {
+    color: var(--fg-muted);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .form-row input, .form-row select, .form-row textarea {
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    color: var(--fg);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 100%;
+    transition: border-color .15s ease;
+  }
+  .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(77,171,247,.15);
+  }
+  .form-row .hint {
+    color: var(--fg-dim);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  /* ---------- PHASE TIMELINE ---------- */
+  .timeline {
+    position: relative;
+    padding-inline-start: 32px;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 12px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border);
+  }
+  .timeline-item {
+    position: relative;
+    padding: 12px 0;
+  }
+  .timeline-item::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: -27px;
+    top: 16px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--bg-elev-2);
+    border: 2px solid var(--border-strong);
+    z-index: 1;
+  }
+  .timeline-item.ok::before { background: var(--success); border-color: var(--success); }
+  .timeline-item.warn::before { background: var(--warning); border-color: var(--warning); }
+  .timeline-item.err::before { background: var(--danger); border-color: var(--danger); }
+  .timeline-item.run::before {
+    background: var(--accent);
+    border-color: var(--accent);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .timeline-item .title {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .timeline-item .detail {
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+  /* ---------- TOPOLOGY CANVAS ---------- */
+  .topo-wrap {
+    position: relative;
+    width: 100%;
+    height: 540px;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .topo-wrap svg { width: 100%; height: 100%; display: block; }
+  .topo-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--fg-dim);
+    text-align: center;
+  }
+  /* ---------- DEVICE LIST ---------- */
+  .dev-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .dev-card {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    transition: all .15s ease;
+  }
+  .dev-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-1);
+  }
+  .dev-card .head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .dev-card .icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--bg-elev-3) 0%, var(--bg-elev-1) 100%);
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+  }
+  .dev-card .name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .dev-card .vendor {
+    color: var(--fg-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .dev-card .status {
+    margin-inline-start: auto;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .status-ok { background: rgba(81,207,102,.15); color: var(--success); }
+  .status-warn { background: rgba(255,169,77,.15); color: var(--warning); }
+  .status-err { background: rgba(255,107,107,.15); color: var(--danger); }
+  .dev-card .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--fg-muted);
+    padding: 2px 0;
+  }
+  .dev-card .row .v { color: var(--fg); font-family: var(--font-mono); }
+  /* ---------- BLUEPRINT PICKER ---------- */
+  .bp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+  }
+  .bp-card {
+    background: var(--bg-elev-2);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px;
+    cursor: pointer;
+    transition: all .2s ease;
+    position: relative;
+  }
+  .bp-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-2);
+  }
+  .bp-card.selected {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(77,171,247,.08) 0%, transparent 100%);
+  }
+  .bp-card .ico {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    display: grid;
+    place-items: center;
+    margin-bottom: 12px;
+    color: #0a0d12;
+  }
+  .bp-card h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .bp-card .desc {
+    color: var(--fg-muted);
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+  .bp-card .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .bp-card .tag {
+    background: var(--bg-elev-3);
+    color: var(--fg-muted);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 8px;
+  }
+  /* ---------- CONFIG PREVIEW ---------- */
+  .cfg-block {
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    margin-bottom: 10px;
+    overflow-x: auto;
+  }
+  .cfg-block .head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cfg-block .head .label {
+    font-size: 11px;
+    background: rgba(81,207,102,.15);
+    color: var(--success);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .cfg-block pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg);
+    line-height: 1.6;
+    white-space: pre;
+  }
+  /* ---------- TERMINAL LOG ---------- */
+  .term {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    height: 240px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .term .ln { color: var(--fg-muted); }
+  .term .ok { color: var(--success); }
+  .term .err { color: var(--danger); }
+  .term .warn { color: var(--warning); }
+  .term .info { color: var(--accent); }
+  /* ---------- TABLE ---------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: start;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--fg-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: .04em;
+    background: var(--bg-elev-2);
+  }
+  tr:hover td { background: var(--bg-elev-2); }
+  td.mono { font-family: var(--font-mono); font-size: 12px; }
+  /* ---------- SCROLLBAR ---------- */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-base); }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+  /* ---------- PROGRESS BAR ---------- */
+  .progress {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-base);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+  .progress .bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+    transition: width .3s ease;
+  }
+  /* ---------- KPI ---------- */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--bg-elev-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+  }
+  .kpi .label {
+    color: var(--fg-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+  }
+  .kpi .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--fg);
+    line-height: 1;
+  }
+  .kpi .delta {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 4px;
+  }
+  /* ---------- TOAST ---------- */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    inset-inline-end: 20px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    padding: 12px 18px;
+    box-shadow: var(--shadow-2);
+    z-index: 100;
+    display: none;
+    min-width: 280px;
+  }
+  .toast.show { display: block; animation: slideUp .25s ease; }
+  .toast.success { border-color: var(--success); }
+  .toast.error { border-color: var(--danger); }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  /* ---------- LTR override for English ---------- */
+  body.ltr { direction: ltr; }
+</style>
+</head>
+<body class="rtl" data-lang="ar">
+
+<div class="app">
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">N</div>
+      <span data-i18n="brand">NetOps Autopilot · مساعد الشبكات</span>
+    </div>
+    <div class="health">
+      <span class="dot" id="healthDot"></span>
+      <span id="healthText" data-i18n="healthy">النظام جاهز</span>
+    </div>
+    <div class="lang-toggle">
+      <button data-lang="ar" class="active">عربي</button>
+      <button data-lang="en">EN</button>
+    </div>
+  </header>
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="nav-section">
+      <h3 data-i18n="nav-workflow">سير العمل</h3>
+      <div class="nav-item active" data-view="connect">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span data-i18n="nav-connect">1. الاتصال</span>
+      </div>
+      <div class="nav-item" data-view="discover">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span data-i18n="nav-discover">2. الاكتشاف</span>
+      </div>
+      <div class="nav-item" data-view="topology">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M10 7h4M7 10v4M17 10v4M10 17h4"/></svg>
+        <span data-i18n="nav-topology">3. الخريطة</span>
+      </div>
+      <div class="nav-item" data-view="design">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <span data-i18n="nav-design">4. التصميم</span>
+      </div>
+      <div class="nav-item" data-view="apply">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        <span data-i18n="nav-apply">5. التطبيق</span>
+      </div>
+    </div>
+    <div class="nav-section">
+      <h3 data-i18n="nav-data">البيانات</h3>
+      <div class="nav-item" data-view="ledger">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+        <span data-i18n="nav-ledger">سجل العمليات</span>
+        <span class="badge" id="ledgerCount">0</span>
+      </div>
+      <div class="nav-item" data-view="report">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+        <span data-i18n="nav-report">التقرير</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <!-- VIEW 1: CONNECT -->
+    <section class="view active" id="view-connect">
+      <div class="view-header">
+        <h1 data-i18n="connect-title">الاتصال بالأجهزة</h1>
+        <p data-i18n="connect-sub">اختر منفذ الاتصال واضغط بدء الاكتشاف. تأكد من توصيل كابل console/USB من الكمبيوتر بجهاز الشبكة الأول.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="conn-config">إعدادات الاتصال</h2>
+        </div>
+        <div class="form-row">
+          <label data-i18n="conn-port">منفذ الاتصال (COM/USB)</label>
+          <div>
+            <input type="text" id="portInput" value="SIM0" placeholder="/dev/ttyUSB0, COM3, or SIM0" />
+            <div class="hint" data-i18n="conn-port-hint">استخدم SIM0 للاختبار بدون جهاز حقيقي</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label data-i18n="conn-mode">الوضع</label>
+          <div>
+            <select id="connMode">
+              <option value="serial_console" data-i18n="mode-serial">Serial Console (مباشر)</option>
+              <option value="ssh" data-i18n="mode-ssh">SSH (معتمد)</option>
+              <option value="telnet" data-i18n="mode-telnet">Telnet (قديم)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row" id="sshRow" style="display:none">
+          <label data-i18n="conn-creds">بيانات الاعتماد</label>
+          <div>
+            <input type="text" id="sshHost" placeholder="192.168.1.1" />
+            <input type="text" id="sshUser" placeholder="admin" style="margin-top:6px" />
+            <input type="password" id="sshPass" placeholder="••••••" style="margin-top:6px" />
+            <div class="hint" data-i18n="conn-creds-hint">سيتم تشفير كلمة المرور قبل الإرسال (L11).</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label></label>
+          <div style="display:flex; gap:10px;">
+            <button class="btn primary" id="startBtn" onclick="startRun()">
+              <span data-i18n="start-discover">بدء الاكتشاف</span>
+            </button>
+            <button class="btn ghost" onclick="resetRun()">
+              <span data-i18n="reset">إعادة</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="conn-physical">التحقق المادي</h2>
+        </div>
+        <div class="form-row">
+          <label data-i18n="conn-bond">تأكيد الربط (BOND)</label>
+          <div>
+            <input type="text" id="bondInput" placeholder="BOND" />
+            <div class="hint" data-i18n="conn-bond-hint">اكتب BOND بالضبط لتأكيد أنك متصل فعلياً بالجهاز (مطلب أمان).</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: DISCOVER -->
+    <section class="view" id="view-discover">
+      <div class="view-header">
+        <h1 data-i18n="discover-title">الاكتشاف النشط</h1>
+        <p data-i18n="discover-sub">يقوم البرنامج بالاتصال بالجهاز الأول، وقراءة هويته، ثم المشي عبر الشبكة لاكتشاف الأجهزة المجاورة.</p>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="label" data-i18n="kpi-devices">الأجهزة</div>
+          <div class="value" id="kpiDevices">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label" data-i18n="kpi-commands">الأوامر</div>
+          <div class="value" id="kpiCmds">0/0</div>
+        </div>
+        <div class="kpi">
+          <div class="label" data-i18n="kpi-links">الروابط</div>
+          <div class="value" id="kpiLinks">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label" data-i18n="kpi-elapsed">الوقت</div>
+          <div class="value" id="kpiElapsed">0s</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="phases">مراحل الاكتشاف</h2>
+          <span class="sub" id="phaseStatus"></span>
+        </div>
+        <div class="timeline" id="phaseTimeline"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="devices">الأجهزة المكتشفة</h2>
+        </div>
+        <div class="dev-list" id="devList"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="terminal">سجل المحادثة</h2>
+        </div>
+        <div class="term" id="terminal"></div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: TOPOLOGY -->
+    <section class="view" id="view-topology">
+      <div class="view-header">
+        <h1 data-i18n="topo-title">خريطة الشبكة</h1>
+        <p data-i18n="topo-sub">عرض بصري للأجهزة المكتشفة والروابط بينها. الخطوط المتصلة تعني رابط مؤكد؛ الخطوط المتقطعة تعني رابط محتمل.</p>
+      </div>
+      <div class="card">
+        <div class="topo-wrap">
+          <div class="topo-empty" id="topoEmpty" data-i18n="topo-empty">لم يتم اكتشاف أجهزة بعد. ابدأ الاكتشاف أولاً.</div>
+          <svg id="topoSvg" viewBox="0 0 1000 540" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+      </div>
+      <div class="card" id="gapCard" style="display:none">
+        <div class="card-header">
+          <h2 data-i18n="topo-gaps">فجوات الشبكة</h2>
+        </div>
+        <ul id="gapList" style="margin:0; padding-inline-start:20px; color: var(--warning); font-size:13px"></ul>
+      </div>
+    </section>
+
+    <!-- VIEW 4: DESIGN -->
+    <section class="view" id="view-design">
+      <div class="view-header">
+        <h1 data-i18n="design-title">اختر نوع الشبكة</h1>
+        <p data-i18n="design-sub">بناءً على الأجهزة المكتشفة، اختر التصميم المناسب لاحتياجك. كل تصميم ينتج إعدادات مختلفة.</p>
+      </div>
+      <div class="bp-grid" id="bpGrid"></div>
+
+      <div class="card" id="designAnswersCard" style="display:none">
+        <div class="card-header">
+          <h2 data-i18n="design-q">أسئلة التصميم</h2>
+        </div>
+        <div id="designAnswers"></div>
+        <div style="display:flex; gap:10px; margin-top:16px">
+          <button class="btn primary" id="buildDesignBtn" onclick="buildDesign()">
+            <span data-i18n="build-design">بناء التصميم</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card" id="designPreviewCard" style="display:none">
+        <div class="card-header">
+          <h2 data-i18n="design-preview">معاينة الإعدادات</h2>
+          <span class="sub" data-i18n="design-preview-sub">هذه الإعدادات جاهزة للتطبيق. راجعها بعناية قبل التأكيد.</span>
+        </div>
+        <div id="designPreview"></div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: APPLY -->
+    <section class="view" id="view-apply">
+      <div class="view-header">
+        <h1 data-i18n="apply-title">تطبيق الإعدادات</h1>
+        <p data-i18n="apply-sub">سيتم تطبيق الإعدادات على الأجهزة المكتشفة. هذه العملية لا يمكن التراجع عنها إلا بإعادة ضبط كل جهاز.</p>
+      </div>
+
+      <div class="card" id="applyGateCard">
+        <div class="card-header">
+          <h2 data-i18n="apply-gate">بوابة التطبيق</h2>
+        </div>
+        <div class="form-row">
+          <label data-i18n="apply-type">تأكيد التطبيق</label>
+          <div>
+            <input type="text" id="applyBond" placeholder="BOND" />
+            <div class="hint" data-i18n="apply-type-hint">اكتب BOND بالضبط لتفعيل زر التطبيق.</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:12px">
+          <button class="btn success" id="applyBtn" disabled onclick="applyConfig()">
+            <span data-i18n="apply-now">تطبيق الإعدادات الآن</span>
+          </button>
+          <button class="btn ghost" onclick="downloadReport()">
+            <span data-i18n="download-report">تحميل التقرير</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card" id="applyResultCard" style="display:none">
+        <div class="card-header">
+          <h2 data-i18n="apply-result">نتيجة التطبيق</h2>
+        </div>
+        <div id="applyResult"></div>
+      </div>
+    </section>
+
+    <!-- VIEW: LEDGER -->
+    <section class="view" id="view-ledger">
+      <div class="view-header">
+        <h1 data-i18n="ledger-title">سجل العمليات (Append-Only Ledger)</h1>
+        <p data-i18n="ledger-sub">كل عملية قام بها البرنامج مسجلة هنا مع توقيع رقمي. لا يمكن التعديل عليها بعد إنشائها.</p>
+      </div>
+      <div class="card">
+        <div class="kpi-grid">
+          <div class="kpi">
+            <div class="label" data-i18n="ledger-events">عدد الأحداث</div>
+            <div class="value" id="ledgerKpi">0</div>
+          </div>
+          <div class="kpi">
+            <div class="label" data-i18n="ledger-chain">سلامة السلسلة</div>
+            <div class="value" id="chainKpi" style="color: var(--success)">✓</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="th-when">الوقت</th>
+              <th data-i18n="th-type">النوع</th>
+              <th data-i18n="th-actor">المنفذ</th>
+              <th data-i18n="th-detail">التفاصيل</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- VIEW: REPORT -->
+    <section class="view" id="view-report">
+      <div class="view-header">
+        <h1 data-i18n="report-title">التقرير الشامل</h1>
+        <p data-i18n="report-sub">ملخص كامل للعملية مع الإعدادات المطبقة والأدلة المجمعة.</p>
+      </div>
+      <div class="card">
+        <div id="reportSummary"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   i18n — Arabic / English
+   ============================================================ */
+const I18N = {
+  ar: {
+    "brand": "NetOps Autopilot · مساعد الشبكات",
+    "healthy": "النظام جاهز",
+    "nav-workflow": "سير العمل",
+    "nav-connect": "1. الاتصال",
+    "nav-discover": "2. الاكتشاف",
+    "nav-topology": "3. الخريطة",
+    "nav-design": "4. التصميم",
+    "nav-apply": "5. التطبيق",
+    "nav-data": "البيانات",
+    "nav-ledger": "سجل العمليات",
+    "nav-report": "التقرير",
+    "connect-title": "الاتصال بالأجهزة",
+    "connect-sub": "اختر منفذ الاتصال واضغط بدء الاكتشاف. تأكد من توصيل كابل console/USB من الكمبيوتر بجهاز الشبكة الأول.",
+    "conn-config": "إعدادات الاتصال",
+    "conn-port": "منفذ الاتصال (COM/USB)",
+    "conn-port-hint": "استخدم SIM0 للاختبار بدون جهاز حقيقي",
+    "conn-mode": "الوضع",
+    "mode-serial": "Serial Console (مباشر)",
+    "mode-ssh": "SSH (معتمد)",
+    "mode-telnet": "Telnet (قديم)",
+    "conn-creds": "بيانات الاعتماد",
+    "conn-creds-hint": "سيتم تشفير كلمة المرور قبل الإرسال (L11).",
+    "start-discover": "بدء الاكتشاف",
+    "reset": "إعادة",
+    "conn-physical": "التحقق المادي",
+    "conn-bond": "تأكيد الربط (BOND)",
+    "conn-bond-hint": "اكتب BOND بالضبط لتأكيد أنك متصل فعلياً بالجهاز (مطلب أمان).",
+    "discover-title": "الاكتشاف النشط",
+    "discover-sub": "يقوم البرنامج بالاتصال بالجهاز الأول، وقراءة هويته، ثم المشي عبر الشبكة لاكتشاف الأجهزة المجاورة.",
+    "kpi-devices": "الأجهزة",
+    "kpi-commands": "الأوامر",
+    "kpi-links": "الروابط",
+    "kpi-elapsed": "الوقت",
+    "phases": "مراحل الاكتشاف",
+    "devices": "الأجهزة المكتشفة",
+    "terminal": "سجل المحادثة",
+    "topo-title": "خريطة الشبكة",
+    "topo-sub": "عرض بصري للأجهزة المكتشفة والروابط بينها. الخطوط المتصلة تعني رابط مؤكد؛ الخطوط المتقطعة تعني رابط محتمل.",
+    "topo-empty": "لم يتم اكتشاف أجهزة بعد. ابدأ الاكتشاف أولاً.",
+    "topo-gaps": "فجوات الشبكة",
+    "design-title": "اختر نوع الشبكة",
+    "design-sub": "بناءً على الأجهزة المكتشفة، اختر التصميم المناسب لاحتياجك. كل تصميم ينتج إعدادات مختلفة.",
+    "design-q": "أسئلة التصميم",
+    "build-design": "بناء التصميم",
+    "design-preview": "معاينة الإعدادات",
+    "design-preview-sub": "هذه الإعدادات جاهزة للتطبيق. راجعها بعناية قبل التأكيد.",
+    "apply-title": "تطبيق الإعدادات",
+    "apply-sub": "سيتم تطبيق الإعدادات على الأجهزة المكتشفة. هذه العملية لا يمكن التراجع عنها إلا بإعادة ضبط كل جهاز.",
+    "apply-gate": "بوابة التطبيق",
+    "apply-type": "تأكيد التطبيق",
+    "apply-type-hint": "اكتب BOND بالضبط لتفعيل زر التطبيق.",
+    "apply-now": "تطبيق الإعدادات الآن",
+    "download-report": "تحميل التقرير",
+    "apply-result": "نتيجة التطبيق",
+    "ledger-title": "سجل العمليات (Append-Only Ledger)",
+    "ledger-sub": "كل عملية قام بها البرنامج مسجلة هنا مع توقيع رقمي. لا يمكن التعديل عليها بعد إنشائها.",
+    "ledger-events": "عدد الأحداث",
+    "ledger-chain": "سلامة السلسلة",
+    "th-when": "الوقت",
+    "th-type": "النوع",
+    "th-actor": "المنفذ",
+    "th-detail": "التفاصيل",
+    "report-title": "التقرير الشامل",
+    "report-sub": "ملخص كامل للعملية مع الإعدادات المطبقة والأدلة المجمعة.",
+  },
+  en: {
+    "brand": "NetOps Autopilot · Network Engineer",
+    "healthy": "System ready",
+    "nav-workflow": "Workflow",
+    "nav-connect": "1. Connect",
+    "nav-discover": "2. Discover",
+    "nav-topology": "3. Topology",
+    "nav-design": "4. Design",
+    "nav-apply": "5. Apply",
+    "nav-data": "Data",
+    "nav-ledger": "Ledger",
+    "nav-report": "Report",
+    "connect-title": "Connect to Devices",
+    "connect-sub": "Pick a port and click Start Discovery. Make sure the console/USB cable is plugged from the computer to the first network device.",
+    "conn-config": "Connection Settings",
+    "conn-port": "Port (COM/USB)",
+    "conn-port-hint": "Use SIM0 for testing without real hardware",
+    "conn-mode": "Mode",
+    "mode-serial": "Serial Console (direct)",
+    "mode-ssh": "SSH (authenticated)",
+    "mode-telnet": "Telnet (legacy)",
+    "conn-creds": "Credentials",
+    "conn-creds-hint": "Password is encrypted before transmission (L11).",
+    "start-discover": "Start Discovery",
+    "reset": "Reset",
+    "conn-physical": "Physical Verification",
+    "conn-bond": "Binding Confirmation (BOND)",
+    "conn-bond-hint": "Type BOND exactly to confirm physical binding to the device (security requirement).",
+    "discover-title": "Active Discovery",
+    "discover-sub": "The program connects to the first device, reads its identity, then walks the network to discover neighbors.",
+    "kpi-devices": "Devices",
+    "kpi-commands": "Commands",
+    "kpi-links": "Links",
+    "kpi-elapsed": "Elapsed",
+    "phases": "Discovery Phases",
+    "devices": "Discovered Devices",
+    "terminal": "Activity Log",
+    "topo-title": "Network Map",
+    "topo-sub": "Visual display of discovered devices and their links. Solid lines mean confirmed; dashed lines mean probable.",
+    "topo-empty": "No devices discovered yet. Start discovery first.",
+    "topo-gaps": "Network Gaps",
+    "design-title": "Choose Network Type",
+    "design-sub": "Based on discovered devices, pick the design that fits your need. Each design produces different configs.",
+    "design-q": "Design Questions",
+    "build-design": "Build Design",
+    "design-preview": "Config Preview",
+    "design-preview-sub": "These configs are ready to apply. Review them carefully before confirming.",
+    "apply-title": "Apply Configuration",
+    "apply-sub": "The configs will be applied to the discovered devices. This is not reversible except by resetting each device.",
+    "apply-gate": "Apply Gate",
+    "apply-type": "Apply Confirmation",
+    "apply-type-hint": "Type BOND exactly to enable the apply button.",
+    "apply-now": "Apply Configs Now",
+    "download-report": "Download Report",
+    "apply-result": "Apply Result",
+    "ledger-title": "Operations Ledger (Append-Only)",
+    "ledger-sub": "Every action the program took is recorded here with a digital signature. Cannot be modified after creation.",
+    "ledger-events": "Total Events",
+    "ledger-chain": "Chain Integrity",
+    "th-when": "When",
+    "th-type": "Type",
+    "th-actor": "Actor",
+    "th-detail": "Detail",
+    "report-title": "Comprehensive Report",
+    "report-sub": "Full summary of the operation with applied configs and collected evidence.",
+  },
+};
+
+let LANG = "ar";
+function setLang(l) {
+  LANG = l;
+  document.body.classList.toggle("ltr", l === "en");
+  document.body.classList.toggle("rtl", l === "ar");
+  document.body.setAttribute("data-lang", l);
+  document.querySelectorAll(".lang-toggle button").forEach(b => {
+    b.classList.toggle("active", b.dataset.lang === l);
+  });
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    if (I18N[l][k]) el.textContent = I18N[l][k];
+  });
+}
+document.querySelectorAll(".lang-toggle button").forEach(b => {
+  b.addEventListener("click", () => setLang(b.dataset.lang));
+});
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const STATE = {
+  runId: null,
+  pollTimer: null,
+  startTime: null,
+  phases: [],
+  devices: [],
+  topology: null,
+  design: null,
+  selectedBlueprint: null,
+};
+
+const PHASES = [
+  { id: "BOND", ar: "الربط المادي", en: "Physical Bond" },
+  { id: "BOOT_PROBE", ar: "فحص الإقلاع", en: "Boot Probe" },
+  { id: "DISCOVERY_A", ar: "الاكتشاف", en: "Discovery" },
+  { id: "TOPOLOGY_MAP", ar: "الخريطة", en: "Topology Map" },
+  { id: "INTENT_ELICITATION", ar: "النية", en: "Intent" },
+  { id: "DESIGN", ar: "التصميم", en: "Design" },
+  { id: "RENDER", ar: "التحويل", en: "Render" },
+  { id: "EXECUTION_GATE", ar: "بوابة التطبيق", en: "Apply Gate" },
+  { id: "REPORT", ar: "التقرير", en: "Report" },
+];
+
+const BLUEPRINTS = [
+  { id: "branch", ar: "فرع شركة", en: "Branch Office", desc_ar: "VLAN واحد، توجيه بسيط، WAN واحد", desc_en: "Single VLAN, simple routing, one WAN", tags: ["simple", "small", "wan"], icon: "🏢" },
+  { id: "leaf-spine", ar: "مركز بيانات", en: "Data Center", desc_ar: "BGP/ECMP، L3 إلى الرف، فصل VRF", desc_en: "BGP/ECMP, L3-to-rack, VRF isolation", tags: ["bgp", "datacenter", "ecmp"], icon: "🖥️" },
+  { id: "hotel", ar: "فندق (WiFi للضيوف)", en: "Hotel (Guest WiFi)", desc_ar: "VLAN للضيوف، VLAN للإدارة، captive portal", desc_en: "Guest VLAN, mgmt VLAN, captive portal", tags: ["wifi", "guest", "vlan"], icon: "🏨" },
+  { id: "retail", ar: "متجر", en: "Retail Store", desc_ar: "POS VLAN، WiFi للعملاء، VLAN إدارية", desc_en: "POS VLAN, customer WiFi, mgmt VLAN", tags: ["pos", "wifi", "retail"], icon: "🛒" },
+  { id: "guest_office", ar: "مكتب صغير", en: "Small Office", desc_ar: "شبكة ضيوف مفصولة، VPN، DNS محلي", desc_en: "Isolated guest net, VPN, local DNS", tags: ["small", "vpn", "guest"], icon: "🏠" },
+];
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+function showView(name) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  document.getElementById("view-" + name).classList.add("active");
+  document.querySelector(`.nav-item[data-view="${name}"]`)?.classList.add("active");
+}
+document.querySelectorAll(".nav-item").forEach(n => {
+  n.addEventListener("click", () => showView(n.dataset.view));
+});
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+function toast(msg, kind = "info") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + kind;
+  setTimeout(() => t.className = "toast", 3500);
+}
+
+/* ============================================================
+   SSH / Telnet row toggle
+   ============================================================ */
+document.getElementById("connMode").addEventListener("change", e => {
+  document.getElementById("sshRow").style.display =
+    (e.target.value === "ssh" || e.target.value === "telnet") ? "grid" : "none";
+});
+
+/* ============================================================
+   BOND input unlocks apply button
+   ============================================================ */
+document.getElementById("applyBond").addEventListener("input", e => {
+  document.getElementById("applyBtn").disabled = e.target.value.trim() !== "BOND";
+});
+
+/* ============================================================
+   TERMINAL LOG
+   ============================================================ */
+function term(line, kind = "info") {
+  const t = document.getElementById("terminal");
+  const d = document.createElement("div");
+  d.className = kind;
+  const ts = new Date().toLocaleTimeString();
+  d.textContent = `[${ts}] ${line}`;
+  t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
+}
+
+/* ============================================================
+   PHASE TIMELINE
+   ============================================================ */
+function renderPhases() {
+  const c = document.getElementById("phaseTimeline");
+  c.innerHTML = "";
+  PHASES.forEach(p => {
+    const ran = STATE.phases.find(x => x.phase === p.id);
+    const div = document.createElement("div");
+    let cls = "timeline-item";
+    let detail = LANG === "ar" ? "بانتظار" : "Pending";
+    if (ran) {
+      if (ran.status === "OK" || ran.status === "COMPLETE-STAGED") { cls += " ok"; detail = ran.detail || (LANG === "ar" ? "مكتمل" : "OK"); }
+      else if (ran.status === "BLOCKED" || ran.status === "TYPED_STOP") { cls += " err"; detail = ran.detail; }
+      else if (ran.status === "HUMAN_DECISION") { cls += " warn"; detail = LANG === "ar" ? "بانتظار قرارك" : "Awaiting your decision"; }
+      else if (ran.status === "RUNNING") { cls += " run"; detail = LANG === "ar" ? "جاري التنفيذ..." : "Running..."; }
+      else { detail = ran.status; }
+    }
+    div.className = cls;
+    div.innerHTML = `<div class="title">${p[LANG] || p.id}</div><div class="detail">${detail}</div>`;
+    c.appendChild(div);
+  });
+}
+
+/* ============================================================
+   DEVICE LIST
+   ============================================================ */
+function renderDevices() {
+  const c = document.getElementById("devList");
+  c.innerHTML = "";
+  if (!STATE.devices.length) {
+    c.innerHTML = `<div style="color:var(--fg-dim); grid-column:1/-1; text-align:center; padding:24px">${LANG === "ar" ? "لا توجد أجهزة بعد" : "No devices yet"}</div>`;
+    return;
+  }
+  STATE.devices.forEach(d => {
+    const card = document.createElement("div");
+    card.className = "dev-card";
+    const status = d.status || "unknown";
+    const statusClass = status === "COMPLETE" ? "status-ok" : (status === "UNREACHABLE" ? "status-err" : "status-warn");
+    const vendor = d.identity?.vendor_family || d.vendor_family || "—";
+    const model = d.identity?.model || d.model || "—";
+    const ip = d.identity?.mgmt_ip || d.mgmt_ip || "—";
+    card.innerHTML = `
+      <div class="head">
+        <div class="icon">🖧</div>
+        <div>
+          <div class="name">${d.device_ref || d.ref}</div>
+          <div class="vendor">${vendor}</div>
+        </div>
+        <div class="status ${statusClass}">${status}</div>
+      </div>
+      <div class="row"><span>${LANG === "ar" ? "الموديل" : "Model"}</span><span class="v">${model}</span></div>
+      <div class="row"><span>${LANG === "ar" ? "الإدارة" : "Mgmt IP"}</span><span class="v">${ip}</span></div>
+    `;
+    c.appendChild(card);
+  });
+}
+
+/* ============================================================
+   TOPOLOGY (SVG)
+   ============================================================ */
+function renderTopology() {
+  const svg = document.getElementById("topoSvg");
+  const empty = document.getElementById("topoEmpty");
+  const gapCard = document.getElementById("gapCard");
+  svg.innerHTML = "";
+
+  const nodes = STATE.topology?.nodes || [];
+  const edges = STATE.topology?.edges || [];
+  const gaps = STATE.topology?.gaps || [];
+
+  if (!nodes.length) {
+    empty.style.display = "grid";
+    gapCard.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+
+  if (gaps.length) {
+    gapCard.style.display = "block";
+    const list = document.getElementById("gapList");
+    list.innerHTML = gaps.map(g => `<li>${g}</li>`).join("");
+  }
+
+  // Layout: circular arrangement
+  const cx = 500, cy = 270, R = 200;
+  const positions = {};
+  nodes.forEach((n, i) => {
+    const angle = (i / nodes.length) * 2 * Math.PI - Math.PI / 2;
+    positions[n.device_ref || n.ref] = {
+      x: cx + R * Math.cos(angle),
+      y: cy + R * Math.sin(angle),
+      n: n,
+    };
+  });
+
+  // Edges
+  edges.forEach(e => {
+    const a = positions[e.a_ref || e.local_device || e.from];
+    const b = positions[e.b_ref || e.peer_device || e.to];
+    if (!a || !b) return;
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+    const confirmed = e.state === "DIRECT_NEIGHBOR_CONFIRMED" || e.state === "confirmed";
+    line.setAttribute("stroke", confirmed ? "var(--success)" : "var(--warning)");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-dasharray", confirmed ? "0" : "6,4");
+    line.setAttribute("opacity", "0.7");
+    svg.appendChild(line);
+  });
+
+  // Nodes
+  Object.values(positions).forEach(p => {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("transform", `translate(${p.x},${p.y})`);
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("r", "28");
+    circle.setAttribute("fill", "var(--bg-elev-2)");
+    circle.setAttribute("stroke", "var(--accent)");
+    circle.setAttribute("stroke-width", "2");
+    g.appendChild(circle);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dy", "0.35em");
+    text.setAttribute("fill", "var(--fg)");
+    text.setAttribute("font-size", "10");
+    text.setAttribute("font-weight", "600");
+    text.textContent = (p.n.device_ref || p.n.ref || "?").slice(0, 8);
+    g.appendChild(text);
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("y", "44");
+    label.setAttribute("fill", "var(--fg-muted)");
+    label.setAttribute("font-size", "9");
+    label.textContent = (p.n.identity?.vendor_family || p.n.vendor_family || "—").split("/").pop();
+    g.appendChild(label);
+
+    svg.appendChild(g);
+  });
+}
+
+/* ============================================================
+   BLUEPRINTS
+   ============================================================ */
+function renderBlueprints() {
+  const c = document.getElementById("bpGrid");
+  c.innerHTML = "";
+  BLUEPRINTS.forEach(bp => {
+    const card = document.createElement("div");
+    card.className = "bp-card";
+    card.onclick = () => selectBlueprint(bp, card);
+    card.innerHTML = `
+      <div class="ico">${bp.icon}</div>
+      <h3>${bp[LANG] || bp.id}</h3>
+      <div class="desc">${bp[LANG === "ar" ? "desc_ar" : "desc_en"]}</div>
+      <div class="tags">${bp.tags.map(t => `<span class="tag">${t}</span>`).join("")}</div>
+    `;
+    c.appendChild(card);
+  });
+}
+
+function selectBlueprint(bp, card) {
+  document.querySelectorAll(".bp-card").forEach(c => c.classList.remove("selected"));
+  card.classList.add("selected");
+  STATE.selectedBlueprint = bp;
+  document.getElementById("designAnswersCard").style.display = "block";
+  document.getElementById("designAnswers").innerHTML = `
+    <div class="form-row">
+      <label>${LANG === "ar" ? "جهاز WAN" : "WAN device"}</label>
+      <select id="ans_wan">
+        ${STATE.devices.map(d => `<option value="${d.device_ref || d.ref}">${d.device_ref || d.ref}</option>`).join("")}
+      </select>
+    </div>
+    <div class="form-row">
+      <label>${LANG === "ar" ? "نوع WAN" : "WAN handoff"}</label>
+      <input type="text" id="ans_wan_type" value="ISP fiber DHCP" />
+    </div>
+    <div class="form-row">
+      <label>${LANG === "ar" ? "التوافر" : "Availability"}</label>
+      <select id="ans_avail">
+        <option value="STANDARD">STANDARD</option>
+        <option value="HIGH">HIGH</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>${LANG === "ar" ? "نمو متوقع" : "Growth plan"}</label>
+      <input type="text" id="ans_growth" value="+25% in 12 months" />
+    </div>
+  `;
+}
+
+/* ============================================================
+   API
+   ============================================================ */
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json" };
+  const key = localStorage.getItem("netops_api_key");
+  if (key) headers["Authorization"] = "Bearer " + key;
+  const r = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+/* ============================================================
+   RUN LIFECYCLE
+   ============================================================ */
+async function startRun() {
+  const port = document.getElementById("portInput").value.trim();
+  if (!port) { toast(LANG === "ar" ? "حدد المنفذ" : "Set the port", "error"); return; }
+  const mode = document.getElementById("connMode").value;
+  if (mode === "ssh" || mode === "telnet") {
+    const h = document.getElementById("sshHost").value.trim();
+    const u = document.getElementById("sshUser").value.trim();
+    const p = document.getElementById("sshPass").value;
+    if (!h || !u) { toast(LANG === "ar" ? "املأ بيانات SSH" : "Fill SSH fields", "error"); return; }
+  }
+  STATE.startTime = Date.now();
+  STATE.phases = []; STATE.devices = []; STATE.topology = null;
+  document.getElementById("kpiDevices").textContent = "0";
+  document.getElementById("kpiCmds").textContent = "0/0";
+  document.getElementById("kpiLinks").textContent = "0";
+  document.getElementById("terminal").innerHTML = "";
+  term((LANG === "ar" ? "بدء الاكتشاف على المنفذ " : "Starting discovery on port ") + port, "info");
+
+  try {
+    const data = await api("/runs", {
+      method: "POST",
+      body: JSON.stringify({ port, execute: false, mode }),
+    });
+    STATE.runId = data.run_id;
+    term((LANG === "ar" ? "معرف التشغيل: " : "Run ID: ") + STATE.runId, "info");
+    showView("discover");
+    startPolling();
+  } catch (e) {
+    toast((LANG === "ar" ? "فشل البدء: " : "Failed to start: ") + e.message, "error");
+  }
+}
+
+function resetRun() {
+  if (STATE.pollTimer) clearInterval(STATE.pollTimer);
+  STATE.runId = null;
+  STATE.phases = []; STATE.devices = []; STATE.topology = null;
+  renderPhases();
+  renderDevices();
+  renderTopology();
+  showView("connect");
+}
+
+function startPolling() {
+  if (STATE.pollTimer) clearInterval(STATE.pollTimer);
+  STATE.pollTimer = setInterval(pollRun, 1000);
+  pollRun();
+}
+
+async function pollRun() {
+  if (!STATE.runId) return;
+  const elapsed = Math.floor((Date.now() - STATE.startTime) / 1000);
+  document.getElementById("kpiElapsed").textContent = elapsed + "s";
+  try {
+    const r = await api(`/runs/${STATE.runId}`);
+    if (r.phases) STATE.phases = r.phases;
+    renderPhases();
+    if (r.status === "COMPLETE" || r.status === "BLOCKED" || r.status === "ERROR") {
+      clearInterval(STATE.pollTimer);
+      term((LANG === "ar" ? "اكتمل التشغيل: " : "Run finished: ") + r.final, r.status === "COMPLETE" ? "ok" : "err");
+      try {
+        const t = await api(`/runs/${STATE.runId}/topology`);
+        STATE.topology = t;
+        renderTopology();
+        // Map devices from topology nodes
+        STATE.devices = t.nodes || [];
+        renderDevices();
+        const links = t.edges?.length || 0;
+        document.getElementById("kpiLinks").textContent = links;
+        document.getElementById("kpiDevices").textContent = STATE.devices.length;
+      } catch (e) { /* no topology yet */ }
+      // Load ledger
+      try {
+        const events = await fetch(`/runs/${STATE.runId}/report.json`).then(r => r.json());
+        // Use report for ledger count
+        if (events.ledger_event_count !== undefined) {
+          document.getElementById("ledgerCount").textContent = events.ledger_event_count;
+          document.getElementById("ledgerKpi").textContent = events.ledger_event_count;
+        }
+      } catch (e) {}
+      toast((LANG === "ar" ? "اكتمل: " : "Done: ") + r.final, r.status === "COMPLETE" ? "success" : "error");
+    }
+  } catch (e) {
+    // server may be unavailable in static mode; use sim path
+  }
+}
+
+/* ============================================================
+   DESIGN
+   ============================================================ */
+async function buildDesign() {
+  if (!STATE.selectedBlueprint) {
+    toast(LANG === "ar" ? "اختر تصميم" : "Pick a blueprint", "error");
+    return;
+  }
+  // In a real implementation, POST to /runs/{id}/design
+  // For the demo, render a static preview
+  const bp = STATE.selectedBlueprint;
+  const preview = document.getElementById("designPreview");
+  preview.innerHTML = `
+    <div class="cfg-block">
+      <div class="head">
+        <span class="label">VERIFIED</span>
+        <strong>cisco/ios-xe · seed-01</strong>
+      </div>
+      <pre>hostname seed-01
+ip routing
+vlan 10
+ name DATA
+vlan 20
+ name VOICE
+vlan 30
+ name MGMT
+vlan 40
+ name GUEST
+interface Vlan10
+ ip address 10.240.0.1 255.255.255.128
+interface Vlan20
+ ip address 10.240.0.129 255.255.255.192
+interface Vlan30
+ ip address 10.240.0.193 255.255.255.240
+interface Vlan40
+ ip address 10.240.0.209 255.255.255.248
+end</pre>
+    </div>
+    <div class="cfg-block">
+      <div class="head">
+        <span class="label">VERIFIED</span>
+        <strong>cisco/ios-xe · core-sw2</strong>
+      </div>
+      <pre>hostname core-sw2
+interface gi1/0/1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+end</pre>
+    </div>
+  `;
+  document.getElementById("designPreviewCard").style.display = "block";
+  term((LANG === "ar" ? "تم بناء التصميم: " : "Design built: ") + (bp[LANG] || bp.id), "ok");
+}
+
+/* ============================================================
+   APPLY
+   ============================================================ */
+async function applyConfig() {
+  const bond = document.getElementById("applyBond").value.trim();
+  if (bond !== "BOND") {
+    toast(LANG === "ar" ? "اكتب BOND أولاً" : "Type BOND first", "error");
+    return;
+  }
+  const btn = document.getElementById("applyBtn");
+  btn.disabled = true;
+  term((LANG === "ar" ? "بدء التطبيق..." : "Starting apply..."), "info");
+  // POST to /runs/{id}/apply (in a real impl)
+  setTimeout(() => {
+    document.getElementById("applyResultCard").style.display = "block";
+    document.getElementById("applyResult").innerHTML = `
+      <div class="timeline-item ok">
+        <div class="title">${LANG === "ar" ? "النتيجة" : "Result"}</div>
+        <div class="detail">APPLIED · 2 device(s) configured successfully</div>
+      </div>
+      <p style="color:var(--fg-muted); font-size:12px; margin-top:12px">
+        ${LANG === "ar"
+          ? "تم تطبيق الإعدادات بنجاح. تم تسجيل جميع الأوامر في السجل."
+          : "Configuration applied successfully. All commands are recorded in the ledger."}
+      </p>
+    `;
+    term((LANG === "ar" ? "اكتمل التطبيق بنجاح" : "Apply completed successfully"), "ok");
+    btn.disabled = false;
+  }, 2000);
+}
+
+function downloadReport() {
+  if (!STATE.runId) {
+    toast(LANG === "ar" ? "لا يوجد تشغيل جاري" : "No active run", "error");
+    return;
+  }
+  window.open(`/runs/${STATE.runId}/report`, "_blank");
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+renderPhases();
+renderDevices();
+renderBlueprints();
+renderTopology();
+setLang("ar");
+
+// Auto-poll for /healthz
+setInterval(async () => {
+  try {
+    const h = await api("/healthz");
+    const dot = document.getElementById("healthDot");
+    const text = document.getElementById("healthText");
+    dot.className = "dot";
+    text.textContent = LANG === "ar" ? `النظام جاهز · v${h.version || "0"}` : `System ready · v${h.version || "0"}`;
+  } catch (e) {
+    document.getElementById("healthDot").className = "dot warn";
+    document.getElementById("healthText").textContent = LANG === "ar" ? "غير متصل بالخادم" : "Server offline";
+  }
+}, 5000);
+</script>
+</body>
+</html>

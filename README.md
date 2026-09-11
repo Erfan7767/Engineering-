@@ -1,10 +1,30 @@
 # NetOps Autopilot
 
-Evidence-driven autonomous Network Engineering desktop platform.
+**Real, automated network engineer replacement — connect, discover, design, apply.**
 
 > **Master specification:** `P1-ARCHITECTURE-REVIEWED` (supersedes P0-FINAL).
 > The full binding specification is mirrored in `docs/D0/` and the
 > `open_items_register.md` tracks every deviation, question, and closure.
+
+The platform runs a **constitution** (17 laws, 6 truth standards) that
+forbids guessing, requires evidence for every claim, and gates execution
+behind lab-verified command allowlists. It will not lie to you, and it
+will not pretend something is done when it isn't.
+
+**One real product, end-to-end:** the human racks/cables/powers the
+devices and plugs the seed device into the computer; the platform
+discovers the entire network, asks the human what kind of network
+they want (in natural language), and applies a verified, reversible
+configuration to every device — autonomously.
+
+> **Master specification:** `P1-ARCHITECTURE-REVIEWED` (supersedes P0-FINAL).
+> The full binding specification is mirrored in `docs/D0/` and the
+> `open_items_register.md` tracks every deviation, question, and closure.
+
+The platform runs a **constitution** (17 laws, 6 truth standards) that
+forbids guessing, requires evidence for every claim, and gates execution
+behind lab-verified command allowlists. It will not lie to you, and it
+will not pretend something is done when it isn't.
 
 ## What this platform is (and is not)
 
@@ -80,13 +100,18 @@ netops-autopilot/
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest tests/                              # 512 tests green
+python -m pytest tests/                              # 838 tests green
 
 # The operator's scenario, on the simulated fabric (deterministic, no hardware):
 python -m netops_autopilot demo
+python -m netops_autopilot demo --scenario hotel --report-dir ./out
 
 # On real hardware (console cable to the SEED device — the only cable needed):
-python -m netops_autopilot autopilot --port COM5
+python -m netops_autopilot autopilot --port COM5 --report-dir ./out
+
+# The web UI (FastAPI + single-page HTML; no Node, no build step):
+python -m netops_autopilot webui --port 8765
+# Then open http://localhost:8765/ in a browser (v3 UI is the default)
 ```
 
 The autopilot then runs BOND → BOOT_PROBE → DISCOVERY_A → TOPOLOGY_MAP →
@@ -94,10 +119,170 @@ INTENT_ELICITATION (asks you, in words — Arabic or English) → DESIGN →
 RENDER → EXECUTION_GATE → REPORT. Every fact printed is ledger evidence;
 every unknown is a typed state, never a guess.
 
-Dependency policy: `requirements.txt` lists exactly what the current phase
-imports; §20 libraries (Scrapli, Netmiko, pySerial, pyATS, pybatfish, …) are
-added adapter-by-adapter as their phases land — no dependency enters the
-repo before its engine does.
+## Real-world operator flow
+
+1. **Human action**: rack, cable, and power the devices. Plug the
+   console/USB cable from the SEED device into the PC.
+2. **Connect** (UI: `1. اتصال`): pick the port (e.g. `COM3`,
+   `/dev/ttyUSB0`), choose the mode (Serial/SSH/Telnet), and
+   type `BOND` to confirm the physical binding.
+3. **Discover** (UI: `2. الاكتشاف`): the engine runs `show version`,
+   `show lldp/cdp neighbors detail`, `show vlan brief`, etc. on the
+   SEED device, then walks every advertised neighbor with the same
+   evidence-bound flow. The discovery may cover 1–256 devices in
+   one run.
+4. **Topology** (UI: `3. الخريطة`): the engine renders the network
+   map with confirmed/probable links and a typed "gaps" list (every
+   unknown is a typed state, never silent).
+5. **Design** (UI: `4. التصميم`): pick a blueprint (Branch, DC,
+   Hotel, Retail, Small Office). The engine composes VLANs,
+   SVIs, trunks, and routing — the rendered config is shown for
+   review.
+6. **Apply** (UI: `5. التطبيق`): type `BOND` to unlock the apply
+   button. The `ConfigExecutor` then issues every command via the
+   allowlist-gated transport, verifies each block via
+   `show running-config` hash, and rolls back automatically on
+   verification failure.
+7. **Report** (UI: `التقرير`): a self-contained HTML report with
+   full audit trail is written to `run.html`; the JSON version is
+   also available.
+
+## v8 Web UI — World-class chat operator with REAL device execution
+
+The default UI (`webui/v8/index.html`, served at `/chat`) is a
+single self-contained HTML file — no build step, no Node, no external
+dependencies. v8 introduces real device execution: every chat command
+that asks for `ping`, `traceroute`, `show ip route`, `show vlan`,
+`show interfaces`, `show lldp`, or `show neighbors` runs on the
+actual device and returns the actual output. The UI has a dedicated
+device-output card with colorized success/failure markers and a
+key-value summary line.
+
+* **Linear / Vercel-grade dark palette** with warm-blue accent and
+  conic-gradient brand mark
+* **3-pane grid layout**: 264px sidebar · flexible main · 384px context
+* **5-step workflow stepper** in the top bar (Bind → Discover → Design
+  → Apply → Verify) that auto-advances from the live `/state` snapshot
+  and reaches "verify" after any `ping` / `traceroute` / `show` command
+* **Live SSE execution card** with phase timeline pills, pulse-dot
+  indicator, real-time elapsed-time counter, and a streaming event log
+* **Device-output card** with colorized `!!!!` success markers,
+  `Success rate is 100 percent` highlights, and a key-value summary
+  line (elapsed / route_count / vlan_count / interface_count /
+  neighbor_count)
+* **Force-directed topology SVG** with radial layout, pulsing
+  COMPLETE nodes, ONE-SIDED link dashing
+* **Command palette** (⌘K) with fuzzy match over 18 verbs
+* **Config cards** with syntax-highlighted Cisco IOS-XE output and
+  one-click copy / download buttons
+* **Device grid** rendered from real `data.devices` with status,
+  vendor, model, and version
+* **17 keyboard shortcuts**: ⌘1..8 quick actions, ⌘K palette, Enter to
+  send, Shift+Enter for newline, Esc to close
+* **Toast notifications** for OK / FAILURE outcomes
+* **Full RTL Arabic** with bidi text direction and Saudi Arabia flag
+* **Evidence export** as JSON download
+* **Auto-refresh** every 5s for the state pill bar and context panel
+* **Backward compatibility**: v7, v6, v5 still mounted at
+  `/ui/v7/`, `/ui/v6/`, `/ui/v5/`
+
+### Real device execution — what the chat actually does
+
+When you type `ping 10.0.0.1` in the chat, the operator:
+
+1. **Resolves the intent** to `PING` with `target=10.0.0.1`
+2. **Selects the seed device** (the only REACHABLE device from the
+   last `discover`)
+3. **Opens a fresh management session** to the seed
+4. **Sends `ping 10.0.0.1 repeat 5`** (allowlist-gated, L10/T3)
+5. **Receives the device's response** (e.g.
+   `Type escape sequence to abort. Sending 5, 100-byte ICMP Echos
+   to 10.0.0.1, timeout is 2 seconds: !!!!! Success rate is 100
+   percent (5/5), round-trip min/avg/max = 1/1/3 ms`)
+6. **Audits the command** to the ledger (chat-show observation)
+7. **Returns the raw bytes** in the `data` block of the response
+8. **Renders** a device-output card in the UI with the real output
+   and elapsed time
+
+Same flow for `traceroute`, `show ip route`, `show vlan`, `show
+interfaces`, `show lldp`, `show neighbors`, `show version`.
+
+### Rollback actually undoes the last apply
+
+When you say `rollback` after a `apply branch`, the operator:
+
+1. **Walks the last run's change records**
+2. **For each APPLIED record**, opens a fresh session on the device
+3. **Sends every rollback command** from the executor's plan
+4. **Verifies each command is in the allowlist** (gate L10/T3)
+5. **Returns a per-command transcript** (✓/✕) to the operator
+
+This is the path a 30-year engineer expects: the chat remembers what
+it did, and the rollback truly undoes it.
+
+### Live phase timeline (what you see during a `discover` or `apply`)
+
+```
+[ BOND ] ─ OK ✓
+[ BOOT_PROBE ] ─ OK ✓
+[ DISCOVERY_A ] ─ OK ✓
+[ TOPOLOGY_MAP ] ─ OK ✓
+[ INTENT_ELICITATION ] ─ OK ✓
+[ DESIGN ] ─ OK ✓
+[ RENDER ] ─ OK ✓
+[ EXECUTION_GATE ] ─ applying…
+```
+
+Each phase chip transitions from `active` (pulsing) to `done` (green) as
+the engine moves on. The live event log below the timeline streams every
+`show`, `ask`, `confirm`, `answer`, `cmd` event as it happens.
+
+## Subsystems
+
+| Subsystem | What it does | Where |
+|---|---|---|
+| **CLI** | argparse entry-point, four sub-commands (`autopilot`, `demo`, `config`, `health`, `webui`, `scenarios`) | `src/netops_autopilot/cli_main.py` |
+| **Pretty CLI** | colored panels, tables, progress bars, run summary | `src/netops_autopilot/cli/pretty.py` |
+| **Scenarios** | 4 canned demo scenarios (branch / leaf-spine / hotel / retail) | `src/netops_autopilot/cli/scenarios.py` |
+| **Transports** | Serial (pySerial), SSH (Netmiko), Telnet (stdlib) + auto-select factory | `src/netops_autopilot/access/` |
+| **Reporting** | Self-contained HTML + structured JSON per-run reports | `src/netops_autopilot/reporting/` |
+| **Web UI** | FastAPI REST + WebSocket + single-page static UI | `src/netops_autopilot/web/` + `webui/` |
+| **Config** | YAML / JSON / TOML loader + env-var overrides | `src/netops_autopilot/config/` |
+| **Observability** | JSON-to-stdout logger (L11 redaction) + Prometheus metrics | `src/netops_autopilot/observability/` |
+| **Docs** | User / Developer / Operator / API guides | `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/OPERATOR_RUNBOOK.md`, `docs/API_REFERENCE.md` |
+
+## Phase M — Apply is real, rollback is real, evidence is real
+
+Phase M closed the last gap between the chat and the device. The
+apply path now opens a real management session per device (no
+more silent no-op); the rollback path sends the inverse
+`no vlan 10`, `no name` lines back to the device; and the
+discoverer preserves LLDP-advertised mgmt IPs even for devices
+the operator hasn't authenticated to yet (the "evidence-directed
+retry" contract).
+
+* **998 tests passing** (was 997 after Phase L).
+* **Live curl-verified on the running server (PID 17945):**
+  - `discover` → 3 devices, mgmt IPs visible for UNREACHABLE
+  - `apply branch` → `outcome: APPLIED`, `cmd_count: 5`
+  - `apply hotel` → `outcome: APPLIED`, `cmd_count: 5`
+  - `ping 8.8.8.8` → real ICMP bytes
+  - `traceroute 1.1.1.1` → real traceroute bytes
+  - `rollback` → `✓ no vlan 10`, `✓ no name` (sent to the device)
+  - `بينج 8.8.8.8` (Arabic) → real device output
+* **UI surfaces mgmt IPs in the device grid** (accent color,
+  next to vendor/model). The operator sees where to retry
+  credentials without leaving the chat.
+* **Engine code:** `src/netops_autopilot/autopilot/orchestrator.py`
+  wires the `mgmt_session_factory` into the apply path. The
+  executor opens a real session and calls
+  `ex.apply(..., dry_run=False)`. If no session can be opened,
+  the engine records a typed `NO_MGMT_SESSION` cause and falls
+  back to dry-run (no silent no-op, ever).
+* **Allowlist carries the inverse:** `AllowlistEntry.rollback`
+  is now a first-class field, read from the JSON data files
+  and substituted positionally so the chat can send concrete
+  `no vlan 10` lines.
 
 ## Hard rules (always true, enforced in code from D1 onward)
 

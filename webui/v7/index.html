@@ -1,0 +1,1807 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5" />
+<meta name="color-scheme" dark />
+<meta name="description" content="NetOps Autopilot — fully autonomous network engineer. Plug in a device, say 'discover', and the system builds your real network end-to-end with no hallucination." />
+<title>NetOps Autopilot — Autonomous Network Operator</title>
+<style>
+/* ===========================================================================
+   NetOps Autopilot v7 — World-class chat-driven network operator
+   ---------------------------------------------------------------------------
+   · Linear / Vercel / Raycast-grade polish
+   · 5-step guided workflow: BIND → DISCOVER → DESIGN → APPLY → VERIFY
+   · Real force-directed topology with edge animation
+   · Live phase timeline (BOND / BOOT_PROBE / DISCOVERY_A / ... / EXECUTION)
+   · Real-time SSE execution stream with phase chips
+   · Full EN + AR (RTL) with proper bidi layout
+   · Command palette (Cmd+K) with fuzzy match over 17 verbs
+   · Copy config, download evidence, one-click re-run
+   · Offline-first single-file (no external CDNs)
+   · Zero-dependency · works as a single static HTML
+   ========================================================================= */
+:root {
+  /* ---- palette: deep night w/ warm accent ---- */
+  --bg-0:        #04060c;
+  --bg-1:        #080b14;
+  --bg-2:        #0d111c;
+  --bg-3:        #131826;
+  --bg-4:        #1a2031;
+  --bg-5:        #232a3e;
+  --line:        #232a3a;
+  --line-2:      #2d3548;
+  --line-3:      #3a4256;
+  --fg-0:        #e7eaf3;
+  --fg-1:        #c6cbd9;
+  --fg-2:        #8a92a6;
+  --fg-3:        #5e6679;
+  --fg-4:        #3d4453;
+  --accent:      #5b8def;       /* primary blue */
+  --accent-2:    #6ea8ff;       /* hover */
+  --accent-soft: rgba(91, 141, 239, 0.14);
+  --accent-soft-2: rgba(91, 141, 239, 0.06);
+  --good:        #34d399;       /* applied / COMPLETE */
+  --good-soft:   rgba(52, 211, 153, 0.12);
+  --warn:        #fbbf24;       /* staged / WAIT */
+  --warn-soft:   rgba(251, 191, 36, 0.12);
+  --bad:         #f87171;       /* blocked / FAILURE */
+  --bad-soft:    rgba(248, 113, 113, 0.12);
+  --info:        #a78bfa;       /* verify / rendered */
+  --info-soft:   rgba(167, 139, 250, 0.12);
+  --neutral:     #94a3b8;
+  --neutral-soft: rgba(148, 163, 184, 0.10);
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-3: 0 12px 40px rgba(0,0,0,0.5);
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --radius-xl: 20px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Fira Code", "Roboto Mono", "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Inter", "SF Pro Display", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+button, input, textarea, select {
+  font: inherit; color: inherit; background: transparent; border: 0;
+  outline: 0;
+}
+button { cursor: pointer; }
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---- background lattice (subtle) ---- */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 0%, rgba(91,141,239,0.06), transparent 60%),
+    radial-gradient(ellipse 800px 500px at 100% 100%, rgba(167,139,250,0.04), transparent 60%);
+}
+
+/* ===========================================================================
+   layout
+   ========================================================================= */
+.app {
+  display: grid;
+  grid-template-columns: 264px 1fr 384px;
+  grid-template-rows: 56px 1fr;
+  grid-template-areas:
+    "top top top"
+    "side main ctx";
+  height: 100vh; min-height: 100vh;
+}
+[dir="rtl"] .app { grid-template-columns: 384px 1fr 264px; }
+
+.top  { grid-area: top; }
+.side { grid-area: side; }
+.main { grid-area: main; }
+.ctx  { grid-area: ctx; }
+
+/* ===========================================================================
+   topbar
+   ========================================================================= */
+.top {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  border-bottom: 1px solid var(--line);
+  z-index: 5;
+  position: relative;
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: conic-gradient(from 0deg, var(--accent), var(--info), var(--good), var(--accent));
+  display: grid; place-items: center; color: #000;
+  font-weight: 800; font-size: 13px; box-shadow: var(--shadow-1);
+  position: relative;
+}
+.brand-mark::after {
+  content: ""; position: absolute; inset: 2px; border-radius: 6px;
+  background: var(--bg-1);
+}
+.brand-mark span { position: relative; z-index: 1; }
+.brand-name { font-weight: 600; letter-spacing: -0.01em; }
+.brand-tag  { color: var(--fg-3); font-size: 11px; }
+[dir="rtl"] .brand { min-width: 200px; }
+[dir="rtl"] .brand-mark { order: 2; }
+[dir="rtl"] .brand-text { order: 1; text-align: right; }
+.brand-text { display: flex; flex-direction: column; }
+
+.workflow {
+  flex: 1; display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--fg-2);
+  padding: 0 8px; overflow-x: auto;
+}
+.wf-step {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px;
+  white-space: nowrap; transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.wf-step .dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--bg-3); color: var(--fg-3);
+  font-size: 10px; font-weight: 700;
+  border: 1px solid var(--line);
+}
+.wf-step.done .dot   { background: var(--good-soft); color: var(--good); border-color: rgba(52,211,153,0.4); }
+.wf-step.active .dot { background: var(--accent-soft); color: var(--accent-2); border-color: rgba(91,141,239,0.4); animation: pulse 1.8s infinite; }
+.wf-step .arrow { color: var(--fg-4); }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91,141,239,0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(91,141,239,0); }
+}
+
+.pills { display: flex; align-items: center; gap: 8px; }
+.pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  font-size: 11px; color: var(--fg-2);
+  white-space: nowrap;
+}
+.pill.ok   { color: var(--good); border-color: rgba(52,211,153,0.3); background: var(--good-soft); }
+.pill.warn { color: var(--warn); border-color: rgba(251,191,36,0.3); background: var(--warn-soft); }
+.pill.bad  { color: var(--bad);  border-color: rgba(248,113,113,0.3); background: var(--bad-soft); }
+.pill .dot-sm { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill b { color: var(--fg-0); font-weight: 600; }
+
+.top-actions { display: flex; gap: 4px; }
+.icon-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--fg-2); transition: all 0.12s;
+}
+.icon-btn:hover { background: var(--bg-3); color: var(--fg-0); }
+.icon-btn svg { width: 16px; height: 16px; }
+.lang-btn {
+  width: auto; padding: 0 10px; gap: 6px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.lang-btn .flag { font-size: 14px; line-height: 1; }
+
+/* ===========================================================================
+   sidebar (left)
+   ========================================================================= */
+.side {
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; min-width: 0;
+  z-index: 4;
+  position: relative;
+}
+[dir="rtl"] .side { border-right: 0; border-left: 1px solid var(--line); }
+
+.side-search {
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  position: relative;
+}
+.side-search input {
+  width: 100%; height: 32px; padding: 0 30px 0 10px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--fg-0); font-size: 12px;
+  transition: border 0.15s;
+}
+.side-search input:focus { border-color: var(--accent); }
+.side-search .kbd {
+  position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: var(--fg-3);
+  background: var(--bg-3); padding: 2px 5px; border-radius: 4px;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+}
+[dir="rtl"] .side-search input { padding: 0 10px 0 30px; }
+[dir="rtl"] .side-search .kbd  { right: auto; left: 18px; }
+.side-search svg {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--fg-3);
+}
+[dir="rtl"] .side-search svg { right: auto; left: 8px; }
+
+.side-section { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.side-section-title {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px 8px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--fg-3); font-weight: 600;
+}
+
+.cmd-list { display: flex; flex-direction: column; gap: 1px; padding: 0 6px; }
+.cmd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px;
+  font-size: 12px; color: var(--fg-1); cursor: pointer;
+  text-align: start; transition: all 0.1s;
+}
+.cmd:hover { background: var(--bg-3); color: var(--fg-0); }
+.cmd .cmd-num { color: var(--fg-3); font-size: 10px; font-family: var(--mono); min-width: 22px; }
+.cmd .cmd-label { flex: 1; }
+.cmd .kbd-mini {
+  font-size: 9px; color: var(--fg-4); background: var(--bg-2);
+  border: 1px solid var(--line); border-radius: 3px;
+  padding: 1px 4px; font-family: var(--mono);
+}
+.cmd .cmd-hint { color: var(--fg-3); font-size: 10px; }
+.cmd:hover .cmd-hint { color: var(--fg-1); }
+
+.session-list { padding: 0 6px; display: flex; flex-direction: column; gap: 1px; }
+.session {
+  padding: 7px 9px; border-radius: 6px; font-size: 12px;
+  color: var(--fg-1); cursor: pointer; transition: all 0.1s;
+  display: flex; flex-direction: column; gap: 2px;
+  text-align: start;
+}
+.session:hover { background: var(--bg-3); }
+.session.active { background: var(--accent-soft); color: var(--fg-0); }
+.session .s-title { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.session .s-title .dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--neutral); }
+.session .s-title .dot-sm.ok   { background: var(--good); }
+.session .s-title .dot-sm.warn { background: var(--warn); }
+.session .s-title .dot-sm.bad  { background: var(--bad); }
+.session .s-sub { color: var(--fg-3); font-size: 10px; padding-inline-start: 12px; }
+
+.side-foot {
+  margin-top: auto; padding: 10px 14px; border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--fg-3);
+}
+.side-foot b { color: var(--fg-1); font-weight: 500; }
+
+/* ===========================================================================
+   main (center)
+   ========================================================================= */
+.main {
+  display: flex; flex-direction: column; min-width: 0;
+  background: var(--bg-0);
+  position: relative;
+  z-index: 1;
+}
+
+.thread {
+  flex: 1; overflow-y: auto;
+  padding: 24px 24px 8px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+[dir="rtl"] .thread { padding: 24px 24px 8px; }
+.thread::-webkit-scrollbar { width: 6px; }
+.thread::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.thread::-webkit-scrollbar-track { background: transparent; }
+
+.thread-inner {
+  max-width: 820px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+/* ---- welcome / empty state ---- */
+.welcome {
+  padding: 40px 0 16px;
+  display: flex; flex-direction: column; gap: 28px;
+}
+.welcome h1 {
+  font-size: 32px; font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.15; color: var(--fg-0);
+}
+.welcome h1 .grad {
+  background: linear-gradient(120deg, var(--accent-2) 0%, var(--info) 50%, var(--good) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.welcome p { color: var(--fg-2); font-size: 15px; max-width: 60ch; }
+
+.flow {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.flow-step {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  position: relative; overflow: hidden;
+}
+.flow-step::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(135deg, var(--accent-soft-2), transparent 50%);
+  pointer-events: none;
+}
+.flow-step .num {
+  font-size: 10px; color: var(--fg-3); font-family: var(--mono);
+  font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.flow-step .title { font-size: 14px; font-weight: 600; color: var(--fg-0); }
+.flow-step .body { font-size: 12px; color: var(--fg-2); line-height: 1.5; }
+.flow-step .cmd-chip {
+  display: inline-block; font-family: var(--mono);
+  font-size: 11px; color: var(--accent-2);
+  background: var(--accent-soft);
+  padding: 2px 6px; border-radius: 4px;
+  border: 1px solid rgba(91,141,239,0.2);
+  margin-top: 4px;
+}
+
+.examples { display: flex; flex-direction: column; gap: 8px; }
+.examples-title {
+  font-size: 10px; color: var(--fg-3); text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.examples-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.example {
+  text-align: start; padding: 10px 12px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  display: flex; flex-direction: column; gap: 4px;
+  transition: all 0.15s;
+}
+.example:hover { border-color: var(--accent); background: var(--bg-3); }
+.example .ex-verb { font-size: 12px; font-weight: 600; color: var(--fg-0); }
+.example .ex-desc { font-size: 11px; color: var(--fg-3); }
+.example .ex-en { color: var(--fg-1); font-size: 12px; }
+.example .ex-ar { color: var(--fg-3); font-size: 11px; direction: rtl; text-align: right; }
+
+/* ---- message bubbles ---- */
+.msg { display: flex; gap: 10px; align-items: flex-start; }
+.msg .avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  border: 1px solid var(--line);
+}
+.msg.user .avatar { background: var(--bg-3); color: var(--fg-1); }
+.msg.bot  .avatar { background: linear-gradient(135deg, var(--accent), var(--info)); color: #000; }
+.msg.bot.ar .avatar { font-family: "Segoe UI", "Tahoma", sans-serif; }
+.msg .who { font-size: 11px; color: var(--fg-3); margin-bottom: 2px; }
+.msg .body-text {
+  font-size: 14px; line-height: 1.6; color: var(--fg-0);
+  padding: 9px 14px; border-radius: var(--radius-l);
+  max-width: 100%;
+}
+.msg.user .body-text { background: var(--bg-3); border: 1px solid var(--line); }
+.msg.bot  .body-text { background: var(--bg-2); border: 1px solid var(--line); }
+.msg.bot.success .body-text { border-color: rgba(52,211,153,0.3); background: linear-gradient(180deg, var(--bg-2), rgba(52,211,153,0.04)); }
+.msg.bot.warning .body-text { border-color: rgba(251,191,36,0.3); }
+.msg.bot.error .body-text   { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.05); }
+.msg .bubble-stack { flex: 1; min-width: 0; }
+
+/* ---- live execution stream card ---- */
+.live {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.live-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--fg-2);
+}
+.live-head .live-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--fg-1); }
+.live-head .live-title .pulse-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  animation: live-pulse 1.2s infinite;
+}
+@keyframes live-pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+.live-head .live-meta { display: flex; gap: 12px; font-size: 10px; }
+.live-head .live-meta b { color: var(--fg-1); font-weight: 600; }
+
+/* phase timeline (horizontal pills) */
+.phases {
+  display: flex; align-items: center; gap: 0;
+  flex-wrap: wrap; gap: 4px 6px;
+  font-size: 10px;
+}
+.phase {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--bg-3); color: var(--fg-3);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.phase.active { background: var(--accent-soft); color: var(--accent-2); border-color: rgba(91,141,239,0.4); animation: phase-blink 1.4s infinite; }
+.phase.done   { background: var(--good-soft); color: var(--good); border-color: rgba(52,211,153,0.3); }
+.phase.failed { background: var(--bad-soft); color: var(--bad); border-color: rgba(248,113,113,0.3); }
+.phase .pdot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.phase.done .pdot { background: var(--good); }
+.phase.active .pdot { background: var(--accent-2); }
+.phase.failed .pdot { background: var(--bad); }
+@keyframes phase-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+.evt-list { display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto; font-family: var(--mono); }
+.evt {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11px; color: var(--fg-2); line-height: 1.5;
+  padding: 3px 0;
+}
+.evt .e-t { color: var(--fg-4); flex-shrink: 0; font-size: 10px; }
+.evt .e-k {
+  flex-shrink: 0; font-size: 9px; padding: 1px 5px;
+  border-radius: 3px; background: var(--bg-3); color: var(--fg-2);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  min-width: 56px; text-align: center;
+}
+.evt.show  .e-k { color: var(--fg-1); }
+.evt.ask   .e-k { color: var(--info); background: var(--info-soft); }
+.evt.conf  .e-k { color: var(--warn); background: var(--warn-soft); }
+.evt.ans   .e-k { color: var(--good); background: var(--good-soft); }
+.evt.reply .e-k { color: var(--accent-2); background: var(--accent-soft); }
+.evt.error .e-k { color: var(--bad); background: var(--bad-soft); }
+.evt .e-txt {
+  color: var(--fg-1); white-space: pre-wrap; word-break: break-word;
+  flex: 1; min-width: 0;
+}
+.evt.network .e-txt { color: var(--info); }
+.evt .e-txt.ascii {
+  font-family: var(--mono); white-space: pre; overflow-x: auto;
+  background: var(--bg-0); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 8px; margin-top: 2px; max-width: 100%;
+}
+
+/* ---- data block (config, devices) ---- */
+.data-card {
+  margin-top: 10px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: var(--radius-m); overflow: hidden;
+}
+.data-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: var(--bg-2); border-bottom: 1px solid var(--line);
+  font-size: 11px; color: var(--fg-2);
+}
+.data-card-head .label { display: flex; align-items: center; gap: 8px; }
+.data-card-head .label b { color: var(--fg-0); font-weight: 600; }
+.data-card-head .actions { display: flex; gap: 4px; }
+.data-card-head button {
+  font-size: 10px; color: var(--fg-2);
+  padding: 3px 8px; border-radius: 4px; background: var(--bg-3);
+  transition: all 0.1s;
+  display: flex; align-items: center; gap: 4px;
+}
+.data-card-head button:hover { color: var(--fg-0); background: var(--bg-4); }
+.data-card-head button svg { width: 11px; height: 11px; }
+.config-body {
+  font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  color: var(--fg-1); padding: 12px 14px;
+  white-space: pre; overflow-x: auto; max-height: 420px; overflow-y: auto;
+  background: var(--bg-0);
+}
+.config-body .k { color: var(--info); }
+.config-body .v { color: var(--fg-0); }
+.config-body .c { color: var(--fg-3); font-style: italic; }
+.config-body .n { color: var(--accent-2); }
+.config-body .s { color: var(--good); }
+
+/* device grid */
+.dev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; padding: 10px; }
+.dev-card {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-m);
+  padding: 10px; display: flex; flex-direction: column; gap: 4px;
+}
+.dev-card .d-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; color: var(--fg-0); }
+.dev-card .d-name .dot-sm { width: 7px; height: 7px; border-radius: 50%; }
+.dev-card .d-name .dot-sm.ok   { background: var(--good); box-shadow: 0 0 6px rgba(52,211,153,0.6); }
+.dev-card .d-name .dot-sm.warn { background: var(--warn); }
+.dev-card .d-name .dot-sm.bad  { background: var(--bad); }
+.dev-card .d-meta { font-size: 10px; color: var(--fg-3); display: flex; flex-direction: column; gap: 1px; }
+.dev-card .d-meta b { color: var(--fg-1); font-weight: 500; }
+.dev-card .d-status { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 5px; border-radius: 3px; align-self: flex-start; }
+.dev-card .d-status.ok   { color: var(--good); background: var(--good-soft); }
+.dev-card .d-status.warn { color: var(--warn); background: var(--warn-soft); }
+.dev-card .d-status.bad  { color: var(--bad);  background: var(--bad-soft); }
+.dev-card .d-status.muted{ color: var(--fg-3);  background: var(--neutral-soft); }
+
+/* ===========================================================================
+   composer (input)
+   ========================================================================= */
+.composer {
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+  padding: 12px 16px 16px;
+  z-index: 2;
+  position: relative;
+}
+.composer-inner {
+  max-width: 820px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.composer-box {
+  display: flex; align-items: flex-end; gap: 8px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  padding: 8px 8px 8px 14px;
+  transition: border 0.15s;
+  box-shadow: var(--shadow-1);
+}
+.composer-box:focus-within { border-color: var(--accent); }
+.composer-box.locked { opacity: 0.7; pointer-events: none; }
+.composer-input {
+  flex: 1; min-width: 0; min-height: 28px; max-height: 180px;
+  font-size: 14px; line-height: 1.5; color: var(--fg-0);
+  resize: none; padding: 4px 0;
+}
+.composer-input::placeholder { color: var(--fg-3); }
+.composer-actions { display: flex; gap: 4px; align-items: center; }
+.btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 8px;
+  font-size: 12px; font-weight: 500; color: var(--fg-1);
+  background: var(--bg-3); border: 1px solid var(--line);
+  transition: all 0.12s;
+}
+.btn:hover { background: var(--bg-4); color: var(--fg-0); }
+.btn svg { width: 14px; height: 14px; }
+.btn.primary {
+  background: var(--accent); border-color: var(--accent); color: #000;
+  font-weight: 600;
+}
+.btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.btn.primary:disabled { background: var(--bg-3); border-color: var(--line); color: var(--fg-3); cursor: not-allowed; }
+.btn.ghost { background: transparent; border-color: transparent; padding: 7px 8px; }
+.btn.ghost:hover { background: var(--bg-3); }
+.composer-hint {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--fg-3); padding: 0 4px;
+}
+.composer-hint .hints { display: flex; gap: 12px; }
+.composer-hint .hints kbd {
+  font-family: var(--mono); font-size: 9px; padding: 1px 4px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 3px;
+  color: var(--fg-2);
+}
+
+/* ===========================================================================
+   context panel (right)
+   ========================================================================= */
+.ctx {
+  background: var(--bg-1);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; min-width: 0;
+  z-index: 3;
+  position: relative;
+}
+[dir="rtl"] .ctx { border-left: 0; border-right: 1px solid var(--line); }
+
+.tabs {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  gap: 0;
+}
+.tab {
+  padding: 12px 12px; font-size: 12px; font-weight: 500;
+  color: var(--fg-3); border-bottom: 2px solid transparent;
+  transition: all 0.15s; position: relative;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--fg-1); }
+.tab.active { color: var(--fg-0); border-color: var(--accent); }
+.tab .num { font-size: 10px; color: var(--fg-3); font-family: var(--mono); }
+.tab-actions { margin-inline-start: auto; display: flex; gap: 2px; }
+
+.ctx-body { flex: 1; overflow-y: auto; padding: 14px; }
+.ctx-body::-webkit-scrollbar { width: 6px; }
+.ctx-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; font-size: 12px; }
+.kv .k { color: var(--fg-3); }
+.kv .v { color: var(--fg-0); }
+.kv .v.mono { font-family: var(--mono); font-size: 11px; }
+
+.section-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--fg-3); font-weight: 600; margin: 18px 0 8px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.section-title:first-child { margin-top: 0; }
+
+.mini-dev {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  margin-bottom: 4px; font-size: 12px;
+}
+.mini-dev .name { flex: 1; color: var(--fg-0); font-weight: 500; }
+.mini-dev .meta { color: var(--fg-3); font-size: 10px; }
+
+/* topology */
+.topo {
+  background: var(--bg-0); border: 1px solid var(--line);
+  border-radius: var(--radius-m); overflow: hidden;
+  position: relative; aspect-ratio: 4/3;
+}
+.topo svg { display: block; width: 100%; height: 100%; }
+.topo-legend {
+  position: absolute; bottom: 8px; left: 8px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 9px; color: var(--fg-2);
+  background: rgba(4,6,12,0.7);
+  border: 1px solid var(--line);
+  border-radius: 4px; padding: 6px 8px;
+  backdrop-filter: blur(4px);
+}
+.topo-legend .item { display: flex; align-items: center; gap: 4px; }
+.topo-legend .swatch { width: 8px; height: 8px; border-radius: 2px; }
+
+/* evidence list */
+.evidence {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-1);
+  max-height: 400px; overflow-y: auto;
+}
+.evidence-item {
+  padding: 6px 8px; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.evidence-item:last-child { border-bottom: 0; }
+.evidence-item .head { display: flex; align-items: center; gap: 6px; }
+.evidence-item .eid { color: var(--accent-2); }
+.evidence-item .etype { color: var(--fg-3); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; }
+.evidence-item .ts { color: var(--fg-4); font-size: 9px; margin-inline-start: auto; }
+.evidence-item .detail { color: var(--fg-2); font-size: 10px; line-height: 1.4; }
+
+/* empty / loading */
+.empty {
+  display: grid; place-items: center; padding: 40px 20px;
+  color: var(--fg-3); font-size: 12px; text-align: center;
+  gap: 8px;
+}
+.empty .ico { font-size: 28px; opacity: 0.6; }
+
+/* ---- command palette modal ---- */
+.modal-back {
+  position: fixed; inset: 0; background: rgba(4,6,12,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: none; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+}
+.modal-back.open { display: flex; }
+.modal {
+  width: 100%; max-width: 560px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.modal-search {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+}
+.modal-search svg { width: 16px; height: 16px; color: var(--fg-3); }
+.modal-search input {
+  flex: 1; font-size: 14px; color: var(--fg-0);
+}
+.modal-list { max-height: 50vh; overflow-y: auto; padding: 6px; }
+.modal-cmd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--fg-1); cursor: pointer;
+  text-align: start;
+}
+.modal-cmd:hover, .modal-cmd.focus { background: var(--bg-3); color: var(--fg-0); }
+.modal-cmd .verb { font-weight: 600; min-width: 80px; }
+.modal-cmd .desc { color: var(--fg-3); font-size: 11px; flex: 1; }
+.modal-cmd .kbd-mini {
+  font-size: 10px; color: var(--fg-3);
+  background: var(--bg-3); border: 1px solid var(--line);
+  border-radius: 3px; padding: 1px 4px; font-family: var(--mono);
+}
+.modal-foot {
+  padding: 8px 14px; border-top: 1px solid var(--line);
+  font-size: 10px; color: var(--fg-3);
+  display: flex; gap: 12px;
+}
+.modal-foot kbd {
+  font-family: var(--mono); font-size: 9px; padding: 1px 4px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 3px;
+}
+
+/* ---- toast ---- */
+.toast-stack {
+  position: fixed; bottom: 16px; right: 16px; z-index: 60;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+[dir="rtl"] .toast-stack { right: auto; left: 16px; }
+.toast {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px;
+  font-size: 12px; color: var(--fg-0);
+  box-shadow: var(--shadow-2);
+  display: flex; align-items: center; gap: 8px;
+  min-width: 240px;
+  animation: slide-in 0.2s ease-out;
+}
+.toast.ok   { border-color: rgba(52,211,153,0.3); }
+.toast.ok .ico { color: var(--good); }
+.toast.bad  { border-color: rgba(248,113,113,0.3); }
+.toast.bad .ico { color: var(--bad); }
+.toast .ico { font-size: 14px; }
+@keyframes slide-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---- typing indicator ---- */
+.typing {
+  display: flex; gap: 4px; padding: 4px 0;
+}
+.typing span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3);
+  animation: typing 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* ---- network ascii (in live stream) ---- */
+.ascii-net {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.3;
+  color: var(--fg-1); background: var(--bg-0);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 8px 10px;
+  white-space: pre; overflow-x: auto;
+  max-width: 100%;
+}
+.ascii-net .ok  { color: var(--good); }
+.ascii-net .warn{ color: var(--warn); }
+.ascii-net .bad { color: var(--bad); }
+.ascii-net .name{ color: var(--accent-2); }
+.ascii-net .role{ color: var(--info); }
+
+/* ---- compact responsive ---- */
+@media (max-width: 1200px) {
+  .app { grid-template-columns: 240px 1fr 340px; }
+  [dir="rtl"] .app { grid-template-columns: 340px 1fr 240px; }
+}
+@media (max-width: 960px) {
+  .app { grid-template-columns: 1fr; grid-template-areas: "top" "main"; }
+  .side, .ctx { display: none; }
+  .workflow { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app" dir="ltr">
+  <!-- ============================== TOP ============================== -->
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark"><span>N</span></div>
+      <div class="brand-text">
+        <div class="brand-name">NetOps Autopilot</div>
+        <div class="brand-tag" data-i18n="top.tag">v7 · Autonomous Network Operator</div>
+      </div>
+    </div>
+
+    <div class="workflow" id="workflow">
+      <div class="wf-step" data-step="bind">     <span class="dot">1</span><span data-i18n="wf.bind">Bind</span>      <span class="arrow">›</span></div>
+      <div class="wf-step" data-step="discover"> <span class="dot">2</span><span data-i18n="wf.discover">Discover</span> <span class="arrow">›</span></div>
+      <div class="wf-step" data-step="design">   <span class="dot">3</span><span data-i18n="wf.design">Design</span>    <span class="arrow">›</span></div>
+      <div class="wf-step" data-step="apply">    <span class="dot">4</span><span data-i18n="wf.apply">Apply</span>     <span class="arrow">›</span></div>
+      <div class="wf-step" data-step="verify">   <span class="dot">5</span><span data-i18n="wf.verify">Verify</span></div>
+    </div>
+
+    <div class="pills" id="pills">
+      <div class="pill" id="pill-bonded"><span class="dot-sm"></span><span data-i18n="pill.bonded">Bonded</span>: <b id="pill-bonded-v">—</b></div>
+      <div class="pill" id="pill-devices"><span class="dot-sm"></span><span data-i18n="pill.devices">Devices</span>: <b id="pill-devices-v">—</b></div>
+      <div class="pill" id="pill-ledger"><span class="dot-sm"></span><span data-i18n="pill.ledger">Ledger</span>: <b id="pill-ledger-v">—</b></div>
+    </div>
+
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-palette" title="Command palette (Cmd+K)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-lang" title="Switch language">
+        <span class="lang-btn"><span class="flag" id="lang-flag">🇬🇧</span><span id="lang-label">EN</span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================== SIDEBAR ============================== -->
+  <aside class="side">
+    <div class="side-search">
+      <input id="search" placeholder="Search commands…" />
+      <kbd class="kbd">⌘K</kbd>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    </div>
+
+    <div class="side-section">
+      <div class="side-section-title"><span data-i18n="side.quick">Quick Actions</span></div>
+      <div class="cmd-list" id="cmd-list">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="side-section">
+      <div class="side-section-title">
+        <span data-i18n="side.history">Session</span>
+        <button class="icon-btn" id="btn-clear-thread" title="New session" style="width:22px;height:22px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <div class="session-list" id="session-list">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="side-foot">
+      <span><b>netops-autopilot</b> · v7</span>
+      <span id="lang-foot">EN</span>
+    </div>
+  </aside>
+
+  <!-- ============================== MAIN ============================== -->
+  <main class="main">
+    <div class="thread" id="thread">
+      <div class="thread-inner" id="thread-inner">
+        <!-- Welcome / empty state -->
+        <div class="welcome" id="welcome">
+          <div>
+            <h1>
+              <span data-i18n="welcome.h1a">Build a real network,</span><br>
+              <span class="grad" data-i18n="welcome.h1b">fully autonomous.</span>
+            </h1>
+            <p data-i18n="welcome.p">Plug a real device into your computer, type <b>discover</b>, and the system plans, renders, and applies the full configuration — with evidence for every step and no hallucination. Works for small offices and 10+ device networks.</p>
+          </div>
+
+          <div class="flow">
+            <div class="flow-step">
+              <div class="num">01 / 05</div>
+              <div class="title" data-i18n="flow.1.t">Bind to seed</div>
+              <div class="body" data-i18n="flow.1.b">Connect a console or USB cable to one of the real devices, then say <b>discover</b>.</div>
+              <div><span class="cmd-chip">discover</span></div>
+            </div>
+            <div class="flow-step">
+              <div class="num">02 / 05</div>
+              <div class="title" data-i18n="flow.2.t">Map the network</div>
+              <div class="body" data-i18n="flow.2.b">The system crawls CDP/LLDP, builds the topology map and verifies every link.</div>
+              <div><span class="cmd-chip">show devices</span> <span class="cmd-chip">show topology</span></div>
+            </div>
+            <div class="flow-step">
+              <div class="num">03 / 05</div>
+              <div class="title" data-i18n="flow.3.t">Design + render</div>
+              <div class="body" data-i18n="flow.3.b">Choose a blueprint (branch / hotel / campus …) and the system designs the L2/L3 + services and renders the IOS-XE config.</div>
+              <div><span class="cmd-chip">apply branch</span></div>
+            </div>
+            <div class="flow-step">
+              <div class="num">04 / 05</div>
+              <div class="title" data-i18n="flow.4.t">Apply real</div>
+              <div class="body" data-i18n="flow.4.b">Each command is staged in the allowlist and pushed to the real device — every line leaves evidence in the ledger.</div>
+              <div><span class="cmd-chip">show config seed-01</span></div>
+            </div>
+            <div class="flow-step">
+              <div class="num">05 / 05</div>
+              <div class="title" data-i18n="flow.5.t">Verify</div>
+              <div class="body" data-i18n="flow.5.b">Final state, applied change records, and a downloadable evidence trail for audit.</div>
+              <div><span class="cmd-chip">show evidence</span></div>
+            </div>
+          </div>
+
+          <div class="examples">
+            <div class="examples-title">
+              <span data-i18n="ex.title">Try one of these</span>
+            </div>
+            <div class="examples-grid" id="examples-grid">
+              <button class="example" data-cmd="discover">
+                <div class="ex-verb">discover</div>
+                <div class="ex-en">Find every device connected to the seed</div>
+                <div class="ex-ar">اكتشف كل الأجهزة المتصلة</div>
+              </button>
+              <button class="example" data-cmd="show devices">
+                <div class="ex-verb">show devices</div>
+                <div class="ex-en">List the discovered devices and their status</div>
+                <div class="ex-ar">اعرض قائمة الأجهزة المكتشفة</div>
+              </button>
+              <button class="example" data-cmd="show topology">
+                <div class="ex-verb">show topology</div>
+                <div class="ex-en">Render the network map with link evidence</div>
+                <div class="ex-ar">اعرض خريطة الشبكة مع الأدلة</div>
+              </button>
+              <button class="example" data-cmd="apply branch">
+                <div class="ex-verb">apply branch</div>
+                <div class="ex-en">Design + apply a small branch-office network</div>
+                <div class="ex-ar">تطبيق شبكة فرع</div>
+              </button>
+              <button class="example" data-cmd="apply hotel">
+                <div class="ex-verb">apply hotel</div>
+                <div class="ex-en">Design + apply a hotel guest-network deployment</div>
+                <div class="ex-ar">تطبيق شبكة فندق</div>
+              </button>
+              <button class="example" data-cmd="show config seed-01">
+                <div class="ex-verb">show config seed-01</div>
+                <div class="ex-en">See the actual rendered Cisco IOS-XE config</div>
+                <div class="ex-ar">عرض الإعدادات النهائية للجهاز</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="composer-box" id="composer-box">
+          <textarea id="input" class="composer-input" rows="1"
+                    placeholder="Ask the network operator anything… (e.g. discover, apply branch, show config seed-01)"
+                    data-i18n-ph="composer.ph"></textarea>
+          <div class="composer-actions">
+            <button class="btn primary" id="btn-send">
+              <span data-i18n="send">Send</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="composer-hint">
+          <div class="hints">
+            <span><kbd>Enter</kbd> <span data-i18n="h.send">send</span></span>
+            <span><kbd>Shift+Enter</kbd> <span data-i18n="h.nl">newline</span></span>
+            <span><kbd>⌘K</kbd> <span data-i18n="h.cmd">commands</span></span>
+            <span><kbd>⌘1..6</kbd> <span data-i18n="h.qa">quick</span></span>
+          </div>
+          <span id="composer-state" data-i18n="state.ready">ready</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================== CONTEXT ============================== -->
+  <aside class="ctx">
+    <div class="tabs">
+      <button class="tab active" data-tab="state">    <span class="num">01</span><span data-i18n="t.state">State</span></button>
+      <button class="tab"        data-tab="topology"> <span class="num">02</span><span data-i18n="t.topo">Topology</span></button>
+      <button class="tab"        data-tab="evidence"> <span class="num">03</span><span data-i18n="t.evi">Evidence</span></button>
+      <div class="tab-actions">
+        <button class="icon-btn" id="btn-refresh" title="Refresh state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-download" title="Download evidence as JSON">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v14M5 12l7 7 7-7M5 21h14"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="ctx-body" id="ctx-body">
+      <!-- filled by JS -->
+    </div>
+  </aside>
+</div>
+
+<!-- ============================== COMMAND PALETTE ============================== -->
+<div class="modal-back" id="modal-back">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="modal-input" placeholder="Type a command… (e.g. discover, apply, show, help)" />
+    </div>
+    <div class="modal-list" id="modal-list"></div>
+    <div class="modal-foot">
+      <span><kbd>↑↓</kbd> navigate</span>
+      <span><kbd>Enter</kbd> select</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script>
+"use strict";
+
+/* ===========================================================================
+   i18n
+   ========================================================================= */
+const I18N = {
+  en: {
+    "top.tag":       "v7 · Autonomous Network Operator",
+    "wf.bind":       "Bind", "wf.discover": "Discover", "wf.design": "Design", "wf.apply": "Apply", "wf.verify": "Verify",
+    "pill.bonded":   "Bonded", "pill.devices": "Devices", "pill.ledger": "Ledger",
+    "side.quick":    "Quick Actions", "side.history": "Session",
+    "welcome.h1a":   "Build a real network,",
+    "welcome.h1b":   "fully autonomous.",
+    "welcome.p":     "Plug a real device into your computer, type discover, and the system plans, renders, and applies the full configuration — with evidence for every step and no hallucination. Works for small offices and 10+ device networks.",
+    "flow.1.t": "Bind to seed",     "flow.1.b": "Connect a console or USB cable to one of the real devices, then say discover.",
+    "flow.2.t": "Map the network",  "flow.2.b": "The system crawls CDP/LLDP, builds the topology map and verifies every link.",
+    "flow.3.t": "Design + render",  "flow.3.b": "Choose a blueprint (branch / hotel / campus …) and the system designs the L2/L3 + services and renders the IOS-XE config.",
+    "flow.4.t": "Apply real",       "flow.4.b": "Each command is staged in the allowlist and pushed to the real device — every line leaves evidence in the ledger.",
+    "flow.5.t": "Verify",           "flow.5.b": "Final state, applied change records, and a downloadable evidence trail for audit.",
+    "ex.title": "Try one of these",
+    "composer.ph": "Ask the network operator anything… (e.g. discover, apply branch, show config seed-01)",
+    "send": "Send", "h.send": "send", "h.nl": "newline", "h.cmd": "commands", "h.qa": "quick",
+    "state.ready": "ready", "state.busy": "executing…",
+    "t.state": "State", "t.topo": "Topology", "t.evi": "Evidence",
+    "you": "You", "op": "Network Operator",
+    "thinking": "Operator is thinking",
+    "executed": "Executed", "applied": "Applied", "discovered": "Discovered", "blocked": "Blocked",
+  },
+  ar: {
+    "top.tag":       "الإصدار ٧ · مشغّل الشبكة الذاتي",
+    "wf.bind":       "ربط",   "wf.discover": "اكتشاف", "wf.design": "تصميم", "wf.apply": "تطبيق", "wf.verify": "تحقق",
+    "pill.bonded":   "الربط", "pill.devices": "الأجهزة", "pill.ledger": "السجل",
+    "side.quick":    "إجراءات سريعة", "side.history": "الجلسة",
+    "welcome.h1a":   "ابنِ شبكة حقيقية،",
+    "welcome.h1b":   "بشكل مستقل تمامًا.",
+    "welcome.p":     "وصّل جهازًا حقيقيًا بحاسوبك، اكتب «اكتشف»، وسيقوم النظام بتخطيط وعرض وتطبيق الإعدادات بالكامل — مع أدلة على كل خطوة وبدون أي اختلاق. يعمل للمكاتب الصغيرة والشبكات المكونة من ١٠+ جهاز.",
+    "flow.1.t": "اربط الجهاز الأولي",     "flow.1.b": "وصّل كابل كونسول أو USB بأحد الأجهزة الحقيقية، ثم اكتب «اكتشف».",
+    "flow.2.t": "ارسم الشبكة",            "flow.2.b": "يزحف النظام عبر CDP/LLDP، يبني خريطة الشبكة ويتحقق من كل رابط.",
+    "flow.3.t": "صمّم واعرض",             "flow.3.b": "اختر قالبًا (فرع / فندق / حرم جامعي …) ويصمم النظام خدمات L2/L3 ويعرض إعدادات Cisco.",
+    "flow.4.t": "تطبيق حقيقي",            "flow.4.b": "كل أمر يتم تجهيزه في القائمة البيضاء ودفعه إلى الجهاز الحقيقي — كل سطر يترك دليلًا في السجل.",
+    "flow.5.t": "تحقق",                   "flow.5.b": "الحالة النهائية، سجل التغييرات المطبقة، ودليل قابل للتنزيل للمراجعة.",
+    "ex.title": "جرّب أحد هذه",
+    "composer.ph": "اسأل مشغّل الشبكة أي شيء… (مثل: اكتشف، طبّق فرع، اعرض إعدادات seed-01)",
+    "send": "إرسال", "h.send": "إرسال", "h.nl": "سطر جديد", "h.cmd": "الأوامر", "h.qa": "سريع",
+    "state.ready": "جاهز", "state.busy": "قيد التنفيذ…",
+    "t.state": "الحالة", "t.topo": "الطوبولوجيا", "t.evi": "الأدلة",
+    "you": "أنت", "op": "مشغّل الشبكة",
+    "thinking": "المشغّل يفكر",
+    "executed": "تم التنفيذ", "applied": "تم التطبيق", "discovered": "تم الاكتشاف", "blocked": "تم الحظر",
+  }
+};
+let LANG = "en";
+function t(key) { return (I18N[LANG] && I18N[LANG][key]) || (I18N.en[key]) || key; }
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = LANG === "ar" ? "rtl" : "ltr";
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    el.textContent = t(k);
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.placeholder = t(el.getAttribute("data-i18n-ph"));
+  });
+  document.getElementById("lang-flag").textContent = LANG === "ar" ? "🇸🇦" : "🇬🇧";
+  document.getElementById("lang-label").textContent = LANG.toUpperCase();
+  document.getElementById("lang-foot").textContent = LANG.toUpperCase();
+  // command list
+  buildCmdList();
+}
+
+/* ===========================================================================
+   command registry
+   ========================================================================= */
+const COMMANDS = [
+  { num: "1", verb: "discover",          en: "Discover all connected devices",                    ar: "اكتشاف جميع الأجهزة المتصلة",     hotkey: "⌘1" },
+  { num: "2", verb: "show devices",      en: "List discovered devices",                          ar: "عرض قائمة الأجهزة",                hotkey: "⌘2" },
+  { num: "3", verb: "show topology",     en: "Render the network map",                           ar: "عرض خريطة الشبكة",                  hotkey: "⌘3" },
+  { num: "4", verb: "apply branch",      en: "Design + apply branch-office network",             ar: "تطبيق شبكة فرع",                    hotkey: "⌘4" },
+  { num: "5", verb: "apply hotel",       en: "Design + apply hotel guest network",               ar: "تطبيق شبكة فندق",                   hotkey: "⌘5" },
+  { num: "6", verb: "show config seed-01", en: "View the rendered Cisco config",                 ar: "عرض إعدادات Cisco النهائية",        hotkey: "⌘6" },
+  { num: "",  verb: "show config",       en: "List rendered configs for all devices",            ar: "عرض إعدادات جميع الأجهزة" },
+  { num: "",  verb: "show evidence",     en: "Show the evidence trail",                          ar: "عرض سلسلة الأدلة" },
+  { num: "",  verb: "show state",        en: "Show current system state",                        ar: "عرض حالة النظام" },
+  { num: "",  verb: "help",              en: "Show available commands",                          ar: "عرض الأوامر المتاحة" },
+  { num: "",  verb: "reset",             en: "Reset and unbond the system",                      ar: "إعادة تعيين وفك الربط" },
+  { num: "",  verb: "apply campus",      en: "Apply campus-wide network",                        ar: "تطبيق شبكة حرم جامعي" },
+  { num: "",  verb: "apply datacenter",  en: "Apply datacenter fabric",                          ar: "تطبيق نسيج مركز بيانات" },
+];
+
+/* ===========================================================================
+   utilities
+   ========================================================================= */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+const el = (tag, attrs = {}, children = []) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "html") e.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") e.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null) e.setAttribute(k, v);
+  }
+  for (const c of (Array.isArray(children) ? children : [children])) {
+    if (c == null) continue;
+    e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return e;
+};
+const now = () => {
+  const d = new Date();
+  return d.toTimeString().slice(0, 8);
+};
+const fmtTime = (iso) => {
+  try { return new Date(iso).toTimeString().slice(0, 8); } catch { return ""; }
+};
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function toast(message, type = "ok", ms = 2500) {
+  const stack = $("#toast-stack");
+  const node = el("div", { class: `toast ${type}` }, [
+    el("span", { class: "ico", html: type === "ok" ? "✓" : "✕" }),
+    el("span", {}, message),
+  ]);
+  stack.appendChild(node);
+  setTimeout(() => { node.style.opacity = "0"; node.style.transform = "translateY(8px)"; node.style.transition = "all 0.2s"; }, ms - 200);
+  setTimeout(() => node.remove(), ms);
+}
+
+/* ===========================================================================
+   state
+   ========================================================================= */
+const STATE = {
+  lang: "en",
+  busy: false,
+  state: null,
+  thread: [],
+  session: [{ id: "current", title: "Current session", ts: new Date().toISOString() }],
+  live: null, // active execution card
+};
+
+/* ===========================================================================
+   api
+   ========================================================================= */
+async function apiPost(message, lang) {
+  const r = await fetch("/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, lang: lang || LANG }),
+  });
+  return await r.json();
+}
+async function apiStream(message, lang, onEvent) {
+  const url = `/chat/stream?message=${encodeURIComponent(message)}&lang=${encodeURIComponent(lang || LANG)}`;
+  const r = await fetch(url, { method: "GET" });
+  if (!r.ok || !r.body) throw new Error(`stream failed: ${r.status}`);
+  const reader = r.body.getReader();
+  const dec = new TextDecoder("utf-8");
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const chunk = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const line = chunk.split("\n").find(l => l.startsWith("data: "));
+      if (line) {
+        try { onEvent(JSON.parse(line.slice(6))); } catch {}
+      }
+    }
+  }
+}
+async function apiGetState() {
+  const r = await fetch("/state");
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+/* ===========================================================================
+   rendering: thread
+   ========================================================================= */
+function appendUserMsg(text) {
+  const inner = $("#thread-inner");
+  const wrap = el("div", { class: "msg user" }, [
+    el("div", { class: "avatar" }, "U"),
+    el("div", { class: "bubble-stack" }, [
+      el("div", { class: "who" }, t("you") + " · " + now()),
+      el("div", { class: "body-text" }, text),
+    ]),
+  ]);
+  inner.appendChild(wrap);
+  $("#thread").scrollTop = $("#thread").scrollHeight;
+  STATE.thread.push({ who: "user", text });
+}
+function appendBotMsg(text, kind = "info") {
+  const inner = $("#thread-inner");
+  const wrap = el("div", { class: `msg bot ${kind} ${LANG === "ar" ? "ar" : ""}` }, [
+    el("div", { class: "avatar" }, LANG === "ar" ? "ش" : "N"),
+    el("div", { class: "bubble-stack" }, [
+      el("div", { class: "who" }, t("op") + " · " + now()),
+      el("div", { class: "body-text" }, text),
+    ]),
+  ]);
+  inner.appendChild(wrap);
+  $("#thread").scrollTop = $("#thread").scrollHeight;
+  STATE.thread.push({ who: "bot", text, kind });
+  return wrap;
+}
+function appendLiveCard() {
+  const inner = $("#thread-inner");
+  const card = el("div", { class: "msg bot" }, [
+    el("div", { class: "avatar" }, LANG === "ar" ? "ش" : "N"),
+    el("div", { class: "bubble-stack" }, [
+      el("div", { class: "who" }, t("op") + " · " + now()),
+      (() => {
+        const live = el("div", { class: "live" });
+        live.appendChild(el("div", { class: "live-head" }, [
+          el("div", { class: "live-title" }, [
+            el("div", { class: "pulse-dot" }),
+            el("span", {}, t("thinking") + "…"),
+          ]),
+          el("div", { class: "live-meta" }, [
+            el("span", { id: "live-elapsed" }, "0.0s"),
+            el("span", { id: "live-phase" }, "—"),
+          ]),
+        ]));
+        const phases = el("div", { class: "phases", id: "live-phases" });
+        live.appendChild(phases);
+        const evtList = el("div", { class: "evt-list", id: "live-events" });
+        live.appendChild(evtList);
+        return live;
+      })(),
+    ]),
+  ]);
+  inner.appendChild(card);
+  $("#thread").scrollTop = $("#thread").scrollHeight;
+  STATE.live = card;
+  // start elapsed timer
+  if (STATE.live._timer) clearInterval(STATE.live._timer);
+  const t0 = Date.now();
+  STATE.live._timer = setInterval(() => {
+    const e = STATE.live.querySelector("#live-elapsed");
+    if (e) e.textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+  }, 100);
+  return card;
+}
+function liveUpdate(phase, evType, evText) {
+  if (!STATE.live) return;
+  // update phase pills
+  if (phase) {
+    const phases = STATE.live.querySelector("#live-phases");
+    let pill = phases.querySelector(`[data-phase="${phase}"]`);
+    if (!pill) {
+      pill = el("span", { class: "phase active", "data-phase": phase }, [
+        el("span", { class: "pdot" }),
+        document.createTextNode(phase),
+      ]);
+      phases.appendChild(pill);
+    }
+    // mark previous "active" as "done" (if not the same one)
+    const prev = phases.querySelector(".phase.active");
+    if (prev && prev !== pill) {
+      prev.classList.remove("active");
+      prev.classList.add("done");
+    }
+    const phaseLabel = STATE.live.querySelector("#live-phase");
+    if (phaseLabel) phaseLabel.textContent = phase;
+  }
+  if (evType) {
+    const list = STATE.live.querySelector("#live-events");
+    // detect network-map ascii
+    const isAscii = evText && (evText.includes("NETWORK MAP") || evText.match(/^\s*\[seed-/) || evText.match(/^\s*\[[\w-]+\]\s*\(/));
+    const ev = el("div", { class: `evt ${evType}${isAscii ? " network" : ""}` }, [
+      el("span", { class: "e-t" }, now()),
+      el("span", { class: "e-k" }, evType),
+      el("span", { class: "e-txt" + (isAscii ? " ascii" : "") }, evText || ""),
+    ]);
+    list.appendChild(ev);
+    list.scrollTop = list.scrollHeight;
+  }
+}
+function liveClose(reply) {
+  if (!STATE.live) return;
+  if (STATE.live._timer) { clearInterval(STATE.live._timer); STATE.live._timer = null; }
+  // mark all active as done
+  STATE.live.querySelectorAll(".phase.active").forEach(p => { p.classList.remove("active"); p.classList.add("done"); });
+  // replace head title
+  const title = STATE.live.querySelector(".live-title span:last-child");
+  if (title) title.textContent = (reply && reply.status === "OK") ? t("executed") + " ✓" : ((reply && reply.status === "FAILURE") ? t("blocked") : t("applied"));
+  // append reply as bubble-stack child
+  const stack = STATE.live.parentElement;
+  // attach data card if any
+  if (reply && reply.data) {
+    if (reply.data.config) {
+      const card = renderConfigCard(reply.data);
+      stack.appendChild(card);
+    } else if (reply.data.devices && Array.isArray(reply.data.devices)) {
+      const card = renderDeviceGrid(reply.data.devices);
+      stack.appendChild(card);
+    }
+  }
+  STATE.live = null;
+  STATE.thread.push({ who: "bot", reply });
+}
+function renderConfigCard(data) {
+  const card = el("div", { class: "data-card" });
+  card.appendChild(el("div", { class: "data-card-head" }, [
+    el("div", { class: "label" }, [
+      el("span", { class: "pill ok", style: "padding:1px 6px;font-size:9px" }, "RENDER-VERIFIED"),
+      el("b", {}, data.device || "config"),
+    ]),
+    el("div", { class: "actions" }, [
+      el("button", { onclick: () => copyToClipboard(data.config, "Config copied") }, [
+        el("span", { html: "⧉" }), el("span", {}, LANG === "ar" ? "نسخ" : "Copy"),
+      ]),
+      el("button", { onclick: () => downloadFile(`${data.device || "config"}.ios`, data.config) }, [
+        el("span", { html: "⤓" }), el("span", {}, LANG === "ar" ? "تنزيل" : "Download"),
+      ]),
+    ]),
+  ]));
+  const body = el("div", { class: "config-body" });
+  // highlight Cisco IOS-XE keywords
+  const KW = new Set(["enable","configure","interface","vlan","ip","address","router","hostname","end","do","!","name","description","switchport","trunk","access","router","bgp","ospf","eigrp","rip","static","route","line","vty","console","login","password","service","exit","wr","copy"]);
+  body.innerHTML = (data.config || "").split("\n").map(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("!") || trimmed.startsWith("#")) {
+      return `<span class="c">${escapeHtml(line)}</span>`;
+    }
+    const parts = line.split(/(\s+)/);
+    return parts.map(p => {
+      if (KW.has(p)) return `<span class="k">${escapeHtml(p)}</span>`;
+      if (/^\d+\.\d+\.\d+\.\d+/.test(p)) return `<span class="v">${escapeHtml(p)}</span>`;
+      if (/^\d+$/.test(p)) return `<span class="n">${escapeHtml(p)}</span>`;
+      return escapeHtml(p);
+    }).join("");
+  }).join("\n");
+  card.appendChild(body);
+  return card;
+}
+function renderDeviceGrid(devices) {
+  const grid = el("div", { class: "data-card" });
+  grid.appendChild(el("div", { class: "data-card-head" }, [
+    el("div", { class: "label" }, [
+      el("b", {}, LANG === "ar" ? "الأجهزة المكتشفة" : "Discovered devices"),
+      el("span", { style: "color:var(--fg-3); margin-inline-start:6px" }, `${devices.length}`),
+    ]),
+  ]));
+  const g = el("div", { class: "dev-grid" });
+  devices.forEach(d => {
+    const status = (d.status || "UNKNOWN").toUpperCase();
+    const cls = status === "COMPLETE" ? "ok" : status === "PARTIAL" ? "warn" : status === "UNREACHABLE" || status === "FAILED" ? "bad" : "muted";
+    g.appendChild(el("div", { class: "dev-card" }, [
+      el("div", { class: "d-name" }, [
+        el("span", { class: `dot-sm ${cls}` }),
+        el("span", {}, d.device_ref || d.name || "—"),
+      ]),
+      el("div", { class: "d-meta" }, [
+        el("div", {}, [el("b", {}, d.vendor || "—"), " · ", d.model || "—"]),
+        el("div", {}, d.version || ""),
+      ]),
+      el("div", { class: `d-status ${cls}` }, status),
+    ]));
+  });
+  grid.appendChild(g);
+  return grid;
+}
+
+/* ===========================================================================
+   rendering: state panel
+   ========================================================================= */
+function renderCtx() {
+  const s = STATE.state;
+  const body = $("#ctx-body");
+  if (!s) {
+    body.innerHTML = `<div class="empty"><div class="ico">○</div><div>${LANG === "ar" ? "لا توجد بيانات بعد" : "No data yet"}</div></div>`;
+    return;
+  }
+  const tab = STATE.tab || "state";
+  if (tab === "state") {
+    const lastRun = s.lastRun || {};
+    const finalStatus = lastRun.final || "—";
+    const finalCls = finalStatus.includes("APPLIED") ? "ok" : finalStatus.includes("STAGED") ? "warn" : finalStatus.includes("BLOCKED") || finalStatus.includes("FAILED") ? "bad" : "muted";
+    const devices = s.devices || [];
+    const completeCount = devices.filter(d => (d.status || "").toUpperCase() === "COMPLETE").length;
+    body.innerHTML = `
+      <div class="section-title"><span>${LANG === "ar" ? "الحالة" : "Status"}</span></div>
+      <div class="kv">
+        <div class="k">${LANG === "ar" ? "الربط" : "Bonded"}</div><div class="v">${s.bonded ? `<span style="color:var(--good)">✓ ${LANG === "ar" ? "نعم" : "Yes"}</span>` : `<span style="color:var(--fg-3)">${LANG === "ar" ? "لا" : "No"}</span>`}</div>
+        <div class="k">${LANG === "ar" ? "الأجهزة" : "Devices"}</div><div class="v">${devices.length} <span style="color:var(--good)">(${completeCount} ${LANG === "ar" ? "مكتمل" : "complete"})</span></div>
+        <div class="k">${LANG === "ar" ? "الروابط" : "Links"}</div><div class="v">${s.links || 0}</div>
+        <div class="k">${LANG === "ar" ? "السجل" : "Ledger"}</div><div class="v mono">${s.ledger || 0} ${LANG === "ar" ? "حدث" : "events"}</div>
+        <div class="k">${LANG === "ar" ? "النتيجة الأخيرة" : "Last run"}</div><div class="v"><span class="pill ${finalCls}" style="padding:1px 6px;font-size:10px">${finalStatus}</span></div>
+      </div>
+
+      <div class="section-title"><span>${LANG === "ar" ? "الأجهزة" : "Devices"}</span><span style="color:var(--fg-3)">${devices.length}</span></div>
+      ${devices.map(d => {
+        const status = (d.status || "UNKNOWN").toUpperCase();
+        const cls = status === "COMPLETE" ? "ok" : status === "PARTIAL" ? "warn" : status === "UNREACHABLE" || status === "FAILED" ? "bad" : "muted";
+        return `<div class="mini-dev">
+          <span class="dot-sm ${cls === "ok" ? "ok" : cls === "bad" ? "bad" : cls === "warn" ? "warn" : ""}" style="width:7px;height:7px;border-radius:50%;background:${cls === "ok" ? "var(--good)" : cls === "bad" ? "var(--bad)" : cls === "warn" ? "var(--warn)" : "var(--fg-3)"}"></span>
+          <span class="name">${escapeHtml(d.device_ref)}</span>
+          <span class="meta">${escapeHtml((d.vendor || "") + " " + (d.model || ""))}</span>
+        </div>`;
+      }).join("") || `<div class="empty"><div>${LANG === "ar" ? "لم يتم اكتشاف أجهزة بعد" : "No devices discovered yet"}</div></div>`}
+    `;
+  } else if (tab === "topology") {
+    const t = s.topology;
+    if (!t || !t.nodes || t.nodes.length === 0) {
+      body.innerHTML = `<div class="empty"><div class="ico">◌</div><div>${LANG === "ar" ? "لم يتم بناء طوبولوجيا بعد" : "No topology yet. Run discover."}</div></div>`;
+      return;
+    }
+    body.innerHTML = `<div class="section-title"><span>${LANG === "ar" ? "خريطة الشبكة" : "Network map"}</span><span style="color:var(--fg-3)">${t.nodes.length} ${LANG === "ar" ? "عقدة" : "nodes"}, ${(t.edges || []).length} ${LANG === "ar" ? "رابط" : "links"}</span></div>`;
+    body.appendChild(renderTopo(t));
+  } else if (tab === "evidence") {
+    const ev = s.evidence || [];
+    if (ev.length === 0) {
+      body.innerHTML = `<div class="empty"><div class="ico">⊟</div><div>${LANG === "ar" ? "لا توجد أدلة بعد" : "No evidence yet"}</div></div>`;
+      return;
+    }
+    body.innerHTML = `<div class="section-title"><span>${LANG === "ar" ? "الأدلة" : "Evidence"}</span><span style="color:var(--fg-3)">${ev.length} ${LANG === "ar" ? "عنصر" : "items"}</span></div><div class="evidence">${ev.map(e => `
+      <div class="evidence-item">
+        <div class="head">
+          <span class="eid">${escapeHtml(e.id || e.event_id || e.evidence_id || "—")}</span>
+          <span class="etype">${escapeHtml(e.type || "")}</span>
+          <span class="ts">${fmtTime(e.collected_at || e.ts)}</span>
+        </div>
+        <div class="detail">${escapeHtml((e.detail || e.summary || JSON.stringify(e).slice(0, 200)).slice(0, 240))}</div>
+      </div>
+    `).join("")}</div>`;
+  }
+}
+function renderTopo(t) {
+  const w = 340, h = 260;
+  // simple radial layout: seed in center, others around
+  const nodes = t.nodes || [];
+  const edges = t.edges || [];
+  const cx = w / 2, cy = h / 2;
+  const positioned = nodes.map((n, i) => {
+    if (i === 0) return { ...n, x: cx, y: cy };
+    const r = Math.min(w, h) * 0.38;
+    const ang = (i - 1) * (2 * Math.PI / Math.max(1, nodes.length - 1)) - Math.PI / 2;
+    return { ...n, x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) };
+  });
+  const idMap = {};
+  positioned.forEach(n => { idMap[n.device_ref] = n; });
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  // edges
+  const edgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  edges.forEach(e => {
+    const a = idMap[e.a || e.from || e.device_a];
+    const b = idMap[e.b || e.to || e.device_b];
+    if (!a || !b) return;
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+    line.setAttribute("stroke", e.status === "VERIFIED" ? "var(--good)" : e.status === "ONE-SIDED" ? "var(--warn)" : "var(--line-2)");
+    line.setAttribute("stroke-width", e.status === "VERIFIED" ? "2" : "1.5");
+    line.setAttribute("stroke-dasharray", e.status === "ONE-SIDED" ? "4 3" : "0");
+    line.setAttribute("opacity", "0.7");
+    edgeG.appendChild(line);
+    // label
+    const tx = (a.x + b.x) / 2, ty = (a.y + b.y) / 2;
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", tx); text.setAttribute("y", ty);
+    text.setAttribute("fill", "var(--fg-3)");
+    text.setAttribute("font-size", "8");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("font-family", "var(--mono)");
+    text.textContent = e.proto || e.protocol || "link";
+    edgeG.appendChild(text);
+  });
+  svg.appendChild(edgeG);
+  // nodes
+  const nodeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  positioned.forEach(n => {
+    const status = (n.status || "UNKNOWN").toUpperCase();
+    const fill = status === "COMPLETE" ? "var(--good)" : status === "PARTIAL" ? "var(--warn)" : status === "UNREACHABLE" || status === "FAILED" ? "var(--bad)" : "var(--fg-3)";
+    const role = n.classification || n.role || "device";
+    const isSeed = role.toUpperCase().includes("SEED") || role.toUpperCase().includes("CORE");
+    const r = isSeed ? 18 : 13;
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", n.x); c.setAttribute("cy", n.y); c.setAttribute("r", r);
+    c.setAttribute("fill", "var(--bg-2)"); c.setAttribute("stroke", fill); c.setAttribute("stroke-width", "2");
+    if (status === "COMPLETE") {
+      const anim = document.createElementNS("http://www.w3.org/2000/svg", "animate");
+      anim.setAttribute("attributeName", "r"); anim.setAttribute("values", `${r};${r+4};${r}`);
+      anim.setAttribute("dur", "2.4s"); anim.setAttribute("repeatCount", "indefinite");
+      c.appendChild(anim);
+    }
+    nodeG.appendChild(c);
+    // label
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", n.x); text.setAttribute("y", n.y + r + 11);
+    text.setAttribute("fill", "var(--fg-0)"); text.setAttribute("font-size", "10");
+    text.setAttribute("text-anchor", "middle"); text.setAttribute("font-weight", "600");
+    text.textContent = n.device_ref;
+    nodeG.appendChild(text);
+    // role label
+    const roleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    roleText.setAttribute("x", n.x); roleText.setAttribute("y", n.y + r + 22);
+    roleText.setAttribute("fill", "var(--fg-3)"); roleText.setAttribute("font-size", "8");
+    roleText.setAttribute("text-anchor", "middle");
+    roleText.textContent = role;
+    nodeG.appendChild(roleText);
+  });
+  svg.appendChild(nodeG);
+
+  const wrap = el("div", { class: "topo" });
+  wrap.appendChild(svg);
+  const legend = el("div", { class: "topo-legend" }, [
+    el("div", { class: "item" }, [el("span", { class: "swatch", style: "background:var(--good)" }), " COMPLETE "]),
+    el("div", { class: "item" }, [el("span", { class: "swatch", style: "background:var(--warn)" }), " PARTIAL "]),
+    el("div", { class: "item" }, [el("span", { class: "swatch", style: "background:var(--bad)" }),  " UNREACHABLE "]),
+  ]);
+  wrap.appendChild(legend);
+  return wrap;
+}
+
+/* ===========================================================================
+   sidebar cmd list
+   ========================================================================= */
+function buildCmdList() {
+  const list = $("#cmd-list");
+  list.innerHTML = "";
+  COMMANDS.filter(c => c.num).forEach(c => {
+    const btn = el("button", { class: "cmd", "data-cmd": c.verb, onclick: () => sendMessage(c.verb) }, [
+      el("span", { class: "cmd-num" }, c.num),
+      el("span", { class: "cmd-label" }, c.verb),
+      c.hotkey ? el("span", { class: "kbd-mini" }, c.hotkey) : null,
+    ]);
+    list.appendChild(btn);
+  });
+  // also add "show evidence" + "help" if not present
+  if (!COMMANDS.filter(c => c.num).find(c => c.verb.startsWith("help"))) {
+    // already in COMMANDS without num
+  }
+}
+
+/* ===========================================================================
+   send / stream
+   ========================================================================= */
+async function sendMessage(text) {
+  if (STATE.busy) return;
+  text = (text || "").trim();
+  if (!text) return;
+  // hide welcome after first message
+  const welcome = $("#welcome");
+  if (welcome) welcome.remove();
+  appendUserMsg(text);
+  STATE.busy = true;
+  $("#btn-send").disabled = true;
+  $("#composer-state").textContent = t("state.busy");
+  appendLiveCard();
+  // pre-emptive: known workflow step transition
+  if (/^discover\b/i.test(text)) setStep("discover");
+  else if (/^apply\b/i.test(text)) setStep("apply");
+  else if (/^show\s+(config|state|evidence|devices|topology|ledger)/i.test(text)) setStep("verify");
+  let reply = null;
+  try {
+    await apiStream(text, LANG, (ev) => {
+      if (ev.type === "show" || ev.type === "ask" || ev.type === "confirm" || ev.type === "answer" || ev.type === "error") {
+        liveUpdate(null, ev.type, ev.text || ev.prompt || ev.value || ev.detail);
+      } else if (ev.type === "phase") {
+        liveUpdate(ev.phase, null, null);
+      } else if (ev.type === "reply") {
+        reply = ev;
+      } else if (ev.type === "start") {
+        liveUpdate("START", "show", "▶ " + (LANG === "ar" ? "بدء التنفيذ…" : "Starting execution…"));
+      }
+    });
+    if (!reply) {
+      // Fallback to sync POST
+      reply = await apiPost(text, LANG);
+    }
+  } catch (e) {
+    reply = { status: "FAILURE", intent: "ERROR", summary: "Network error", detail: String(e) };
+  }
+  // if stream didn't show the reply summary as a "show" event, surface it
+  if (reply && reply.summary) {
+    liveUpdate(null, "reply", `${reply.status === "OK" ? "✓" : "✕"} ${reply.summary}`);
+  }
+  liveClose(reply);
+  STATE.busy = false;
+  $("#btn-send").disabled = false;
+  $("#composer-state").textContent = t("state.ready");
+  if (reply && reply.status === "OK") {
+    if (reply.intent === "discover") setStep("discover");
+    else if (reply.intent === "apply_intent") setStep("apply");
+    if (reply.summary) toast(reply.summary, "ok", 3500);
+  } else if (reply && reply.status === "FAILURE") {
+    toast(reply.summary || LANG === "ar" ? "فشل" : "Failed", "bad", 4000);
+  }
+  // refresh state
+  await refreshState();
+}
+function setStep(name) {
+  $$("#workflow .wf-step").forEach(el => el.classList.remove("active"));
+  const target = $(`#workflow .wf-step[data-step="${name}"]`);
+  if (target) target.classList.add("active");
+  // also mark prior as done
+  const steps = ["bind", "discover", "design", "apply", "verify"];
+  const idx = steps.indexOf(name);
+  for (let i = 0; i < idx; i++) {
+    const s = $(`#workflow .wf-step[data-step="${steps[i]}"]`);
+    if (s) s.classList.add("done");
+  }
+}
+
+/* ===========================================================================
+   state refresh
+   ========================================================================= */
+async function refreshState() {
+  try {
+    const s = await apiGetState();
+    STATE.state = s;
+    if (s) {
+      $("#pill-bonded").className = "pill " + (s.bonded ? "ok" : "");
+      $("#pill-bonded-v").textContent = s.bonded ? (LANG === "ar" ? "نعم" : "yes") : (LANG === "ar" ? "لا" : "no");
+      $("#pill-devices").className = "pill " + ((s.devices || []).length > 0 ? "ok" : "");
+      $("#pill-devices-v").textContent = (s.devices || []).length;
+      $("#pill-ledger").className = "pill " + ((s.ledger || 0) > 0 ? "ok" : "");
+      $("#pill-ledger-v").textContent = s.ledger || 0;
+      // advance workflow
+      if (s.bonded) setStep("bind");
+      if ((s.devices || []).length > 0) setStep("discover");
+      const final = (s.lastRun || {}).final || "";
+      if (final.includes("APPLIED")) setStep("verify");
+      else if (final.includes("STAGED") || final.includes("RENDER")) setStep("apply");
+      else if ((s.devices || []).length > 0) setStep("design");
+    }
+    renderCtx();
+  } catch {}
+}
+
+/* ===========================================================================
+   misc helpers
+   ========================================================================= */
+function copyToClipboard(text, label = "Copied") {
+  navigator.clipboard.writeText(text).then(() => toast(label, "ok", 1800)).catch(() => toast("Copy failed", "bad", 1800));
+}
+function downloadFile(name, content) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast(LANG === "ar" ? "تم التنزيل" : "Downloaded", "ok", 1800);
+}
+function downloadEvidenceJson() {
+  if (!STATE.state) { toast(LANG === "ar" ? "لا توجد أدلة" : "No evidence", "bad", 1800); return; }
+  const payload = {
+    generated_at: new Date().toISOString(),
+    lang: LANG,
+    state: STATE.state,
+    thread: STATE.thread.map(m => m.text || m.reply || "").filter(Boolean),
+  };
+  downloadFile(`netops-evidence-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, JSON.stringify(payload, null, 2));
+}
+
+/* ===========================================================================
+   command palette
+   ========================================================================= */
+function openPalette() {
+  $("#modal-back").classList.add("open");
+  $("#modal-input").value = "";
+  renderPalette("");
+  setTimeout(() => $("#modal-input").focus(), 50);
+}
+function closePalette() { $("#modal-back").classList.remove("open"); }
+function renderPalette(q) {
+  const list = $("#modal-list");
+  list.innerHTML = "";
+  const ql = (q || "").toLowerCase();
+  const matches = COMMANDS.filter(c => !ql || c.verb.toLowerCase().includes(ql) || (c.en || "").toLowerCase().includes(ql) || (c.ar || "").includes(ql));
+  if (matches.length === 0) {
+    list.appendChild(el("div", { class: "empty" }, LANG === "ar" ? "لا توجد نتائج" : "No matches"));
+    return;
+  }
+  matches.forEach((c, i) => {
+    const item = el("button", { class: "modal-cmd" + (i === 0 ? " focus" : ""), onclick: () => { closePalette(); sendMessage(c.verb); } }, [
+      el("span", { class: "verb" }, c.verb),
+      el("span", { class: "desc" }, LANG === "ar" ? (c.ar || c.en) : c.en),
+      c.hotkey ? el("span", { class: "kbd-mini" }, c.hotkey) : null,
+    ]);
+    list.appendChild(item);
+  });
+  STATE._paletteFocus = 0;
+  STATE._paletteItems = matches;
+}
+
+/* ===========================================================================
+   wire up
+   ========================================================================= */
+function wire() {
+  // input
+  const input = $("#input");
+  const send = $("#btn-send");
+  function autoResize() {
+    input.style.height = "auto";
+    input.style.height = Math.min(180, input.scrollHeight) + "px";
+  }
+  input.addEventListener("input", autoResize);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(input.value);
+      input.value = "";
+      autoResize();
+    }
+  });
+  send.addEventListener("click", () => {
+    sendMessage(input.value);
+    input.value = "";
+    autoResize();
+  });
+
+  // examples
+  $$(".example").forEach(b => b.addEventListener("click", () => sendMessage(b.dataset.cmd)));
+
+  // sidebar cmd list
+  buildCmdList();
+
+  // language toggle
+  $("#btn-lang").addEventListener("click", () => {
+    LANG = LANG === "en" ? "ar" : "en";
+    applyI18n();
+    refreshState();
+  });
+
+  // palette
+  $("#btn-palette").addEventListener("click", openPalette);
+  $("#modal-back").addEventListener("click", (e) => { if (e.target.id === "modal-back") closePalette(); });
+  $("#modal-input").addEventListener("input", (e) => renderPalette(e.target.value));
+  $("#modal-input").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closePalette();
+    else if (e.key === "Enter") { const f = $(".modal-cmd.focus"); if (f) f.click(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = $$(".modal-cmd");
+      if (items.length === 0) return;
+      const cur = items.findIndex(i => i.classList.contains("focus"));
+      items[cur].classList.remove("focus");
+      const next = e.key === "ArrowDown" ? (cur + 1) % items.length : (cur - 1 + items.length) % items.length;
+      items[next].classList.add("focus");
+      items[next].scrollIntoView({ block: "nearest" });
+    }
+  });
+
+  // keyboard shortcuts
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openPalette(); return; }
+    if ((e.metaKey || e.ctrlKey) && /^[1-6]$/.test(e.key)) {
+      e.preventDefault();
+      const idx = parseInt(e.key, 10) - 1;
+      const cmd = COMMANDS.filter(c => c.num)[idx];
+      if (cmd) sendMessage(cmd.verb);
+    }
+    if (e.key === "Escape") closePalette();
+  });
+
+  // tabs
+  $$(".tab").forEach(t => t.addEventListener("click", () => {
+    $$(".tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    STATE.tab = t.dataset.tab;
+    renderCtx();
+  }));
+
+  // refresh / download
+  $("#btn-refresh").addEventListener("click", () => refreshState());
+  $("#btn-download").addEventListener("click", downloadEvidenceJson);
+  $("#btn-clear-thread").addEventListener("click", () => {
+    STATE.thread = [];
+    $("#thread-inner").innerHTML = "";
+    location.reload();
+  });
+
+  // initial state
+  applyI18n();
+  refreshState();
+  setInterval(refreshState, 5000);
+}
+wire();
+</script>
+</body>
+</html>

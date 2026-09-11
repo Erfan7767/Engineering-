@@ -124,6 +124,10 @@ class SerialConsoleTransport:
                     self._baud = baud
                     return
             except Failure:
+                # The factory raised a typed failure (e.g., driver missing,
+                # RETRYABLE transient) — let it propagate immediately so the
+                # typed cause reaches the caller (L03 / T2). Do NOT catch
+                # it as a generic transport error here.
                 raise
             except Exception as exc:  # transport-level probe error ⇒ next candidate
                 probe_errors.append(f"{baud}:{type(exc).__name__}")

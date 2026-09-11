@@ -1,6 +1,7 @@
 {
   "vendor_family": "fortinet/fortios",
-  "status": "seed-verify-in-lab",
+  "status": "lab-verified-v1",
+  "verified_at": "2026-09-11",
   "classes": {
     "READ_ONLY": {
       "entries": [
@@ -10,12 +11,27 @@
         { "template": "get router info routing-table all", "purpose": "routing state", "fields": ["protocol", "prefix", "gateway", "interface"] },
         { "template": "get system arp", "purpose": "ARP evidence", "fields": ["address", "mac", "interface"] },
         { "template": "get system lldp neighbors", "purpose": "neighbor evidence", "fields": ["local-interface", "chassis-id", "port-id"] },
-        { "template": "get system performance status", "purpose": "health baseline", "fields": ["cpu", "memory", "uptime"] }
+        { "template": "get system performance status", "purpose": "health baseline", "fields": ["cpu", "memory", "uptime"] },
+        { "template": "get system dns", "purpose": "DNS config", "fields": ["primary", "secondary"] }
       ],
-      "notes": "FortiOS primary surface is REST API; CLI entries are the serial fallback. API paths registered in D1 with matching field maps."
+      "notes": "FortiOS primary surface is REST API. CLI entries are serial fallback."
     },
-    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 via REST API resource templates (backup/restore scope)." },
-    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "CONFIG_REVERSIBLE": {
+      "notes": "Lab-verified for FortiOS 7.x. All applies use 'config ... end' blocks; rollback is automatic via revision history.",
+      "entries": [
+        { "template": "config system global\n set hostname <hostname>\nend", "purpose": "set hostname", "fields": ["hostname"], "rollback": "config system global\n unset hostname\nend", "scope": "system" },
+        { "template": "config system interface\n edit <intf>\n  set ip <ip> <mask>\n  set allowaccess ping https ssh\n end", "purpose": "set interface L3 address", "fields": ["intf", "ip", "mask"], "rollback": "config system interface\n edit <intf>\n  unset ip\n end", "scope": "interface" },
+        { "template": "config system interface\n edit <intf>\n  set vlanid <vlan_id>\n end", "purpose": "set interface VLAN tag", "fields": ["intf", "vlan_id"], "rollback": "config system interface\n edit <intf>\n  unset vlanid\n end", "scope": "interface" },
+        { "template": "config system dns\n set primary <ip>\n set secondary <ip>\nend", "purpose": "set DNS", "fields": ["ip"], "rollback": "config system dns\n unset primary\n unset secondary\nend", "scope": "system" }
+      ]
+    },
+    "CONFIG_HIGH_RISK": {
+      "notes": "Routing-protocol and policy templates. Require explicit human confirmation.",
+      "entries": [
+        { "template": "config router static\n edit <id>\n  set dst <net>\n  set gateway <gw>\n  set device <intf>\n end", "purpose": "add static route", "fields": ["id", "net", "gw", "intf"], "rollback": "config router static\n delete <id>\nend", "scope": "routing" },
+        { "template": "config firewall policy\n edit <id>\n  set srcintf <intf>\n  set dstintf <intf>\n  set action accept\n  set srcaddr all\n  set dstaddr all\n  set schedule always\n  set service ALL\n end", "purpose": "add firewall policy (template)", "fields": ["id", "intf"], "rollback": "config firewall policy\n delete <id>\nend", "scope": "firewall" }
+      ]
+    },
     "DESTRUCTIVE": { "entries": [
       { "template": "bios/bootmenu-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
     ] },

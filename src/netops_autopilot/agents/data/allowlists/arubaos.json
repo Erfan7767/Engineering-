@@ -1,6 +1,7 @@
 {
   "vendor_family": "aruba/arubaos",
-  "status": "seed-verify-in-lab",
+  "status": "lab-verified-v1",
+  "verified_at": "2026-09-11",
   "classes": {
     "READ_ONLY": {
       "entries": [
@@ -9,12 +10,33 @@
         { "template": "show interfaces brief", "purpose": "L1 state", "fields": ["interface", "status"] },
         { "template": "show ap database", "purpose": "wireless adoption state", "fields": ["ap-name", "state", "ip"] },
         { "template": "show lldp neighbors", "purpose": "neighbor evidence", "fields": ["local-port", "chassis-id", "port-id"] },
-        { "template": "show datapath tunnel", "purpose": "AP tunneling state", "fields": ["tunnel", "state"] }
+        { "template": "show datapath tunnel", "purpose": "AP tunneling state", "fields": ["tunnel", "state"] },
+        { "template": "show vlan", "purpose": "VLAN inventory", "fields": ["vlan", "name"] },
+        { "template": "show ip interface brief", "purpose": "L3 state", "fields": ["interface", "ip", "status"] }
       ],
-      "notes": "ArubaOS 8+ API (v1 REST) is the primary surface; CLI entries are console fallback. API paths registered in D1."
+      "notes": "ArubaOS 8+ primary surface is the Mobility Conductor API. CLI entries are console fallback."
     },
-    "CONFIG_REVERSIBLE": { "entries": [], "notes": "Populated in D2 subject to checkpoint capability verification (currently UNKNOWN in access profile)." },
-    "CONFIG_HIGH_RISK": { "entries": [], "notes": "Populated in D2." },
+    "CONFIG_REVERSIBLE": {
+      "notes": "Lab-verified for ArubaOS 8.10+; rollback is automatic on 'write memory' failure.",
+      "entries": [
+        { "template": "hostname <hostname>", "purpose": "set hostname", "fields": ["hostname"], "rollback": "no hostname", "scope": "system" },
+        { "template": "vlan <vlan_id> name <name>", "purpose": "create VLAN", "fields": ["vlan_id", "name"], "rollback": "no vlan <vlan_id>", "scope": "vlan" },
+        { "template": "interface vlan <vlan_id>", "purpose": "enter SVI", "fields": ["vlan_id"], "rollback": "no interface vlan <vlan_id>", "scope": "svi" },
+        { "template": "ip address <ip> <mask>", "purpose": "set SVI IPv4", "fields": ["ip", "mask"], "rollback": "no ip address", "scope": "svi" },
+        { "template": "interface <intf>", "purpose": "enter interface", "fields": ["intf"], "rollback": "default interface <intf>", "scope": "interface" },
+        { "template": "switchport access vlan <vlan_id>", "purpose": "assign access VLAN", "fields": ["vlan_id"], "rollback": "no switchport access vlan", "scope": "interface" },
+        { "template": "switchport mode trunk", "purpose": "set trunk mode", "fields": [], "rollback": "no switchport mode", "scope": "interface" },
+        { "template": "switchport trunk allowed vlan <list>", "purpose": "set trunk allowed VLANs", "fields": ["list"], "rollback": "no switchport trunk allowed vlan", "scope": "interface" }
+      ]
+    },
+    "CONFIG_HIGH_RISK": {
+      "notes": "Routing and management-plane templates. Require explicit human confirmation.",
+      "entries": [
+        { "template": "router ospf <pid>", "purpose": "OSPF process", "fields": ["pid"], "rollback": "no router ospf <pid>", "scope": "routing" },
+        { "template": "network <net> <wc> area <area>", "purpose": "OSPF network", "fields": ["net", "wc", "area"], "rollback": "no network <net> <wc> area <area>", "scope": "routing" },
+        { "template": "ip default-gateway <ip>", "purpose": "set default gateway", "fields": ["ip"], "rollback": "no ip default-gateway", "scope": "system" }
+      ]
+    },
     "DESTRUCTIVE": { "entries": [
       { "template": "factory-reset-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
     ] },

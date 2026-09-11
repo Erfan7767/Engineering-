@@ -9,6 +9,20 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# Runtime databases — never committed (per-test ledger files)
+*.sqlite3
+*.sqlite
+*.db
+ledger.db
+!tests/fixtures/**/*.sqlite3
+
+# Run reports / runtime state
+reports/
+run_reports/
+out/
+*.log
+logs/
+
 # Environment / credentials — never committed (L11)
 .env
 .netrc
