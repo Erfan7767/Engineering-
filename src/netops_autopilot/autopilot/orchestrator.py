@@ -28,6 +28,8 @@ from ..engines.design_engine import DesignEngine, SiteDesign
 from ..engines.discovery_crawl import CrawlReport, DeviceClass, DiscoveryCrawlEngine, SessionFactory
 from ..engines.intent_compiler import IntentCompiler, NetworkIntent
 from ..engines.verification import VerificationEngine, VerificationPlanner
+from ..engines.config_ir import ConfigIR
+from ..engines.diagnostics import diagnose, remediation_nodes
 from ..engines.verification_executor import CLIENT_ZONE_KINDS, VerificationExecutor
 from ..engines.link_evidence import LinkEvidenceEngine
 from ..engines.service_graph import ServiceGraph
@@ -55,6 +57,10 @@ class Phase(str, Enum):
     #: "Config stuck" is not "requirement met": the executor already proves the
     #: lines landed, this proves the network behaves.
     VERIFY = "VERIFY"
+    #: Phase 8 — a failure is a starting point, not an ending. Diagnosis,
+    #: repair and re-verification, on the evidence verification already
+    #: gathered. Runs only when VERIFY did not pass.
+    TROUBLESHOOT = "TROUBLESHOOT"
     REPORT = "REPORT"
 
 
@@ -86,6 +92,11 @@ class AutopilotReport:
     renders: dict[str, RenderedConfig] = field(default_factory=dict)
     execution: Optional[dict] = None
     verification: Optional[dict] = None
+    #: Phase 8. Present only when VERIFY did not pass. Kept separate from
+    #: ``verification`` so "what was found" and "what was done about it" are
+    #: never the same field — conflating them is how a repair gets read as a
+    #: test result.
+    troubleshooting: Optional[dict] = None
     final: str = "RUNNING"            # COMPLETE-STAGED | BLOCKED-*
 
 
@@ -270,6 +281,169 @@ class AutopilotEngine:
             # An applied run whose network does not do what was asked is not
             # complete. The config landed; the requirement did not.
             self.report.final = "INCOMPLETE-" + self.report.final.split("-", 1)[1]
+
+        # Phase 8. A non-PASS verdict is where troubleshooting begins, not
+        # where the run gives up. Runs last so the VERIFY record above stays
+        # the auditable pre-repair state.
+        if verdict != "PASS":
+            self._phase_troubleshoot(design, outcome, mgmt_session_factory)
+
+    # ---------------------------------------------------------------- phase 8
+    def _phase_troubleshoot(self, design, outcome, mgmt_session_factory) -> None:
+        """Diagnose what verification proved wrong, repair what is safe, re-check.
+
+        Three things are kept apart in the record, because a report that merges
+        them cannot be trusted: what was found (``findings``), what was fixed
+        (``repaired``), and what is still wrong (``open``).
+
+        Nothing here is a guess. Every diagnosis descends from a ``Finding``
+        the verifier recorded while reading a device, and the repair is a
+        subset of the design's own IR nodes — never configuration authored for
+        the occasion.
+        """
+        # Imported here rather than at module scope, matching how
+        # _phase_execute does it: the executor is a leaf dependency of the
+        # apply paths and keeping it local avoids an import cycle through
+        # access.executor.
+        from ..access.executor import ConfigExecutor
+
+        findings = [f for fs in outcome.findings.values() for f in fs]
+        answers = self._design_answers()
+        dns_available = bool((answers.get("dns_servers") or "").strip())
+        diagnoses = diagnose(findings, dns_available=dns_available)
+
+        vendor_os_of: dict[str, str] = {}
+        if self.report.crawl is not None:
+            for dev in self.report.crawl.devices:
+                if dev.identity and dev.identity.vendor_family:
+                    vendor_os_of[dev.device_ref] = \
+                        dev.identity.vendor_family.split("/")[-1]
+        try:
+            irs = DesignEngine(CapabilityEngine.load_builtin()).render_ir(
+                design, vendor_os_of=vendor_os_of, answers=answers)
+        except Failure as exc:
+            irs = {}
+            self.io.show("!! TROUBLESHOOT: design IR unavailable: "
+                         + "; ".join(exc.causes))
+        selection = remediation_nodes(diagnoses, irs)
+        nodes_by_device = selection["nodes"]
+
+        repaired: list[dict] = []
+        apply_failures: list[dict] = []
+        for ref, nodes in sorted(nodes_by_device.items()):
+            family = self._family_of(ref)
+            allowlist = self.catalog_allowlists.get(family) if family else None
+            if allowlist is None:
+                apply_failures.append({
+                    "device_ref": ref,
+                    "reason": (f"NO_ALLOWLIST:{family}: the repair was designed "
+                               f"but cannot be gated, so nothing was sent")})
+                continue
+            try:
+                ir = ConfigIR(title=f"phase8-repair-{ref}", nodes=tuple(nodes))
+                rendered = render_ir(ref, ir)
+            except Failure as exc:
+                apply_failures.append({"device_ref": ref,
+                                       "reason": "; ".join(exc.causes)})
+                continue
+            try:
+                session = mgmt_session_factory(ref, ())
+            except Exception as exc:  # noqa: BLE001
+                apply_failures.append({"device_ref": ref,
+                                       "reason": f"NO_MGMT_SESSION: {exc!r}"})
+                continue
+            if session is None:
+                apply_failures.append({"device_ref": ref,
+                                       "reason": "NO_MGMT_SESSION: no session"})
+                continue
+            ex = ConfigExecutor(allowlist=allowlist, store=self.store,
+                                run_id=f"{self._run_id_safe()}-repair-{ref}",
+                                key_id=self.key_id,
+                                collector_id=f"repair-executor:{ref}",
+                                time_authority=self.time)
+            ex.arm_high_risk()
+            record = ex.apply(ref, session, _all_commands(rendered),
+                              dry_run=False, wrappers=rendered.wrappers,
+                              mode_exit=rendered.mode_exit,
+                              persist=getattr(rendered, "persist", ()))
+            entry = {"device_ref": ref,
+                     "nodes": [n.node_id for n in nodes],
+                     "outcome": getattr(record.outcome, "value",
+                                        str(record.outcome)),
+                     "applied": [c.command for c in record.commands
+                                 if c.phase == "APPLY" and c.ok],
+                     "failure_causes": list(record.failure_causes)}
+            if entry["outcome"] == "APPLIED":
+                repaired.append(entry)
+            else:
+                apply_failures.append(entry)
+
+        # Re-ask the network. A repair that is not re-verified is an intention,
+        # not a result — and the second run uses a fresh executor so nothing is
+        # answered from the first run's evidence cache.
+        reverify: Optional[dict] = None
+        if repaired:
+            try:
+                specs = VerificationPlanner().derive(self.report.intent)
+                again = VerificationExecutor(
+                    self.collector,
+                    lambda r, _k: mgmt_session_factory(r, ())).run(
+                        specs=specs, design=design)
+                if not again.results:
+                    verdict = "INCOMPLETE"
+                elif again.unrun:
+                    verdict = "INCOMPLETE"
+                elif again.failed:
+                    verdict = "FAILED"
+                else:
+                    verdict = "PASS"
+                reverify = {"passed": len(again.passed),
+                            "failed": len(again.failed),
+                            "unrun": len(again.unrun),
+                            "verdict": verdict,
+                            "still_failed": list(again.failed)}
+                self.report.verification["verdict_after_repair"] = verdict
+            except Failure as exc:
+                reverify = {"verdict": "UNVERIFIED",
+                            "reason": "; ".join(exc.causes)}
+
+        still_open = [
+            {"cause": d.cause.id, "zone": d.finding.zone,
+             "device": d.finding.device_ref,
+             "why_not_fixed": d.not_remediable,
+             "evidence_id": d.finding.evidence_id}
+            for d in diagnoses if not d.remediable]
+
+        self.report.troubleshooting = {
+            "findings": [
+                {"kind": d.finding.kind.value, "zone": d.finding.zone,
+                 "device": d.finding.device_ref, "cause": d.cause.id,
+                 "evidence_id": d.finding.evidence_id} for d in diagnoses],
+            "remediable": sum(1 for d in diagnoses if d.remediable),
+            "repaired": repaired,
+            "apply_failures": apply_failures,
+            "missing_design_nodes": list(selection["missing"]),
+            "open": still_open,
+            "reverified": reverify,
+        }
+
+        n_fix = len(repaired)
+        detail = (f"{len(diagnoses)} cause(s) · {n_fix} repaired · "
+                  f"{len(still_open)} need a human")
+        if n_fix and reverify:
+            detail += f" · re-verify {reverify['verdict']}"
+        self._transition(Phase.VERIFY.value, Phase.TROUBLESHOOT.value,
+                         "DIAGNOSE", "REPAIRED" if n_fix else "NO_SAFE_FIX")
+        self._phase(Phase.TROUBLESHOOT,
+                    "OK" if n_fix else "NO_SAFE_FIX", detail)
+        for d in diagnoses:
+            self.io.show("!! DIAG " + d.render("en").replace("\n", " | "))
+        if n_fix and reverify:
+            self.io.show(f"[TROUBLESHOOT] repaired {n_fix} device(s); "
+                         f"re-verification: {reverify['verdict']}")
+        for o in still_open:
+            self.io.show(f"!! NEEDS HUMAN {o['cause']} on {o['device']} "
+                         f"({o['zone']}): {o['why_not_fixed']}")
 
     def _phase_bond(self, port: str) -> None:
         self._phase(Phase.BOND, "HUMAN_DECISION",

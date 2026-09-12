@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from enum import Enum
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -59,6 +60,41 @@ class Evidence:
     text: str
 
 
+class FindingKind(str, Enum):
+    """A specific, machine-readable defect established from device evidence.
+
+    The reason strings are for the operator to read. Diagnosis must not parse
+    them: reconstructing a fact by matching prose is how a diagnosis ends up
+    asserting something the evidence never showed. Each finding is recorded at
+    the moment the fact is established, from the same values that produced the
+    sentence.
+    """
+
+    VLAN_ABSENT = "VLAN_ABSENT"
+    SVI_ABSENT = "SVI_ABSENT"
+    SVI_NOT_UP = "SVI_NOT_UP"
+    SVI_WRONG_ADDRESS = "SVI_WRONG_ADDRESS"
+    ISOLATION_NOT_ENFORCED = "ISOLATION_NOT_ENFORCED"
+    DHCP_POOL_MISSING = "DHCP_POOL_MISSING"
+    DHCP_POOL_WRONG_NETWORK = "DHCP_POOL_WRONG_NETWORK"
+    DNS_SERVER_MISSING = "DNS_SERVER_MISSING"
+    NO_DEFAULT_ROUTE = "NO_DEFAULT_ROUTE"
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One proven defect, carrying everything needed to act on it."""
+
+    kind: FindingKind
+    device_ref: str
+    zone: str
+    vlan_id: int = 0
+    detail: str = ""
+    #: The ledger artifact the fact was read from, so a diagnosis can be
+    #: traced to the evidence rather than to the sentence describing it.
+    evidence_id: str = ""
+
+
 @dataclass(frozen=True)
 class VerificationOutcome:
     """Graded results, plus the tests that could not be graded and why."""
@@ -69,6 +105,9 @@ class VerificationOutcome:
     #: Why each FAIL failed, keyed by test_id. A FAIL without a reason is not
     #: actionable, and the operator is owed the specific missing precondition.
     reasons: dict[str, str] = field(default_factory=dict)
+    #: The same failures as structured findings, keyed by test_id. This is what
+    #: diagnosis consumes — never the prose in ``reasons``.
+    findings: dict[str, tuple[Finding, ...]] = field(default_factory=dict)
 
     @property
     def graded(self) -> int:
@@ -129,6 +168,16 @@ class VerificationExecutor:
         self._session_for = session_for
         self._cache: dict[tuple[str, str], Evidence] = {}
         self._unavailable: dict[str, str] = {}
+        self._findings: dict[str, tuple[Finding, ...]] = {}
+        self._current: list[Finding] = []
+
+    def _note(self, kind: FindingKind, *, device: str, zone: str,
+              vlan_id: int = 0, detail: str = "",
+              evidence_id: str = "") -> None:
+        """Record a structured finding at the moment the fact is established."""
+        self._current.append(Finding(
+            kind=kind, device_ref=device, zone=zone, vlan_id=vlan_id,
+            detail=detail, evidence_id=evidence_id))
 
     # ------------------------------------------------------------- evidence
     def _collect(self, device_ref: str, command: str) -> Optional[Evidence]:
@@ -218,7 +267,10 @@ class VerificationExecutor:
         results: list[TestResult] = []
         unrun: list[tuple[str, str]] = []
         reasons: dict[str, str] = {}
+        findings: dict[str, tuple[Finding, ...]] = {}
+        self._findings.clear()
         for spec in specs:
+            self._current: list[Finding] = []
             graded, why = self._grade(spec, design)
             if graded is None:
                 unrun.append((spec.test_id, why))
@@ -226,8 +278,14 @@ class VerificationExecutor:
                 results.append(graded)
                 if graded.outcome is Outcome.FAIL and why:
                     reasons[spec.test_id] = why
+                if graded.outcome is Outcome.FAIL:
+                    # A FAIL with no finding means the grade was reached from
+                    # something this module cannot act on. Recorded as such
+                    # rather than left for diagnosis to invent a cause.
+                    findings[spec.test_id] = tuple(self._current)
         return VerificationOutcome(tuple(results), tuple(unrun),
-                                   tuple(self._cache.values()), reasons)
+                                   tuple(self._cache.values()), reasons,
+                                   findings)
 
     def _grade(self, spec: TestSpec,
                design: SiteDesign) -> tuple[Optional[TestResult], str]:
@@ -260,18 +318,32 @@ class VerificationExecutor:
             if not self._vlan_present(ev_vlan, zone):
                 problems.append(f"VLAN {zone.vlan_id} ({zone.zone}) absent from "
                                 f"`show vlan brief` on {device}")
+                self._note(FindingKind.VLAN_ABSENT, device=device,
+                           zone=zone.zone, vlan_id=zone.vlan_id,
+                           evidence_id=ev_vlan.raw_id)
             svi = self._svi_of(ev_svi, zone)
             if svi is None:
                 problems.append(f"SVI Vlan{zone.vlan_id} ({zone.zone}) absent from "
                                 f"`show ip interface brief` on {device}")
+                self._note(FindingKind.SVI_ABSENT, device=device,
+                           zone=zone.zone, vlan_id=zone.vlan_id,
+                           evidence_id=ev_svi.raw_id)
             elif not svi.up:
                 problems.append(f"SVI Vlan{zone.vlan_id} ({zone.zone}) is "
                                 f"{svi.status}/{svi.protocol}, not up/up")
+                self._note(FindingKind.SVI_NOT_UP, device=device,
+                           zone=zone.zone, vlan_id=zone.vlan_id,
+                           detail=f"{svi.status}/{svi.protocol}",
+                           evidence_id=ev_svi.raw_id)
             elif not self._address_is_provider_assigned(ev_cfg, zone):
                 want = str(ipaddress.ip_network(zone.subnet, strict=False).network_address)
                 if not svi.ip.startswith(want.rsplit(".", 1)[0] + "."):
                     problems.append(f"SVI Vlan{zone.vlan_id} ({zone.zone}) holds "
                                     f"{svi.ip}, not an address in {zone.subnet}")
+                    self._note(FindingKind.SVI_WRONG_ADDRESS, device=device,
+                               zone=zone.zone, vlan_id=zone.vlan_id,
+                               detail=f"holds {svi.ip}, designed {zone.subnet}",
+                               evidence_id=ev_svi.raw_id)
 
         # The decisive artifact is the SVI table: it carries both existence and
         # operational state, which is what an ALLOW test actually depends on.
@@ -323,6 +395,9 @@ class VerificationExecutor:
                f"isolation is NOT enforced")
         if ev_acl is None:
             why += f" (and `show ip access-lists` could not be read: {self._unavailable.get(device, 'refused')})"
+        self._note(FindingKind.ISOLATION_NOT_ENFORCED, device=device,
+                   zone=f"{src}->{dst}", detail=why,
+                   evidence_id=ev_route.raw_id)
         return (TestResult(test_id=spec.test_id, outcome=Outcome.FAIL,
                            evidence_id=ev_route.raw_id), why)
 
@@ -400,6 +475,18 @@ class VerificationExecutor:
             if got is not None and want not in got:
                 wrong.append(f"pool {z.zone} serves {sorted(got)}, not {want}")
         problems = [f"no DHCP pool for zone {m}" for m in missing] + wrong
+        for z in zones:
+            if z.zone in missing:
+                self._note(FindingKind.DHCP_POOL_MISSING,
+                           device=ev.device_ref, zone=z.zone,
+                           vlan_id=z.vlan_id, evidence_id=ev.raw_id)
+            elif any(w.startswith(f"pool {z.zone} serves") for w in wrong):
+                self._note(FindingKind.DHCP_POOL_WRONG_NETWORK,
+                           device=ev.device_ref, zone=z.zone,
+                           vlan_id=z.vlan_id,
+                           detail=f"serves {sorted(pools.get(z.zone) or ())}, "
+                                  f"designed {str(ipaddress.ip_network(z.subnet, strict=False))}",
+                           evidence_id=ev.raw_id)
         return (TestResult(test_id=spec.test_id,
                            outcome=Outcome.FAIL if problems else Outcome.PASS,
                            evidence_id=ev.raw_id), "; ".join(problems))
@@ -410,6 +497,11 @@ class VerificationExecutor:
         pools = self._pool_dns(ev)
         without = [z.zone for z in zones if not pools.get(z.zone)]
         problems = [f"pool for {w} hands out no dns-server" for w in without]
+        for z in zones:
+            if z.zone in without:
+                self._note(FindingKind.DNS_SERVER_MISSING,
+                           device=ev.device_ref, zone=z.zone,
+                           vlan_id=z.vlan_id, evidence_id=ev.raw_id)
         return (TestResult(test_id=spec.test_id,
                            outcome=Outcome.FAIL if problems else Outcome.PASS,
                            evidence_id=ev.raw_id), "; ".join(problems))
@@ -424,6 +516,9 @@ class VerificationExecutor:
         detail = ("no `S* 0.0.0.0/0` in `show ip route`"
                   + (f"; gateway of last resort is {last_resort.group('gw')}"
                      if last_resort else "; no gateway of last resort set"))
+        self._note(FindingKind.NO_DEFAULT_ROUTE, device=ev.device_ref,
+                   zone="wan", detail=f"{gw}: {detail}",
+                   evidence_id=ev.raw_id)
         return (TestResult(test_id=spec.test_id, outcome=Outcome.FAIL,
                            evidence_id=ev.raw_id),
                 f"{gw} has no default route — {detail}")
