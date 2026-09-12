@@ -1,8 +1,8 @@
 {
   "vendor_os": "routeros",
-  "verified": true,
-  "verified_at": "2026-09-11",
-  "note": "Lab-verified for RouterOS 7.x. Safe Mode rolls back automatically on disconnect. Phase W: RouterOS writes changes to disk as they are made; there is no separate persist step.",
+  "verified": false,
+  "verified_at": null,
+  "note": "Downgraded to verified=false: no RouterOS configuration fixture exists in this repository (tests/fixtures/golden/routeros holds only `system resource print` and `ip neighbor print`), and three of the six features were emitting commands the allowlist refused — `/interface/bridge/vlan/add` (trunk and access) and `/interface/set ... comment=`, none of which were registered. Those templates are now registered with inverses, but they have never been run against a device here. RouterOS writes to disk as it goes and Safe Mode rolls back on disconnect, so there is no separate persist step. Re-verify on hardware before trusting this renderer (L01, T2).",
   "wrappers": {
     "enter_config": [],
     "exit_config": [],

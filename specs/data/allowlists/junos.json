@@ -153,6 +153,25 @@
           ],
           "rollback": "delete interfaces <intf> unit 0 family ethernet-switching port-mode",
           "scope": "interface"
+        },
+        {
+          "template": "set vlans <name> l3-interface irb.<unit>",
+          "purpose": "bind the VLAN's SVI (irb unit) so the gateway address is reachable",
+          "fields": [
+            "name",
+            "unit"
+          ],
+          "rollback": "delete vlans <name> l3-interface",
+          "scope": "vlan"
+        },
+        {
+          "template": "set interfaces <intf> unit 0 family ethernet-switching port-mode access",
+          "purpose": "put an access port in L2 access mode before assigning its VLAN",
+          "fields": [
+            "intf"
+          ],
+          "rollback": "delete interfaces <intf> unit 0 family ethernet-switching port-mode",
+          "scope": "interface"
         }
       ]
     },

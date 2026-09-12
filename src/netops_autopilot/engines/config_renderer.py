@@ -27,6 +27,7 @@ _RENDERER_FILES = {
     "ios": "cisco_iosxe.json",
     "routeros": "routeros.json",
     "junos": "junos.json",
+    "arubaos": "arubaos.json",
 }
 
 

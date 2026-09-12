@@ -521,6 +521,45 @@ class AutopilotEngine:
             unconfigured.append((ref, reason))
         return managed, unconfigured
 
+    def _partial_renders(self, managed: list[str]) -> list[tuple[str, str]]:
+        """Managed devices whose render is missing at least one asked-for feature.
+
+        ``NOT_MODELED`` means the design *did* ask for something this vendor's
+        renderer cannot express — not that the feature was unwanted. Showing it
+        in the preview was honest; leaving it out of the outcome was not,
+        because the run then reported a device as configured when part of its
+        configuration was never produced. A render where EVERY node is
+        NOT_MODELED is the extreme case: a RenderedConfig exists, so the old
+        "is it in renders" check passed, yet not one command was sent.
+
+        Returns ``(device_ref, reason)`` for each partially rendered device.
+        """
+        out: list[tuple[str, str]] = []
+        for ref in managed:
+            rendered = self.report.renders.get(ref)
+            if rendered is None:
+                continue                      # counted by _config_coverage
+            # `documentation`/node_id="noop" is the placeholder a device gets
+            # when the design produced no nodes for it. That device needs no
+            # change, so it is complete — not a renderer gap.
+            missing = [b for b in rendered.blocks
+                       if b.status != "RENDERED" and b.node_id != "noop"]
+            if not missing:
+                continue
+            features = sorted({
+                (b.reason.split("feature ", 1)[1].split(" has no template", 1)[0]
+                 if "feature " in b.reason else b.node_id)
+                for b in missing})
+            kind = ("NO RENDERABLE NODES" if not any(
+                b.status == "RENDERED" for b in rendered.blocks)
+                else "PARTIALLY RENDERED")
+            if kind == "NO RENDERABLE NODES" and any(
+                    b.node_id == "noop" for b in rendered.blocks):
+                continue                     # no-op design, nothing to do
+            out.append((ref, f"{kind}: {', '.join(features)} — the design asked "
+                             f"for these and this vendor has no template (T2)"))
+        return out
+
     def _announce_unconfigured(self, unconfigured: list[tuple[str, str]]) -> None:
         """Say plainly which managed devices got nothing, and add a gap."""
         for ref, reason in unconfigured:
@@ -558,12 +597,21 @@ class AutopilotEngine:
         from ..access.executor import ConfigExecutor, ChangeOutcome
         staged = sorted(self.report.renders)
         managed, unconfigured = self._config_coverage(design)
+        partial = self._partial_renders(managed)
         if unconfigured:
             self._announce_unconfigured(unconfigured)
+        for ref, reason in partial:
+            self.io.show(f"!! INCOMPLETE CONFIG {ref}: {reason}")
+            if self.report.topology is not None:
+                self.report.topology = dataclasses.replace(
+                    self.report.topology,
+                    gaps=tuple(self.report.topology.gaps)
+                    + (f"CONFIG_INCOMPLETE {ref}: {reason}",))
         if not execute:
             self.report.execution = {
                 "requested": False,
-                "outcome": "INCOMPLETE-STAGED" if unconfigured else "STAGED",
+                "outcome": ("INCOMPLETE-STAGED" if (unconfigured or partial)
+                            else "STAGED"),
                 "reason": ("execute=False; changes are staged, not applied"
                            if not unconfigured else
                            "execute=False; staged, but managed device(s) have no "
@@ -572,14 +620,17 @@ class AutopilotEngine:
                 "managed_devices": managed,
                 "unconfigured_devices": [ref for ref, _ in unconfigured],
                 "unconfigured_reasons": {ref: why for ref, why in unconfigured},
+                "partially_rendered": {ref: why for ref, why in partial},
                 "human_required_to_unlock": "re-run with --execute and a confirmation at the BOND gate",
             }
+            incomplete_now = bool(unconfigured or partial)
             self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE",
-                             "INCOMPLETE" if unconfigured else "STAGED")
-            self._phase(Phase.EXECUTION_GATE, "OK" if not unconfigured else "INCOMPLETE",
+                             "INCOMPLETE" if incomplete_now else "STAGED")
+            self._phase(Phase.EXECUTION_GATE, "OK" if not incomplete_now else "INCOMPLETE",
                         f"staged {len(staged)}/{len(managed)} managed device(s); apply with --execute"
-                        + (f" — {len(unconfigured)} UNCONFIGURED" if unconfigured else ""))
-            self.report.final = "INCOMPLETE-STAGED" if unconfigured else "COMPLETE-STAGED"
+                        + (f" — {len(unconfigured)} UNCONFIGURED" if unconfigured else "")
+                        + (f" — {len(partial)} PARTIAL" if partial else ""))
+            self.report.final = "INCOMPLETE-STAGED" if incomplete_now else "COMPLETE-STAGED"
             self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
             return
 
@@ -682,7 +733,9 @@ class AutopilotEngine:
         # the safety failures below, but never something a clean verdict may
         # paper over. ``all(...)`` over an empty list is vacuously True, so an
         # apply that sent nothing used to report COMPLETE-APPLIED.
-        incomplete = sorted({ref for ref, _ in unconfigured} | {ref for ref, _ in skipped})
+        incomplete = sorted({ref for ref, _ in unconfigured}
+                            | {ref for ref, _ in skipped}
+                            | {ref for ref, _ in partial})
         for ref, why in skipped:
             self.io.show(f"!! NOT_SENT {ref}: {why}")
         if "PERSIST_FAILED" in outcomes:
@@ -723,6 +776,7 @@ class AutopilotEngine:
             "managed_devices": managed,
             "unconfigured_devices": [ref for ref, _ in unconfigured],
             "unconfigured_reasons": {ref: why for ref, why in unconfigured},
+            "partially_rendered": {ref: why for ref, why in partial},
             "not_sent": {ref: why for ref, why in skipped},
             "change_records": records,
         }

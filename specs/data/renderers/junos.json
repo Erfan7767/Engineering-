@@ -1,8 +1,8 @@
 {
   "vendor_os": "junos",
-  "verified": true,
-  "verified_at": "2026-09-11",
-  "note": "Lab-verified for Junos 20.x+. commit confirmed 2 auto-rolls-back on disconnect. Phase W: `commit confirmed 2` alone auto-reverts after 2 minutes; the plain `commit` in `persist` is what makes the candidate permanent, and it runs only after verification passes.",
+  "verified": false,
+  "verified_at": null,
+  "note": "Downgraded to verified=false: no Junos configuration fixture exists in this repository (tests/fixtures/golden/junos holds only `show version` and `show lldp neighbors`), and the renderer was emitting commands its own allowlist refused — `interface-mode` where the allowlist authorises `port-mode`, plus `set vlans ... l3-interface` which was absent entirely. A rendering the gate refuses cannot have been lab-verified. The renderer now uses `port-mode` (EX/VC family) to match the authorised templates; QFX-family devices need `interface-mode` and must be re-verified before this renderer is trusted on them (L01, T2).",
   "wrappers": {
     "enter_config": [
       "configure private"
@@ -29,13 +29,13 @@
     },
     "trunk": {
       "commands": [
-        "set interfaces {interface} unit 0 family ethernet-switching interface-mode trunk",
+        "set interfaces {interface} unit 0 family ethernet-switching port-mode trunk",
         "set interfaces {interface} unit 0 family ethernet-switching vlan members [{allowed_vlans_csv}]"
       ]
     },
     "access": {
       "commands": [
-        "set interfaces {interface} unit 0 family ethernet-switching interface-mode access",
+        "set interfaces {interface} unit 0 family ethernet-switching port-mode access",
         "set interfaces {interface} unit 0 family ethernet-switching vlan members {vlan_id}"
       ]
     },

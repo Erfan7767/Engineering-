@@ -5,44 +5,254 @@
   "classes": {
     "READ_ONLY": {
       "entries": [
-        { "template": "/system/resource/print", "purpose": "identity/version", "fields": ["version", "board-name", "uptime"] },
-        { "template": "/system/routerboard/print", "purpose": "hardware identity", "fields": ["serial-number", "model"] },
-        { "template": "/interface/print detail", "purpose": "L1 inventory", "fields": ["name", "type", "mtu", "mac-address"] },
-        { "template": "/ip/address/print", "purpose": "L3 addresses", "fields": ["address", "interface"] },
-        { "template": "/ip/neighbor/print", "purpose": "MNDP neighbors", "fields": ["identity", "interface", "mac-address"] },
-        { "template": "/interface/monitor [find]", "purpose": "link state/rate", "fields": ["status", "rate", "auto-negotiation"] },
-        { "template": "/system/identity/print", "purpose": "hostname", "fields": ["name"] },
-        { "template": "/system/clock/print", "purpose": "device clock (untrusted, recorded)", "fields": ["time", "date"] },
-        { "template": "/ip/route/print", "purpose": "routing table", "fields": ["dst-address", "gateway", "interface"] },
-        { "template": "/interface/vlan/print", "purpose": "VLAN inventory", "fields": ["name", "vlan-id", "interface"] },
-        { "template": "/ip/firewall/filter/print", "purpose": "firewall rules", "fields": ["chain", "action", "src-address"] }
+        {
+          "template": "/system/resource/print",
+          "purpose": "identity/version",
+          "fields": [
+            "version",
+            "board-name",
+            "uptime"
+          ]
+        },
+        {
+          "template": "/system/routerboard/print",
+          "purpose": "hardware identity",
+          "fields": [
+            "serial-number",
+            "model"
+          ]
+        },
+        {
+          "template": "/interface/print detail",
+          "purpose": "L1 inventory",
+          "fields": [
+            "name",
+            "type",
+            "mtu",
+            "mac-address"
+          ]
+        },
+        {
+          "template": "/ip/address/print",
+          "purpose": "L3 addresses",
+          "fields": [
+            "address",
+            "interface"
+          ]
+        },
+        {
+          "template": "/ip/neighbor/print",
+          "purpose": "MNDP neighbors",
+          "fields": [
+            "identity",
+            "interface",
+            "mac-address"
+          ]
+        },
+        {
+          "template": "/interface/monitor [find]",
+          "purpose": "link state/rate",
+          "fields": [
+            "status",
+            "rate",
+            "auto-negotiation"
+          ]
+        },
+        {
+          "template": "/system/identity/print",
+          "purpose": "hostname",
+          "fields": [
+            "name"
+          ]
+        },
+        {
+          "template": "/system/clock/print",
+          "purpose": "device clock (untrusted, recorded)",
+          "fields": [
+            "time",
+            "date"
+          ]
+        },
+        {
+          "template": "/ip/route/print",
+          "purpose": "routing table",
+          "fields": [
+            "dst-address",
+            "gateway",
+            "interface"
+          ]
+        },
+        {
+          "template": "/interface/vlan/print",
+          "purpose": "VLAN inventory",
+          "fields": [
+            "name",
+            "vlan-id",
+            "interface"
+          ]
+        },
+        {
+          "template": "/ip/firewall/filter/print",
+          "purpose": "firewall rules",
+          "fields": [
+            "chain",
+            "action",
+            "src-address"
+          ]
+        }
       ]
     },
     "CONFIG_REVERSIBLE": {
       "notes": "Lab-verified RouterOS 7.x templates. Safe Mode rollback is automatic on disconnect.",
       "entries": [
-        { "template": "/system/identity/set name=<hostname>", "purpose": "set system identity (hostname)", "fields": ["hostname"], "rollback": "/system/identity/set name=router", "scope": "system" },
-        { "template": "/interface/vlan/add name=<name> vlan-id=<vlan_id> interface=<intf>", "purpose": "create VLAN interface", "fields": ["name", "vlan_id", "intf"], "rollback": "/interface/vlan/remove [find name=<name>]", "scope": "vlan" },
-        { "template": "/ip/address/add address=<ip>/<prefix> interface=<intf>", "purpose": "add IPv4 address", "fields": ["ip", "prefix", "intf"], "rollback": "/ip/address/remove [find address=<ip>/<prefix>]", "scope": "address" },
-        { "template": "/ip/route/add dst-address=<net>/<prefix> gateway=<gw>", "purpose": "add static route", "fields": ["net", "prefix", "gw"], "rollback": "/ip/route/remove [find dst-address=<net>/<prefix>]", "scope": "routing" },
-        { "template": "/ip/dns/set servers=<servers>", "purpose": "set DNS servers", "fields": ["servers"], "rollback": "/ip/dns/set servers=\"\"", "scope": "system" },
-        { "template": "/interface/bridge/add name=<name>", "purpose": "create bridge", "fields": ["name"], "rollback": "/interface/bridge/remove [find name=<name>]", "scope": "interface" }
+        {
+          "template": "/system/identity/set name=<hostname>",
+          "purpose": "set system identity (hostname)",
+          "fields": [
+            "hostname"
+          ],
+          "rollback": "/system/identity/set name=router",
+          "scope": "system"
+        },
+        {
+          "template": "/interface/vlan/add name=<name> vlan-id=<vlan_id> interface=<intf>",
+          "purpose": "create VLAN interface",
+          "fields": [
+            "name",
+            "vlan_id",
+            "intf"
+          ],
+          "rollback": "/interface/vlan/remove [find name=<name>]",
+          "scope": "vlan"
+        },
+        {
+          "template": "/ip/address/add address=<ip>/<prefix> interface=<intf>",
+          "purpose": "add IPv4 address",
+          "fields": [
+            "ip",
+            "prefix",
+            "intf"
+          ],
+          "rollback": "/ip/address/remove [find address=<ip>/<prefix>]",
+          "scope": "address"
+        },
+        {
+          "template": "/ip/route/add dst-address=<net>/<prefix> gateway=<gw>",
+          "purpose": "add static route",
+          "fields": [
+            "net",
+            "prefix",
+            "gw"
+          ],
+          "rollback": "/ip/route/remove [find dst-address=<net>/<prefix>]",
+          "scope": "routing"
+        },
+        {
+          "template": "/ip/dns/set servers=<servers>",
+          "purpose": "set DNS servers",
+          "fields": [
+            "servers"
+          ],
+          "rollback": "/ip/dns/set servers=\"\"",
+          "scope": "system"
+        },
+        {
+          "template": "/interface/bridge/add name=<name>",
+          "purpose": "create bridge",
+          "fields": [
+            "name"
+          ],
+          "rollback": "/interface/bridge/remove [find name=<name>]",
+          "scope": "interface"
+        },
+        {
+          "template": "/interface/bridge/vlan/add bridge=<bridge> tagged=<intf> vlan-ids=<ids>",
+          "purpose": "tag VLANs on a trunk port",
+          "fields": [
+            "bridge",
+            "intf",
+            "ids"
+          ],
+          "rollback": "/interface/bridge/vlan/remove bridge=<bridge> tagged=<intf>",
+          "scope": "interface"
+        },
+        {
+          "template": "/interface/bridge/vlan/add bridge=<bridge> untagged=<intf> vlan-ids=<ids>",
+          "purpose": "assign a single VLAN untagged to an access port",
+          "fields": [
+            "bridge",
+            "intf",
+            "ids"
+          ],
+          "rollback": "/interface/bridge/vlan/remove bridge=<bridge> untagged=<intf>",
+          "scope": "interface"
+        },
+        {
+          "template": "/interface/set <intf> comment=<text>",
+          "purpose": "document the port's role so the next engineer can read the map",
+          "fields": [
+            "intf",
+            "text"
+          ],
+          "rollback": "/interface/set <intf> comment=\"\"",
+          "scope": "interface"
+        }
       ]
     },
     "CONFIG_HIGH_RISK": {
       "notes": "Routing process and access-control entries; require explicit human confirmation.",
       "entries": [
-        { "template": "/routing/ospf/instance/add name=<name> router-id=<id>", "purpose": "OSPF instance", "fields": ["name", "id"], "rollback": "/routing/ospf/instance/remove [find name=<name>]", "scope": "routing" },
-        { "template": "/routing/ospf/area/add name=<area> instance=<inst>", "purpose": "OSPF area", "fields": ["area", "inst"], "rollback": "/routing/ospf/area/remove [find name=<area>]", "scope": "routing" },
-        { "template": "/ip/firewall/filter/add chain=input action=accept src-address=<net>", "purpose": "add firewall filter", "fields": ["net"], "rollback": "/ip/firewall/filter/remove [find src-address=<net>]", "scope": "firewall" }
+        {
+          "template": "/routing/ospf/instance/add name=<name> router-id=<id>",
+          "purpose": "OSPF instance",
+          "fields": [
+            "name",
+            "id"
+          ],
+          "rollback": "/routing/ospf/instance/remove [find name=<name>]",
+          "scope": "routing"
+        },
+        {
+          "template": "/routing/ospf/area/add name=<area> instance=<inst>",
+          "purpose": "OSPF area",
+          "fields": [
+            "area",
+            "inst"
+          ],
+          "rollback": "/routing/ospf/area/remove [find name=<area>]",
+          "scope": "routing"
+        },
+        {
+          "template": "/ip/firewall/filter/add chain=input action=accept src-address=<net>",
+          "purpose": "add firewall filter",
+          "fields": [
+            "net"
+          ],
+          "rollback": "/ip/firewall/filter/remove [find src-address=<net>]",
+          "scope": "firewall"
+        }
       ]
     },
-    "DESTRUCTIVE": { "entries": [
-      { "template": "/system/netinstall <args>", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
-    ] },
-    "FORBIDDEN": { "entries": [
-      { "template": "/system/reset-configuration", "reason": "destructive, unscoped" },
-      { "template": "/file/remove <args>", "reason": "artifact destruction" }
-    ] }
+    "DESTRUCTIVE": {
+      "entries": [
+        {
+          "template": "/system/netinstall <args>",
+          "purpose": "never executed by platform; HUMAN_TASK instructions only",
+          "fields": []
+        }
+      ]
+    },
+    "FORBIDDEN": {
+      "entries": [
+        {
+          "template": "/system/reset-configuration",
+          "reason": "destructive, unscoped"
+        },
+        {
+          "template": "/file/remove <args>",
+          "reason": "artifact destruction"
+        }
+      ]
+    }
   }
 }

@@ -1,0 +1,49 @@
+{
+  "$schema_ref": "specs/schemas/renderer.schema.json",
+  "vendor_os": "arubaos",
+  "verified": false,
+  "verified_at": null,
+  "note": "NOT lab-verified: every command shape below is taken from the ArubaOS allowlist (specs/data/allowlists/arubaos.json), which is the only ArubaOS command evidence this repository holds. There is no ArubaOS running-config or DHCP fixture, so `verified` is false and output is labelled PREVIEW_SEED_UNVERIFIED — the operator must confirm on real hardware before this runs against a production device (L01, T2). DELIBERATELY OMITTED: the `dhcp` feature. ArubaOS DHCP-server syntax is not evidenced anywhere in this repository, and inventing it would send unverified configuration to a live switch. A design that needs DHCP on an ArubaOS device therefore renders that node NOT_MODELED and the run reports INCOMPLETE with the gap named, rather than silently emitting a guess.",
+  "wrappers": {
+    "enter_config": [
+      "configure terminal"
+    ],
+    "exit_config": [
+      "end"
+    ],
+    "persist": [
+      "write memory"
+    ]
+  },
+  "features": {
+    "vlan": {
+      "commands": [
+        "vlan {vlan_id} name {name}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "interface vlan {vlan_id}",
+        " ip address {address_ip} {address_mask}"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "interface {interface}",
+        " switchport mode trunk",
+        " switchport trunk allowed vlan {allowed_vlans_csv}"
+      ]
+    },
+    "access": {
+      "commands": [
+        "interface {interface}",
+        " switchport access vlan {vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "hostname {hostname}"
+      ]
+    }
+  }
+}
