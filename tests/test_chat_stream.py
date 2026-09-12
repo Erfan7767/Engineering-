@@ -184,20 +184,20 @@ def test_discover_preserves_mgmt_addresses_for_unreachable(client):
     assert final is not None
     assert final["status"] == "OK"
     devices = final["data"]["devices"]
-    # core-sw2 and access-sw1 are UNREACHABLE on the sim fabric
-    # (default credentials refused) but they still advertise their
-    # LLDP mgmt IP. The chat must surface that.
-    core = next(d for d in devices if d["device_ref"] == "core-sw2")
+    # access-sw1 refuses the default credentials and the chat declines the
+    # access-retry, so it is UNREACHABLE — yet it still advertised its LLDP
+    # mgmt IP, and the chat must surface that rather than dropping the device.
+    # (core-sw2 is reachable on this fabric now that the chat wires
+    # ``access_behavior="allow"``, so it is no longer the unreachable case.)
     access = next(d for d in devices if d["device_ref"] == "access-sw1")
-    assert core["status"] == "UNREACHABLE", \
-        f"core-sw2 should be UNREACHABLE, got {core['status']}"
-    assert core["mgmt_addresses"], \
-        f"core-sw2 must report LLDP mgmt_addresses even when UNREACHABLE, got {core}"
-    assert "10.99.0.2" in core["mgmt_addresses"]
-    assert access["status"] == "UNREACHABLE"
+    assert access["status"] == "UNREACHABLE", \
+        f"access-sw1 should be UNREACHABLE, got {access['status']}"
     assert access["mgmt_addresses"], \
         f"access-sw1 must report LLDP mgmt_addresses even when UNREACHABLE, got {access}"
     assert "10.99.0.3" in access["mgmt_addresses"]
+    # every discovered device keeps its advertised address, reachable or not
+    core = next(d for d in devices if d["device_ref"] == "core-sw2")
+    assert "10.99.0.2" in core["mgmt_addresses"]
 
 
 def test_real_apply_via_sse_executes_commands(client):
@@ -233,9 +233,12 @@ def test_real_apply_via_sse_executes_commands(client):
     assert exec_data["outcome"] in ("APPLIED", "STAGED"), \
         f"unexpected outcome: {exec_data['outcome']}"
     assert "seed-01" in exec_data["staged_devices"]
-    # change_records show the real per-device execution.
+    # change_records show the real per-device execution. Records are keyed by
+    # device, not ordered with the seed first, so look the seed up rather than
+    # assuming slot 0.
     assert len(exec_data["change_records"]) >= 1
-    cr = exec_data["change_records"][0]
-    assert cr["device_ref"] == "seed-01"
+    by_ref = {r["device_ref"]: r for r in exec_data["change_records"]}
+    assert "seed-01" in by_ref, sorted(by_ref)
+    cr = by_ref["seed-01"]
     assert cr["command_count"] >= 1
     assert cr["outcome"] in ("APPLIED", "STAGED")

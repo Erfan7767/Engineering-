@@ -177,7 +177,7 @@ class IntentVerb(str, Enum):
     RPKI = "rpki"                       # BGP RPKI / ROA validation
     NTP_AUDIT = "ntp_audit"             # NTP peer sync + skew
 
-    # Meta</old_text>
+    # Meta
     BOND = "bond"                       # confirm physical binding
     HELP = "help"                       # list available commands
     STATUS = "status"                   # run / system status
@@ -830,6 +830,22 @@ def _normalize(text: str) -> str:
     return t
 
 
+def _network_type_vocabulary() -> tuple[str, ...]:
+    """Every phrase the operator recognises as a network type.
+
+    Derived from ``ChatOperator.NETWORK_TYPES_EN`` / ``NETWORK_TYPES_AR`` so the
+    intent parser and the blueprint mapping cannot drift apart. This list used
+    to be hand written and was missing "campus", "data center", "office" and
+    "حرم", so those requests silently fell back to the default blueprint instead
+    of the one the operator had named — the answer to a question that was never
+    really asked.
+
+    Longest phrase first, so "small office" is matched before "office".
+    """
+    phrases = set(ChatOperator.NETWORK_TYPES_EN) | set(ChatOperator.NETWORK_TYPES_AR)
+    return tuple(sorted(phrases, key=lambda phrase: (-len(phrase), phrase)))
+
+
 def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
     """Classify a chat message into a typed verb + extracted arguments.
 
@@ -888,11 +904,7 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
         args["interface"] = intf_match.group(1)
 
     # 5) network type (for design/apply)
-    for net_type in (
-        "branch", "leaf-spine", "datacenter", "hotel", "retail",
-        "guest_office", "small office", "مكتب", "فرع", "فندق", "متجر",
-        "مركز بيانات",
-    ):
+    for net_type in _network_type_vocabulary():
         if net_type in norm:
             args["network_type"] = net_type
             break
@@ -1117,16 +1129,32 @@ class ChatOperator:
         ),
     }
 
+    # Operator vocabulary → a REAL blueprint id. These used to name
+    # "hotel", "retail" and "leaf-spine", none of which is a blueprint the
+    # engine has, so `elicit()` returned UNKNOWN and the run blocked at
+    # INTENT_ELICITATION — three of the five advertised network types could
+    # never be built. Every value here must exist in
+    # ``engines.blueprints.BLUEPRINTS``; the test suite asserts it.
     NETWORK_TYPES_AR = {
-        "فرع": "branch", "مكتب": "guest_office", "مكتب صغير": "guest_office",
-        "فندق": "hotel", "متجر": "retail", "مركز بيانات": "leaf-spine",
-        "ديتاسنتر": "leaf-spine", "ورقة": "leaf-spine",
+        "فرع": "branch",
+        "مكتب": "guest_office",
+        "مكتب صغير": "small_office",
+        "فندق": "guest_office",          # guest WiFi + staff ⇒ guest isolation
+        "متجر": "secure_office",         # POS/PCI isolation
+        "مركز بيانات": "datacenter",
+        "ديتاسنتر": "datacenter",
+        "حرم": "campus",
     }
     NETWORK_TYPES_EN = {
-        "branch": "branch", "small office": "guest_office",
-        "hotel": "hotel", "retail": "retail",
-        "datacenter": "leaf-spine", "leaf-spine": "leaf-spine",
-        "data center": "leaf-spine",
+        "branch": "branch",
+        "small office": "small_office",
+        "office": "guest_office",
+        "hotel": "guest_office",         # guest WiFi + staff ⇒ guest isolation
+        "retail": "secure_office",       # POS/PCI isolation
+        "datacenter": "datacenter",
+        "data center": "datacenter",
+        "leaf-spine": "datacenter",
+        "campus": "campus",
     }
 
     def __init__(
@@ -1141,6 +1169,9 @@ class ChatOperator:
         self._store = store
         self._runner = runner
         self._seed_port = seed_port
+        #: Per-run state for _run_autopilot / _session_factories.
+        self._factories: Optional[tuple] = None
+        self._requested_intent: Optional[str] = None
         self._device_runner = device_runner
         self._allowlist = allowlist
         self._ctx = OperatorContext(seed_port=seed_port)
@@ -1472,60 +1503,12 @@ class ChatOperator:
                 summary=("Discovery runner not wired" if lang == "en"
                          else "لم يتم ربط محرك الاكتشاف"),
                 detail="The chat needs a runner that opens a session to the seed device.")
-        # The chat operator talks to the real AutopilotEngine. In a
-        # real deployment the engine needs (a) a probe-port session
-        # factory and (b) a management session factory. We use the
-        # SimFabricFactory for sim-mode (port starting with SIM) and
-        # otherwise use the real-fabric wiring (probe + refused mgmt),
-        # letting the engine report a clean "no live devices" status.
-        answers = self._autopilot_answers()
+        # The chat operator talks to the real AutopilotEngine. ``_run_autopilot``
+        # supplies the session factories (SimFabric for a SIM port, the real
+        # transport otherwise) and the scripted answers in the order the engine
+        # asks them.
         try:
-            port = self._seed_port
-            if port and (port.startswith("SIM") or port.upper() == "SIM0"):
-                # Sim mode — wire the engine against the scripted
-                # SimFabric so it produces a real simulated topology.
-                import sys as _sys, os as _os
-                _root = _os.path.dirname(_os.path.dirname(
-                    _os.path.dirname(_os.path.dirname(__file__))))
-                if _root not in _sys.path:
-                    _sys.path.insert(0, _root)
-                from tests.support.simfabric import SimFabricFactory
-                fabric = SimFabricFactory()
-                # SimFabricFactory.probe() already returns
-                # ``(session, banner_bytes)``; the orchestrator's
-                # _phase_boot_probe also handles this tuple shape
-                # directly — don't wrap it twice.
-                report = self._runner.run(
-                    probe_port_session_factory=fabric.probe,
-                    mgmt_session_factory=fabric.open,
-                    port=port, execute=False,
-                )
-            else:
-                # Real port mode — use the same refused-mgmt path the
-                # CLI uses. We import lazily so the chat works even if
-                # the test paths are unavailable.
-                from netops_autopilot.cli_main import (
-                    _real_session_factory, _refused_mgmt_factory)
-                report = self._runner.run(
-                    probe_port_session_factory=_real_session_factory,
-                    mgmt_session_factory=_refused_mgmt_factory,
-                    port=port, execute=False,
-                )
-        except TypeError as exc:
-            # The runner signature might be the older one (with
-            # answers=). Fall back to that.
-            if "answers" in str(exc) or "unexpected keyword" in str(exc):
-                try:
-                    report = self._runner.run(
-                        port=self._seed_port, execute=False,
-                        answers=self._autopilot_answers(),
-                    )
-                except Exception as e2:  # noqa: BLE001
-                    return self._reply(IntentVerb.DISCOVER, ReplyStatus.FAILURE,
-                        summary=("discovery error" if lang == "en" else "خطأ في الاكتشاف"),
-                        detail=str(e2))
-            else:
-                raise
+            report = self._run_autopilot(execute=False)
         except Failure as exc:
             return self._reply(IntentVerb.DISCOVER, ReplyStatus.BLOCKED,
                 summary=("discovery failed" if lang == "en" else "فشل الاكتشاف"),
@@ -1700,13 +1683,9 @@ class ChatOperator:
         if self._device_runner is not None:
             target = ref
             if not target and self._ctx.last_discovery is not None:
-                for d in self._ctx.last_discovery.devices:
-                    status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                    if status == "COMPLETE":
-                        target = d.device_ref
-                        break
-                if not target and self._ctx.last_discovery.devices:
-                    target = self._ctx.last_discovery.devices[0].device_ref
+                # The seed, not "whichever device sorts first" — see
+                # _pick_diagnostic_source.
+                target = self._pick_diagnostic_source().device_ref
             if target:
                 try:
                     result = self._device_runner.run_show(target, "show version")
@@ -1751,13 +1730,9 @@ class ChatOperator:
         if self._device_runner is not None:
             target = ref
             if not target and self._ctx.last_discovery is not None:
-                for d in self._ctx.last_discovery.devices:
-                    status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                    if status == "COMPLETE":
-                        target = d.device_ref
-                        break
-                if not target and self._ctx.last_discovery.devices:
-                    target = self._ctx.last_discovery.devices[0].device_ref
+                # The seed, not "whichever device sorts first" — see
+                # _pick_diagnostic_source.
+                target = self._pick_diagnostic_source().device_ref
             if target:
                 try:
                     result = self._device_runner.run_show(
@@ -1828,13 +1803,9 @@ class ChatOperator:
         if self._device_runner is not None:
             target = ref
             if not target and self._ctx.last_discovery is not None:
-                for d in self._ctx.last_discovery.devices:
-                    status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                    if status == "COMPLETE":
-                        target = d.device_ref
-                        break
-                if not target and self._ctx.last_discovery.devices:
-                    target = self._ctx.last_discovery.devices[0].device_ref
+                # The seed, not "whichever device sorts first" — see
+                # _pick_diagnostic_source.
+                target = self._pick_diagnostic_source().device_ref
             if target:
                 try:
                     result = self._device_runner.run_show(target, "show vlan brief")
@@ -1885,13 +1856,9 @@ class ChatOperator:
         if self._device_runner is not None:
             target = ref
             if not target and self._ctx.last_discovery is not None:
-                for d in self._ctx.last_discovery.devices:
-                    status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                    if status == "COMPLETE":
-                        target = d.device_ref
-                        break
-                if not target and self._ctx.last_discovery.devices:
-                    target = self._ctx.last_discovery.devices[0].device_ref
+                # The seed, not "whichever device sorts first" — see
+                # _pick_diagnostic_source.
+                target = self._pick_diagnostic_source().device_ref
             if target:
                 try:
                     result = self._device_runner.run_show(
@@ -1945,14 +1912,8 @@ class ChatOperator:
         # the chosen device (or the seed if no ref is given).
         target = ref
         if not target and self._ctx.last_discovery is not None:
-            # default to the first REACHABLE device
-            for d in self._ctx.last_discovery.devices:
-                status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                if status == "COMPLETE":
-                    target = d.device_ref
-                    break
-            if not target and self._ctx.last_discovery.devices:
-                target = self._ctx.last_discovery.devices[0].device_ref
+            # default to the SEED device, not "whichever sorts first"
+            target = self._pick_diagnostic_source().device_ref
         if self._device_runner is not None and target:
             try:
                 result = self._device_runner.run_show(target, "show ip route")
@@ -2018,7 +1979,17 @@ class ChatOperator:
                 net_type = self.NETWORK_TYPES_AR.get(net_type, net_type)
             else:
                 net_type = self.NETWORK_TYPES_EN.get(net_type, net_type)
-        # The autopilot already produced a design during discover.
+        if net_type and self._runner is not None:
+            # The operator named a network type, so the design must be built
+            # from THAT. Reusing the discover-time design silently answered a
+            # different question than the one asked.
+            try:
+                report = self._run_autopilot(execute=False, intent=net_type)
+                self._ctx.last_run = report
+            except Failure as exc:
+                return self._reply(IntentVerb.DESIGN, ReplyStatus.BLOCKED,
+                    summary=("design failed" if lang == "en" else "فشل التصميم"),
+                    detail="; ".join(exc.causes))
         design = self._ctx.last_run.design
         if design is None or design.blocked:
             reasons = ", ".join(q for q in (design.blocking_questions if design else []))
@@ -2026,30 +1997,13 @@ class ChatOperator:
                 summary=("design blocked" if lang == "en" else "التصميم محظور"),
                 detail=reasons or "the autopilot blocked at the design phase.")
         if apply and self._runner is not None:
-            # Re-run with execute=True + BOND.
+            # Re-run with execute=True. The BOND unlock is appended to the
+            # scripted answers, so the apply gate is satisfied explicitly
+            # rather than by a default.
             try:
-                port = self._seed_port
-                if port and (port.startswith("SIM") or port.upper() == "SIM0"):
-                    import sys as _sys, os as _os
-                    _root = _os.path.dirname(_os.path.dirname(
-                        _os.path.dirname(_os.path.dirname(__file__))))
-                    if _root not in _sys.path:
-                        _sys.path.insert(0, _root)
-                    from tests.support.simfabric import SimFabricFactory
-                    fabric = SimFabricFactory()
-                    report = self._runner.run(
-                        probe_port_session_factory=fabric.probe,
-                        mgmt_session_factory=fabric.open,
-                        port=port, execute=True,
-                    )
-                else:
-                    from netops_autopilot.cli_main import (
-                        _real_session_factory, _refused_mgmt_factory)
-                    report = self._runner.run(
-                        probe_port_session_factory=_real_session_factory,
-                        mgmt_session_factory=_refused_mgmt_factory,
-                        port=port, execute=True,
-                    )
+                report = self._run_autopilot(
+                    execute=True, intent=net_type or self._requested_intent,
+                    apply_bond=True)
                 self._ctx.last_run = report
                 verdict = report.execution.get("outcome", "UNKNOWN") if report.execution else "UNKNOWN"
                 return self._reply(
@@ -2181,15 +2135,13 @@ class ChatOperator:
             target = target_ip
         # If a device runner is wired, execute the real ping on the seed.
         if self._device_runner is not None and self._ctx.last_discovery is not None:
-            # Pick the seed (the only REACHABLE device) to run ping from.
-            seed = None
-            for d in self._ctx.last_discovery.devices:
-                status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                if status == "COMPLETE":
-                    seed = d
-                    break
-            if seed is None:
-                seed = self._ctx.last_discovery.devices[0]
+            # Run the diagnostic from the SEED — the device physically
+            # connected to this computer, and the only one whose session is
+            # guaranteed to be ours. "The first COMPLETE device" is not the
+            # same thing: once discovery reaches further than the seed, that
+            # is whichever device sorts first alphabetically, and its fixture
+            # or transport may not support the command at all.
+            seed = self._pick_diagnostic_source()
             try:
                 result = self._device_runner.ping(seed.device_ref, target)
             except Failure as exc:
@@ -2234,14 +2186,7 @@ class ChatOperator:
                 summary=("which host?" if lang == "en" else "أي هدف؟"),
                 detail="e.g. 'traceroute 8.8.8.8'")
         if self._device_runner is not None and self._ctx.last_discovery is not None:
-            seed = None
-            for d in self._ctx.last_discovery.devices:
-                status = d.status.value if hasattr(d.status, "value") else str(d.status)
-                if status == "COMPLETE":
-                    seed = d
-                    break
-            if seed is None:
-                seed = self._ctx.last_discovery.devices[0]
+            seed = self._pick_diagnostic_source()
             try:
                 result = self._device_runner.traceroute(seed.device_ref, target)
             except Failure as exc:
@@ -4201,14 +4146,8 @@ allow-transfer { any; };
         from netops_autopilot.engines.backup import SnapshotStore
         store = SnapshotStore(".netops-snapshots")
         # Use the first discovered device, if any.
-        ref = "seed-01"
-        if self._ctx.last_discovery is not None:
-            for d in self._ctx.last_discovery.devices:
-                if d.status.value == "COMPLETE" if hasattr(
-                    d.status, "value"
-                ) else False:
-                    ref = d.device_ref
-                    break
+        ref = (self._pick_diagnostic_source().device_ref
+               if self._ctx.last_discovery is not None else "seed-01")
         snaps = store.list(ref)
         if snaps and self._device_runner is not None:
             try:
@@ -4493,14 +4432,8 @@ allow-transfer { any; };
             analyze_link_down, analyze_poe,
         )
         # If we have a recent health / poe finding, fold it in.
-        ref = "seed-01"
-        if self._ctx.last_discovery is not None:
-            for d in self._ctx.last_discovery.devices:
-                if d.status.value == "COMPLETE" if hasattr(
-                    d.status, "value"
-                ) else False:
-                    ref = d.device_ref
-                    break
+        ref = (self._pick_diagnostic_source().device_ref
+               if self._ctx.last_discovery is not None else "seed-01")
         # Default: link-down with no special evidence.
         a = analyze_link_down(interface=f"any port on {ref}")
         if lang == "ar":
@@ -4796,20 +4729,114 @@ allow-transfer { any; };
             },
         )
 
-    # -- helpers -----------------------------------------------------------</new_text><old_text>    # -- helpers -----------------------------------------------------------</old_text>
+    # -- helpers -----------------------------------------------------------
 
-    def _autopilot_answers(self, apply_bond: bool = False) -> list[str]:
-        answers = [
-            "y",                       # BOND
-            "2",                       # Blueprint (guest_office)
-            "seed-01",                 # router device
-            "ISP fiber DHCP handoff",  # WAN
-            "STANDARD",                # availability
-            "+25% in 12 months",       # growth
-        ]
+    #: Used when the operator did not name a network type. Menu slot 2.
+    DEFAULT_INTENT = "2"
+
+    def _autopilot_answers(self, intent: Optional[str] = None,
+                           apply_bond: bool = False) -> list[str]:
+        """Answers in the order the orchestrator asks them.
+
+        Built by :func:`answer_script`, the single source of truth. This used to
+        be a sixth hand-written list, and when the access-retry prompt was added
+        it landed one slot late: the retry question consumed the blueprint
+        answer and the *intent* question was answered with the router device, so
+        every chat-initiated run blocked at INTENT_ELICITATION. It also hard
+        coded blueprint "2" no matter what network the operator had asked for.
+        """
+        from netops_autopilot.autopilot.answer_script import answer_script
+        # The access-retry prompt is a security decision; the chat supplies an
+        # explicit "n" rather than letting it fall through to a silent default.
+        answers = answer_script(access_retry="n",
+                                intent=intent or self.DEFAULT_INTENT)
         if apply_bond:
             answers.append("BOND")
         return answers
+
+    def _pick_diagnostic_source(self):
+        """The device to run ping/traceroute/show from: the SEED if present.
+
+        Falls back to the first COMPLETE device, then to the first device, so
+        a caller always gets something — but the seed is preferred because it
+        is the device the operator actually cabled to this computer.
+        """
+        devices = self._ctx.last_discovery.devices
+        for d in devices:
+            cls = getattr(d.classification, "value", str(d.classification))
+            if cls == "SEED":
+                return d
+        for d in devices:
+            status = getattr(d.status, "value", str(d.status))
+            if status == "COMPLETE":
+                return d
+        return devices[0]
+
+    def _session_factories(self):
+        """The probe and management factories for this run.
+
+        Created once per run and cached, so both come from the SAME fabric
+        instance — the access-retry loop calls ``grant()`` on the management
+        factory and the probe side must see the result.
+
+        Two corrections to what this used to do:
+
+        * the management factory is the fabric object, not its bound ``.open``
+          method. A bound method carries no ``grant()`` hook, so the retry
+          prompt was answered and then silently ignored;
+        * on real hardware the management path is the working
+          ``_real_mgmt_factory``, not ``_refused_mgmt_factory``, which refuses
+          every device unconditionally and made the chat unable to reach
+          anything it discovered.
+        """
+        if self._factories is not None:
+            return self._factories
+        port = self._seed_port
+        if port and (port.startswith("SIM") or port.upper() == "SIM0"):
+            import sys as _sys, os as _os
+            _root = _os.path.dirname(_os.path.dirname(
+                _os.path.dirname(_os.path.dirname(__file__))))
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from tests.support.simfabric import SimFabricFactory
+            fabric = SimFabricFactory(include_access=True, access_behavior="allow")
+            self._factories = (fabric.probe, fabric)
+        else:
+            from netops_autopilot.cli_main import (
+                _real_session_factory, _real_mgmt_factory)
+            self._factories = (_real_session_factory, _real_mgmt_factory())
+        return self._factories
+
+    def _run_autopilot(self, *, execute: bool, intent: Optional[str] = None,
+                       apply_bond: bool = False):
+        """One autopilot run, against whichever runner shape was injected.
+
+        Two shapes exist in the wild and both are real:
+
+        * ``cli_main``'s chat runner takes ``(port, execute, answers)``;
+        * ``web.server`` injects an ``AutopilotEngine`` **directly**, whose
+          ``run`` takes the session factories instead and reads answers from
+          its own ``io``.
+
+        The ``_EngineRunner`` protocol in this file declared only the first and
+        was simply wrong about the second. The factory call is tried first
+        because that is the shape the live web server uses; the ``answers=``
+        call is the fallback for the CLI runner. Either way the requested
+        network type is published on the operator first, so a prompt-aware IO
+        can honour it instead of always answering the same blueprint.
+        """
+        self._requested_intent = intent
+        self._factories = None                 # fresh fabric for this run
+        answers = self._autopilot_answers(intent=intent, apply_bond=apply_bond)
+        port = self._seed_port
+        probe_factory, mgmt_factory = self._session_factories()
+        try:
+            return self._runner.run(
+                probe_port_session_factory=probe_factory,
+                mgmt_session_factory=mgmt_factory,
+                port=port, execute=execute)
+        except TypeError:
+            return self._runner.run(port=port, execute=execute, answers=answers)
 
     def _find_device(self, ref: str):
         if self._ctx.last_discovery is None:
