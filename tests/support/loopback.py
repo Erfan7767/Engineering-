@@ -58,6 +58,8 @@ class LoopbackSession:
         if command.strip().lower() == "show ip route" and (
                 self.dhcp_interfaces or self.configured_svis()):
             return self.ip_route().encode("utf-8")
+        if command.strip().lower() == "show vlan brief":
+            return self.vlan_table().encode("utf-8")
         out = self.outputs.get(command, b"")
         if not out:
             # Try prefix match: ``ping 10.0.0.1 repeat 5`` → ``ping``
@@ -117,9 +119,65 @@ class LoopbackSession:
     def close(self) -> None:
         self.closed = True
 
+    def vlan_table(self) -> str:
+        """``show vlan brief`` derived from what was actually applied.
+
+        The canned table is the baseline — the state the device was discovered
+        in. Every ``vlan <id>`` / ``name <n>`` pair in the applied config is
+        merged into it, in the device's own column layout.
+
+        This has to be derived. A static table means a VLAN the platform really
+        created never appears in the device's readback, so post-apply
+        verification can never pass — and worse, a test written against it
+        grades the fixture instead of the change. Same defect class as the
+        routing table that once omitted the subnets it had just configured,
+        which made ten connectivity tests pass for lack of a path.
+        """
+        base = self.outputs.get("show vlan brief", b"").decode("utf-8", "replace")
+        created: dict[int, str] = {}
+        current: Optional[int] = None
+        for cmd in self.written_config:
+            text = cmd.strip()
+            head = re.match(r"^vlan (\d+)$", text, re.IGNORECASE)
+            if head:
+                current = int(head.group(1))
+                # A VLAN with no `name` line keeps the platform default name.
+                created.setdefault(current, f"VLAN{current:04d}")
+                continue
+            nm = re.match(r"^name (\S+)$", text, re.IGNORECASE)
+            if nm and current is not None:
+                created[current] = nm.group(1)
+                continue
+            # Any other top-level command closes the vlan sub-mode, so a later
+            # `name` belongs to something else and must not be adopted.
+            if not cmd.startswith(" ") and current is not None:
+                current = None
+        if not created:
+            return base
+
+        head_lines: list[str] = []
+        rows: dict[int, str] = {}
+        for line in base.splitlines():
+            parts = line.split()
+            if parts and parts[0].isdigit():
+                rows[int(parts[0])] = line
+            else:
+                head_lines.append(line)
+        for vid, name in created.items():
+            if vid in rows:
+                # A rename is expressed by replacing the row, keeping the
+                # device's column widths rather than inventing a layout.
+                old = rows[vid].split()
+                ports = "    ".join(old[3:]) if len(old) > 3 else ""
+                rows[vid] = f"{vid:<5}{name:<33}{'active':<10}{ports}".rstrip()
+            else:
+                rows[vid] = f"{vid:<5}{name:<33}{'active':<10}".rstrip()
+        body = [rows[k] for k in sorted(rows)]
+        return "\n".join(head_lines + body) + "\n"
+
     def vlan_members(self) -> dict[int, list[str]]:
         """L2 membership exactly as the device reports it in its VLAN table."""
-        text = self.outputs.get("show vlan brief", b"").decode("utf-8", "replace")
+        text = self.vlan_table()
         out: dict[int, list[str]] = {}
         for line in text.splitlines():
             m = re.match(r"^(\d+)\s+(\S+)\s+(\S+)\s*(.*)$", line)

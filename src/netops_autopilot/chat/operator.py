@@ -41,6 +41,7 @@ from typing import Any, Callable, Optional, Protocol
 
 from ..access.allowlist import CommandAllowlist
 from ..access.executor import ConfigExecutor
+from . import targeted_change as _tchange
 from ..autopilot.orchestrator import AutopilotEngine, Phase
 from ..cli import ScriptedIO
 from ..core.failures import Failure, FailureClass
@@ -183,6 +184,11 @@ class IntentVerb(str, Enum):
     #: creation request to a read-only verb answers a question nobody asked and
     #: leaves the operator believing something was built.
     CREATE_VLAN = "create_vlan"
+    #: Confirm and execute a targeted change that was planned but not sent.
+    #: Kept separate from CREATE_VLAN for the same reason ``apply`` is
+    #: separate from ``design``: the plan is shown first and nothing reaches
+    #: a device until the operator says so.
+    CONFIRM_CHANGE = "confirm_change"
     HELP = "help"                       # list available commands
     STATUS = "status"                   # run / system status
     UNKNOWN = "unknown"                 # could not classify
@@ -366,6 +372,9 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "أكد الربط", "تأكيد الربط", "الربط مؤكد", "اربط الجهاز بالكمبيوتر",
         "bond",
     )),
+    (IntentVerb.CONFIRM_CHANGE, (
+        "تأكيد التغيير", "نفّذ التغيير", "نفذ التغيير", "تأكيد", "أكّده",
+    )),
     (IntentVerb.HELP, (
         "مساعدة", "ساعدني", "الأوامر", "help", "ما الذي تستطيع فعله",
     )),
@@ -492,7 +501,13 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "diagnose", "what's wrong", "why is", "troubleshoot",
     )),
     (IntentVerb.VERIFY, (
-        "verify", "check", "validate", "confirm",
+        # Bare "confirm" is deliberately NOT here. It was, which made it
+        # unreachable as a confirmation: with a change pending, an operator
+        # who typed "confirm" got a verification report instead of the
+        # execution they had just been asked to authorise. "confirm" on its
+        # own is not a request to inspect anything, so it now belongs to the
+        # verb that has something concrete to do with it.
+        "verify", "check", "validate",
     )),
     (IntentVerb.COMPLIANCE, (
         "compliance", "audit", "hipaa", "pci", "cis", "nist",
@@ -828,6 +843,9 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.BOND, (
         "bond", "confirm binding", "i'm connected",
     )),
+    (IntentVerb.CONFIRM_CHANGE, (
+        "confirm change", "confirm", "go ahead", "apply it", "do it",
+    )),
     (IntentVerb.HELP, (
         "help", "what can you do", "commands", "?", "menu",
     )),
@@ -1073,6 +1091,8 @@ class OperatorContext:
     last_topology: Optional[Any] = None   # TopologyMap
     last_design: Optional[Any] = None    # SiteDesign
     last_change: Optional[Any] = None    # ChangeRecord
+    #: A targeted change that has been planned and shown, not yet sent.
+    pending_change: Optional[Any] = None   # targeted_change.ChangePlan
     change_history: list[dict] = field(default_factory=list)
 
 
@@ -1257,7 +1277,10 @@ class ChatOperator:
             return self._do_show_neighbors(args.get("device"), lang)
 
         if verb is IntentVerb.CREATE_VLAN:
-            return self._do_create_vlan(args, lang)
+            return self._do_create_vlan(args, lang, message)
+
+        if verb is IntentVerb.CONFIRM_CHANGE:
+            return self._do_confirm_change(lang)
 
         if verb is IntentVerb.SHOW_VLANS:
             return self._do_show_vlans(args.get("device"), lang)
@@ -1818,41 +1841,241 @@ class ChatOperator:
             detail="\n".join(lines),
         )
 
-    def _do_create_vlan(self, args: dict[str, str], lang: str) -> OperatorReply:
-        """A request to create a VLAN — reported honestly, never faked.
+    # -- targeted changes: plan, then execute on confirmation --------------
 
-        The chat's device runner is read-only by construction
-        (``DeviceCommandRunner._ensure_read_only``), so a single VLAN cannot be
-        pushed from here. VLANs ARE configured for real, but only through the
-        design → render → apply path, which is allowlisted, ledgered and
-        verified. Saying so is the honest answer; showing the VLAN table back
-        and implying something was created is not.
+    def _targeted_key_id(self) -> str:
+        """A signing key for targeted changes, created once.
+
+        Without one the executor refuses to write the change to the
+        tamper-evident ledger and reports ``LEDGER_NOT_CONFIGURED`` — honest,
+        but it means an applied change leaves no record, which is exactly what
+        the ledger exists to prevent.
         """
-        vlan_id = args.get("vlan_id")
-        name = args.get("vlan_name")
-        understood = ", ".join(x for x in (
-            f"vlan_id={vlan_id}" if vlan_id else None,
-            f"name={name}" if name else None) if x) or "— not parsed"
-        if lang == "en":
-            summary = "create VLAN — not executed"
-            detail = (
-                f"Understood: {understood}\n"
-                "This chat path is read-only against devices, so it did not "
-                "change anything on the network.\n"
-                "VLANs are configured for real by 'apply <network type>', which "
-                "renders, allowlist-gates, applies and then verifies them.\n"
-                "Nothing was created. No device was modified.")
+        if getattr(self, "_chat_key_id", None) is None:
+            self._chat_key_id = self._store.keys.create_key("chat-targeted")
+        return self._chat_key_id
+
+    def _targeted_allowlist(self) -> CommandAllowlist:
+        """The allowlist used to gate a targeted change.
+
+        Falls back to the packed data rather than assuming the caller
+        injected one — an executor built with an empty allowlist rejects
+        everything, which would look like a platform limitation rather than
+        a missing argument.
+        """
+        if self._allowlist is not None:
+            return self._allowlist
+        from ..specs_data import specs_data_dir
+        return CommandAllowlist.load_dir(specs_data_dir("allowlists"))
+
+    def _target_device(self):
+        """The discovered device a targeted change applies to.
+
+        The SEED — the one device the operator actually cabled to this
+        computer — unless a device was named. Never "whichever sorts first":
+        that picked an access switch in the sim and would configure the wrong
+        box on real hardware.
+        """
+        if self._ctx.last_discovery is None:
+            return None
+        return self._pick_diagnostic_source()
+
+    def _do_create_vlan(self, args: dict[str, str], lang: str,
+                        message: str) -> OperatorReply:
+        """Plan a single-VLAN change against the device's real state.
+
+        Sends nothing. Reads the device's current VLAN table first, refuses on
+        a collision, and returns the exact lines for the operator to approve.
+        """
+        device = self._target_device()
+        if device is None:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
+                summary=("nothing discovered yet" if lang == "en"
+                         else "لم يُكتشف شيء بعد"),
+                detail=("A VLAN is created on a specific device, so the "
+                        "network has to be discovered first — run 'discover'."
+                        if lang == "en" else
+                        "تُنشأ الشبكة المحلية على جهاز بعينه، لذا يجب اكتشاف "
+                        "الشبكة أولاً — شغّل 'اكتشف'."))
+        if self._device_runner is None:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
+                summary=("no device connection" if lang == "en"
+                         else "لا يوجد اتصال بالأجهزة"),
+                detail=("There is no live connection to any device, so the "
+                        "current VLAN table cannot be read and the change "
+                        "cannot be planned against reality."
+                        if lang == "en" else
+                        "لا يوجد اتصال حي بأي جهاز، لذا لا يمكن قراءة جدول "
+                        "الشبكات الحالي ولا التخطيط للتغيير على الواقع."))
+
+        ref = device.device_ref
+        identity = getattr(device, "identity", None)
+        family = getattr(identity, "vendor_family", None) if identity else None
+        vendor_os = family.split("/")[-1] if family else "UNKNOWN"
+
+        # The collision check needs the device's ACTUAL VLAN table. Guessing
+        # it, or assuming the ids the last design used are still free, is how
+        # a new VLAN lands on top of one already in service.
+        try:
+            table = self._device_runner.run_show(ref, "show vlan brief")
+        except Failure as exc:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
+                summary=("cannot read the device" if lang == "en"
+                         else "لا يمكن قراءة الجهاز"),
+                detail="; ".join(exc.causes))
+        if not table.success:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.FAILURE,
+                summary=("cannot read the VLAN table" if lang == "en"
+                         else "لا يمكن قراءة جدول الشبكات"),
+                detail=table.note or "—")
+        existing = _tchange.read_existing_vlans(table.output_text)
+
+        parsed = _tchange.parse_vlan_request(message)
+        name = str(parsed.get("name") or "")
+        if not name:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.NEEDS_INPUT,
+                summary=("which VLAN?" if lang == "en" else "أي شبكة؟"),
+                detail=("Say what the VLAN is for, e.g. 'create a vlan for "
+                        "staff'. Current VLANs on "
+                        f"{ref}: " +
+                        ", ".join(f"{v}={n}" for v, n in sorted(existing.items()))
+                        if lang == "en" else
+                        "اذكر الغرض من الشبكة، مثل 'أنشئ vlan للموظفين'. "
+                        f"الشبكات الحالية على {ref}: " +
+                        ", ".join(f"{v}={n}" for v, n in sorted(existing.items()))))
+
+        requested_id = parsed.get("vlan_id")
+        if requested_id is not None:
+            vlan_id = int(requested_id)
         else:
-            summary = "إنشاء VLAN — لم يُنفَّذ"
+            # Allocated from the ids the device really reports as taken, not
+            # from a counter the platform keeps in its head.
+            vlan_id = _tchange.next_free_vlan(existing.keys())
+
+        try:
+            plan = _tchange.plan_create_vlan(
+                change_id=f"CHG-{len(self._ctx.change_history) + 1:03d}",
+                request=message, device_ref=ref, vendor_os=vendor_os,
+                vlan_id=vlan_id, name=name, existing=existing)
+        except Failure as exc:
+            return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
+                summary=("refused" if lang == "en" else "مرفوض"),
+                detail="; ".join(exc.causes))
+
+        self._ctx.pending_change = plan
+        if lang == "en":
+            summary = f"planned — VLAN {vlan_id} ({name}) on {ref}, not applied"
             detail = (
-                f"المفهوم: {understood}\n"
-                "مسار المحادثة للقراءة فقط تجاه الأجهزة، لذلك لم يُغيَّر شيء "
-                "على الشبكة.\n"
-                "تُهيَّأ شبكات VLAN فعلياً عبر 'apply <نوع الشبكة>' الذي يصيّر "
-                "ويمرّر عبر قائمة السماح ثم يطبّق ثم يتحقق.\n"
-                "لم يُنشأ شيء. لم يُعدَّل أي جهاز.")
-        return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
-                           summary=summary, detail=detail)
+                f"Understood: {plan.understood}\n"
+                f"Device state read: {len(existing)} VLAN(s) present, "
+                f"{vlan_id} is free.\n"
+                f"Commands that will be sent:\n"
+                + "".join(f"    {c}\n" for c in plan.commands)
+                + f"Then: {', '.join(plan.persist) or '(nothing to save)'}\n"
+                f"Verified afterwards with: {plan.verify_command}\n"
+                f"Nothing has been sent. Reply 'confirm' to apply it.")
+        else:
+            summary = (f"مخطَّط — الشبكة {vlan_id} ({name}) على {ref}، لم تُطبَّق")
+            detail = (
+                f"المفهوم: {plan.understood}\n"
+                f"حالة الجهاز المقروءة: {len(existing)} شبكة موجودة، "
+                f"و{vlan_id} متاح.\n"
+                "الأوامر التي ستُرسل:\n"
+                + "".join(f"    {c}\n" for c in plan.commands)
+                + f"ثم: {', '.join(plan.persist) or '(لا شيء للحفظ)'}\n"
+                f"التحقق بعدها عبر: {plan.verify_command}\n"
+                "لم يُرسل شيء. أرد بـ'تأكيد' للتطبيق.")
+        return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.OK,
+                           summary=summary, detail=detail,
+                           data=plan.to_dict())
+
+    def _do_confirm_change(self, lang: str) -> OperatorReply:
+        """Execute the planned targeted change and report the real outcome."""
+        plan = self._ctx.pending_change
+        if plan is None:
+            return self._reply(IntentVerb.CONFIRM_CHANGE, ReplyStatus.BLOCKED,
+                summary=("nothing pending" if lang == "en"
+                         else "لا يوجد تغيير معلّق"),
+                detail=("There is no planned change to confirm. Ask for one "
+                        "first, e.g. 'create a vlan for staff'."
+                        if lang == "en" else
+                        "لا يوجد تغيير مخطَّط لتأكيده. اطلب واحداً أولاً، مثل "
+                        "'أنشئ vlan للموظفين'."))
+        # Consumed whether or not it succeeds: a plan that failed must not be
+        # silently re-applied by a second 'confirm'.
+        self._ctx.pending_change = None
+
+        # The session used to WRITE is the session used to VERIFY. Going
+        # through a second access path would read whatever that path is
+        # attached to — on hardware the same box, but the proof that the
+        # change landed would then rest on an assumption instead of on the
+        # session that made it. Same reason the plan-time read above and this
+        # write both come from the device runner: one source of truth.
+        session = None
+        try:
+            session = self._device_runner.open_session(plan.device_ref)
+        except Exception as exc:  # noqa: BLE001
+            return self._reply(IntentVerb.CONFIRM_CHANGE, ReplyStatus.FAILURE,
+                summary=("cannot reach the device" if lang == "en"
+                         else "لا يمكن الوصول إلى الجهاز"),
+                detail=f"{plan.device_ref}: {exc!r} — nothing was sent.")
+        if session is None:
+            return self._reply(IntentVerb.CONFIRM_CHANGE, ReplyStatus.FAILURE,
+                summary=("cannot reach the device" if lang == "en"
+                         else "لا يمكن الوصول إلى الجهاز"),
+                detail=f"{plan.device_ref}: no session — nothing was sent.")
+
+        def _read_back(device_ref: str, command: str) -> str:
+            out = session.execute(command, 30.0)
+            return out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out)
+
+        report = _tchange.execute_change(
+            plan, session=session, allowlist=self._targeted_allowlist(),
+            store=self._store, read_back=_read_back,
+            run_id=f"chat-{plan.change_id}", key_id=self._targeted_key_id())
+        self._ctx.last_change = report
+        self._ctx.change_history.append(report.to_dict())
+
+        if report.succeeded:
+            status = ReplyStatus.OK
+            if lang == "en":
+                summary = f"applied and verified — {plan.understood}"
+            else:
+                summary = f"طُبِّق وتُحقِّق منه — {plan.understood}"
+        elif report.outcome == "APPLIED" and not report.verified:
+            status = ReplyStatus.FAILURE
+            if lang == "en":
+                summary = ("applied but NOT verified — the device does not "
+                           "show the change")
+            else:
+                summary = "طُبِّق لكن لم يُتحقَّق منه — الجهاز لا يُظهر التغيير"
+        else:
+            status = ReplyStatus.FAILURE
+            summary = f"{plan.device_ref}: {report.outcome}"
+
+        lines = [
+            f"outcome: {report.outcome}",
+            f"applied: {', '.join(report.applied) or '(none)'}",
+            f"rejected: {', '.join(report.rejected) or '(none)'}",
+        ]
+        if report.failure_causes:
+            lines.append("causes: " + "; ".join(report.failure_causes))
+        if report.rolled_back:
+            lines.append("rolled back: " + ("yes, device confirmed clean"
+                                            if report.rollback_complete
+                                            else "ATTEMPTED — device NOT confirmed clean"))
+        lines.append(f"verified on the device: {report.verified}")
+        if report.state_absent:
+            lines.append(f"lines not found in readback: {report.state_absent}")
+        if report.evidence:
+            keep = [l for l in report.evidence.splitlines()
+                    if any(tok in l for tok in plan.verify_expect)][:6]
+            if keep:
+                lines.append(f"device evidence ({plan.verify_command}):")
+                lines.extend("    " + l for l in keep)
+        return self._reply(IntentVerb.CONFIRM_CHANGE, status,
+                           summary=summary, detail="\n".join(lines),
+                           data=report.to_dict())
 
     def _do_show_vlans(self, ref: Optional[str], lang: str) -> OperatorReply:
         # Real execution: run ``show vlan brief`` on the device.

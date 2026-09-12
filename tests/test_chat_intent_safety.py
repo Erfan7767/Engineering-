@@ -90,25 +90,32 @@ def _operator() -> ChatOperator:
 
 
 @pytest.mark.parametrize("lang_text", ["أنشئ VLAN للموظفين", "create a vlan for staff"])
-def test_create_vlan_reports_that_it_changed_nothing(lang_text):
+def test_without_a_device_connection_it_refuses_rather_than_invents(lang_text):
+    """No live device means no VLAN table, which means no plan.
+
+    The handler used to reply BLOCKED with "nothing was created". It now
+    *plans* against the device's real state and applies on confirmation (see
+    test_chat_targeted_change.py), so with no device attached at all the
+    honest answer is that it cannot even plan — not a success, and not a
+    plausible-looking plan for a device it has never seen.
+    """
     op = _operator()
     reply = op.handle(lang_text)
     assert reply.intent is IntentVerb.CREATE_VLAN
-    assert reply.status is not ReplyStatus.OK, (
-        "the chat's device runner is read-only, so a CREATE_VLAN that reports "
-        "OK is claiming a change that never happened")
     assert reply.status is ReplyStatus.BLOCKED
-    blob = f"{reply.summary} {reply.detail}".lower()
-    # It must say so in as many words, not merely omit a success claim.
-    assert ("nothing was created" in blob or "لم يُنشأ شيء" in blob
-            or "لم ينشأ شيء" in blob), reply.detail
+    # Two honest guards, whichever is reached first: nothing discovered, or
+    # discovered but no live connection to read the VLAN table through.
+    assert any(t in reply.summary for t in
+               ("nothing discovered", "no device connection",
+                "لم يُكتشف", "اتصال")), reply.summary
 
 
-def test_create_vlan_names_what_it_understood():
-    """Showing the parsed intent is what makes a refusal checkable."""
+def test_a_pending_plan_is_not_reported_as_an_execution():
+    """The status word must match what actually happened to the network."""
     op = _operator()
-    reply = op.handle("add vlan 30")
-    assert "30" in reply.detail, reply.detail
+    reply = op.handle("create a vlan for staff")
+    # Nothing was applied, so nothing may be reported as applied.
+    assert "applied" not in reply.summary.lower()
 
 
 # ============================================== unknown is honest, not silent
