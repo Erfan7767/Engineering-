@@ -7,6 +7,7 @@ before lab-hardware adapters land (ADR-0006 tiers run on hardware later).
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from typing import Optional
 
@@ -54,7 +55,8 @@ class LoopbackSession:
         if self.fail_times.get(command, 0) > 0:
             self.fail_times[command] -= 1
             raise ConnectionError("loopback injected transport failure")
-        if command.strip().lower() == "show ip route" and self.dhcp_interfaces:
+        if command.strip().lower() == "show ip route" and (
+                self.dhcp_interfaces or self.configured_svis()):
             return self.ip_route().encode("utf-8")
         out = self.outputs.get(command, b"")
         if not out:
@@ -194,7 +196,49 @@ class LoopbackSession:
         head, last = self.DHCP_LEASE_FIRST.rsplit(".", 1)
         return f"{head}.{int(last) + index}"
 
+    def configured_svis(self) -> list[tuple[int, str, str]]:
+        """``(vlan_id, ip, dotted_mask)`` for every SVI actually configured."""
+        out: list[tuple[int, str, str]] = []
+        current: Optional[int] = None
+        for _depth, cmd in self.written_indented:
+            head = re.match(r"^interface Vlan(\d+)$", cmd, re.IGNORECASE)
+            if head:
+                current = int(head.group(1))
+                continue
+            addr = re.match(r"^ip address (\S+) (\S+)$", cmd)
+            if addr and current is not None:
+                out.append((current, addr.group(1), addr.group(2)))
+                current = None
+        return out
+
     def ip_route(self) -> str:
+        """`show ip route` reflecting the SVIs and WAN lease actually configured.
+
+        A real device installs a connected route for every SVI that has an
+        address. Omitting them made the routing table disagree with the config
+        the same session had just accepted, and post-apply isolation tests then
+        passed for the wrong reason: they concluded "no L3 path between these
+        zones" when in fact both were directly connected on this router. A
+        vacuous pass is a false success, so the table is built from what was
+        really applied.
+        """
+        base = self.outputs.get("show ip route", b"").decode("utf-8", "replace")
+        lines = [base.rstrip("\n")]
+        for vlan, ip, mask in self.configured_svis():
+            net = ipaddress.ip_network(f"{ip}/{mask}", strict=False)
+            lines.append(f"C        {net} is directly connected, Vlan{vlan}")
+            lines.append(f"L        {ip}/32 is directly connected, Vlan{vlan}")
+        if self.dhcp_interfaces:
+            gw_head = self.DHCP_LEASE_GATEWAY.rsplit(".", 1)[0]
+            lines += [
+                f"Gateway of last resort is {self.DHCP_LEASE_GATEWAY} to network 0.0.0.0",
+                "",
+                f"      {gw_head}.0/29 is directly connected, Vlan{self.dhcp_interfaces[0]}",
+                f"S*    0.0.0.0/0 [254/0] via {self.DHCP_LEASE_GATEWAY}",
+            ]
+        return "\n".join(lines) + "\n"
+
+    def _ip_route_unused(self) -> str:
         """`show ip route` with the default route a DHCP WAN handoff installs.
 
         A real device learns the default route from the provider's lease, which

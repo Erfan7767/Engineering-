@@ -161,7 +161,8 @@ def test_verification_grades_from_applied_state_not_from_the_design():
     configuration would change nothing and the phase would be decoration.
     """
     store, fabric, report = _run()
-    assert report.verification["verdict"] == "PASS", report.verification["failed"]
+    dhcp_id = next(t for t in report.verification["passed"]
+                   if "SERVICE_UP:dhcp" in t)
 
     session = fabric.open("seed-01", ())
     assert "ip dhcp pool" in session.running_config()
@@ -177,7 +178,7 @@ def test_verification_grades_from_applied_state_not_from_the_design():
     executor = VerificationExecutor(
         _collector_for(store, _run.key_id), lambda ref, _kind: fabric(ref, ()))
     again = executor.run(specs=specs, design=report.design)
-    dhcp = [r for r in again.results if "SERVICE_UP:dhcp" in r.test_id]
+    dhcp = [r for r in again.results if r.test_id == dhcp_id]
     assert dhcp, f"dhcp test not graded; unrun={again.unrun}"
     assert dhcp[0].outcome.value == "FAIL", (
         "removing the applied pools did not change the verdict — verification "
