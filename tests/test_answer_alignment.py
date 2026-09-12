@@ -79,4 +79,9 @@ def test_the_demo_command_acts_on_the_retry_answer(capsys):
     assert rc == 0
     assert "ACCESS RETRY OK" in out, "the retry answer was accepted but not acted on"
     assert "ROLE access-sw1       L2_ACCESS" in out, out
-    assert "UNMANAGED_NEIGHBOR" not in out
+    # access-sw1 specifically must not be left outside the managed set. Other
+    # devices legitimately are: Phase X discovers ARP-only endpoints (a device
+    # with LLDP disabled) that cannot be reached, and those stay announced as
+    # UNMANAGED_NEIGHBOR rather than being silently configured or dropped.
+    role_lines = [l for l in out.splitlines() if l.strip().startswith("ROLE access-sw1")]
+    assert role_lines and "UNMANAGED_NEIGHBOR" not in role_lines[0]

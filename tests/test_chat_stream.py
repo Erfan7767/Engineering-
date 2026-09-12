@@ -145,13 +145,18 @@ def test_real_discovery_via_sse_produces_evidence(client):
     assert final is not None
     assert final["status"] == "OK", f"discover failed: {final}"
     assert final["intent"] == "discover"
-    # Real evidence: 3 devices in the sim fabric.
-    assert final["data"]["totals"]["devices"] == 3, \
-        f"expected 3 devices, got {final['data']['totals']}"
+    # Real evidence: the three CDP/LLDP devices of the sim fabric, plus any
+    # endpoint Phase X found through ARP + the MAC address table (a device with
+    # LLDP disabled is invisible to a neighbour-table-only crawl).
     devices = final["data"]["devices"]
     refs = {d["device_ref"] for d in devices}
-    assert refs == {"seed-01", "access-sw1", "core-sw2"}, \
-        f"expected the sim fabric devices, got {refs}"
+    assert {"seed-01", "access-sw1", "core-sw2"} <= refs, \
+        f"the sim fabric devices are missing: {refs}"
+    assert final["data"]["totals"]["devices"] == len(refs), \
+        f"totals disagree with the device list: {final['data']['totals']}"
+    extra = sorted(refs - {"seed-01", "access-sw1", "core-sw2"})
+    assert all(r.startswith("l3-") for r in extra), \
+        f"unexpected device refs {extra}: only ARP-derived endpoints may be extra"
     # The seed has a real model and a COMPLETE status.
     seed = next(d for d in devices if d["device_ref"] == "seed-01")
     assert seed["status"] == "COMPLETE"

@@ -85,6 +85,29 @@ System serial number           : FCW1832A0QQ
 Configuration register is 0x2102
 """
 
+# Phase X — the seed's ARP and MAC tables. ``fw-01`` at 10.99.0.9 has LLDP
+# disabled, so CDP/LLDP discovery never sees it: it is exactly the equipment a
+# neighbour-table-only crawl silently omits while reporting a complete topology.
+SEED_ARP = b"""Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.99.0.1               0   6677.8899.aabb  ARPA   GigabitEthernet1/0/1
+Internet  10.99.0.2              12   0011.2233.4455  ARPA   GigabitEthernet1/0/1
+Internet  10.99.0.3               4   1122.3344.5566  ARPA   GigabitEthernet1/0/2
+Internet  10.99.0.9               7   9999.8888.7777  ARPA   GigabitEthernet1/0/9
+"""
+
+SEED_MAC_TABLE = b"""          Mac Address Table
+-------------------------------------------
+
+Vlan    Mac Address       Type        Ports
+----    -----------       --------    -----
+ All    0100.0ccc.cccc    STATIC      CPU
+  10    0011.2233.4455    DYNAMIC     Gi1/0/1
+  10    6677.8899.aabb    DYNAMIC     Gi1/0/1
+  20    1122.3344.5566    DYNAMIC     Gi1/0/2
+  30    9999.8888.7777    DYNAMIC     Gi1/0/9
+Total Mac Addresses for this criterion: 4
+"""
+
 SEED_BANNER = b"\r\nCisco IOS Software, Catalyst L3 Switch\r\nseed-01 con0 is now available\r\nseed-01> "
 
 
@@ -101,6 +124,8 @@ def seed_session() -> LoopbackSession:
         "show clock detail": _fx("show_clock"),
         "show vlan brief": _fx("show_vlan_brief"),
         "show interfaces status": _fx("show_interfaces_status"),
+        "show ip arp": SEED_ARP,
+        "show mac address-table": SEED_MAC_TABLE,
         "ping": _fx("ping"),
         "ping 10.0.0.1 repeat 5": _fx("ping"),
         "ping 10.99.0.2 repeat 5": _fx("ping"),

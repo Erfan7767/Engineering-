@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from .cisco_show_version import CiscoIosXeShowVersionParser
 from .interface_inventory import CiscoIosXeInterfacesStatusParser
+from .l2l3_inventory import (
+    CiscoIosXeArpParser,
+    CiscoIosXeMacAddressTableParser,
+)
 from .keyvalue import routeros_system_resource
 from .neighbor_parsers import NEIGHBOR_CATALOG_BUILDERS
 from .registry import ParserRegistry
@@ -23,6 +27,8 @@ CATALOG_BUILDERS = (
     routeros_system_resource,
     CiscoIosXeShowVersionParser,
     CiscoIosXeInterfacesStatusParser,
+    CiscoIosXeArpParser,
+    CiscoIosXeMacAddressTableParser,
     junos_show_version,
     fortios_get_system_status,
     arubaos_show_version,

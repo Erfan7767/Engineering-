@@ -19,6 +19,8 @@ repeats until the frontier is exhausted. Nothing is assumed:
 
 from __future__ import annotations
 
+import ipaddress
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Optional, Protocol
@@ -44,6 +46,10 @@ class DeviceClass(str, Enum):
     NEIGHBOR_REACHED = "NEIGHBOR_REACHED"
     NEIGHBOR_UNREACHABLE = "NEIGHBOR_UNREACHABLE"   # evidence seen, session refused
     NEIGHBOR_NO_PATH_FACTS = "NEIGHBOR_NO_PATH_FACTS"  # no mgmt address advertised
+    #: Phase X — found through ARP + the MAC address table rather than a
+    #: neighbour advertisement. Weaker evidence than CDP/LLDP and graded as
+    #: such, but it is the only way to see a device with LLDP disabled.
+    NEIGHBOR_L3_EVIDENCE = "NEIGHBOR_L3_EVIDENCE"
 
 
 class CommandStatus(str, Enum):
@@ -95,6 +101,15 @@ class DeviceResult:
     #: means the device never answered that command — NOT that it has no
     #: ports. The Design Engine must be able to tell the two apart.
     interface_table: tuple[dict, ...] = ()
+    #: Phase X — L2/L3 evidence for devices that do not advertise themselves.
+    #: ``show ip arp`` (live addresses) and ``show mac address-table`` (which
+    #: port each MAC was learned on). CDP/LLDP alone is blind to a firewall
+    #: with LLDP disabled, a server, or an AP; these two tables are what a
+    #: network engineer falls back on, and without them the platform reported a
+    #: complete topology that was missing physically cabled equipment.
+    #: Empty means the device never answered — NOT that nothing is connected.
+    arp_table: tuple[dict, ...] = ()
+    mac_table: tuple[dict, ...] = ()
     event_count: int = 0
     observation_count: int = 0
     claim_admitted: int = 0
@@ -127,11 +142,37 @@ class CrawlLink:
 
 
 @dataclass(frozen=True)
+class L3Endpoint:
+    """A live L3 address that no neighbour advertisement explained.
+
+    This is the evidence CDP/LLDP cannot produce: a device that exists, has an
+    address, and never advertised itself. Every one of these is *recorded* —
+    whether or not it was probed — because a discovery run that silently omits
+    equipment it can see is worse than one that admits it stopped looking.
+    """
+
+    ip: str
+    mac: str
+    learned_on_device: str
+    learned_on_port: Optional[str]
+    vlan: Optional[str]
+    #: What the reporting device's OWN port inventory says about that port:
+    #: TRUNK (something behind it may carry further devices), ACCESS (an end
+    #: host by the device's own configuration) or UNKNOWN (no inventory).
+    port_kind: str
+    probed: bool
+    device_ref: Optional[str]
+    reason: str
+
+
+@dataclass(frozen=True)
 class CrawlReport:
     devices: tuple[DeviceResult, ...]
     links: tuple[CrawlLink, ...]
     frontier_exhausted: bool
     totals: dict
+    #: Phase X — L3 evidence gathered, including what was not probed.
+    l3_endpoints: tuple[L3Endpoint, ...] = ()
 
 
 class SessionFactory(Protocol):
@@ -212,6 +253,7 @@ class DiscoveryCrawlEngine:
         session_factory: SessionFactory,
         allowlist_of: Callable[[str], CommandAllowlist],
         max_devices: int = 256,
+        max_l3_probes: int = 32,
     ) -> CrawlReport:
         """Breadth-first, deterministic: frontier is a sorted set each wave."""
         visited: dict[str, DeviceResult] = {}
@@ -260,6 +302,15 @@ class DiscoveryCrawlEngine:
             frontier = wave
 
         links = self._link_report(tables)
+        # Phase X: CDP/LLDP exhausted. Now look for what never advertised
+        # itself, using ARP joined to the MAC address table.
+        l3_endpoints, l3_links = self._discover_via_l2l3(
+            visited, tables=tables, session_factory=session_factory,
+            allowlist_of=allowlist_of,
+            max_devices=max_devices, max_l3_probes=max_l3_probes)
+        if l3_links:
+            existing = {l.link_id for l in links}
+            links.extend(l for l in l3_links if l.link_id not in existing)
         totals = self._totals(visited)
         exhausted = not frontier
         return CrawlReport(
@@ -267,7 +318,160 @@ class DiscoveryCrawlEngine:
             links=tuple(links),
             frontier_exhausted=exhausted,
             totals=totals,
+            l3_endpoints=tuple(l3_endpoints),
         )
+
+    # ------------------------------------------- L2/L3 evidence (Phase X)
+    @staticmethod
+    def _port_kind(device: DeviceResult, port: Optional[str]) -> str:
+        """What the device's OWN port inventory says about a port.
+
+        ``TRUNK`` means something behind it may carry further devices;
+        ``ACCESS`` means the device's own configuration makes whatever is
+        attached an end host; ``UNKNOWN`` means no inventory answered. This is
+        read from evidence the device itself gave, never assumed.
+        """
+        if not port or not device.interface_table:
+            return "UNKNOWN"
+        want = port.lower().replace(" ", "")
+        for row in device.interface_table:
+            got = (row.get("port") or "")
+            if got and got.lower().replace(" ", "") == want:
+                vlan = (row.get("vlan") or "").lower()
+                if vlan == "trunk":
+                    return "TRUNK"
+                if vlan.isdigit():
+                    return "ACCESS"
+                return "UNKNOWN"
+        return "UNKNOWN"
+
+    def _l3_candidates(self, visited: dict[str, DeviceResult],
+                       tables: Optional[dict[str, list[dict]]] = None) -> list[tuple]:
+        """Join ARP to the MAC address table for every crawled device.
+
+        Returns deterministic ``(ip, mac, device_ref, port, vlan, port_kind)``
+        tuples for live addresses that no neighbour advertisement explained.
+
+        Already-known addresses are excluded from **two** evidence sources:
+        each device's own ``mgmt_addresses``, and every management address
+        advertised in any neighbour table crawled so far. The second matters —
+        a seed device carries no evidence about *itself*, so its own address
+        would otherwise be re-discovered as an unknown endpoint.
+        """
+        known_ips: set[str] = set()
+        for device in visited.values():
+            known_ips.update(device.mgmt_addresses)
+        for table in (tables or {}).values():
+            for entry in table:
+                advertised = entry.get("mgmt_address")
+                if advertised:
+                    known_ips.add(advertised)
+
+        out: dict[str, tuple] = {}
+        for ref in sorted(visited):
+            device = visited[ref]
+            if not device.arp_table or not device.mac_table:
+                continue          # no evidence: never invent an endpoint
+            mac_index: dict[str, tuple] = {}
+            for row in device.mac_table:
+                mac = (row.get("mac_address") or "").lower()
+                if mac and mac not in mac_index:
+                    mac_index[mac] = (row.get("ports"), row.get("vlan"))
+            for row in sorted(device.arp_table,
+                              key=lambda r: (r.get("address") or "",
+                                             r.get("hardware_addr") or "")):
+                ip = row.get("address")
+                mac = (row.get("hardware_addr") or "").lower()
+                if not ip or not mac:
+                    continue
+                if ip in known_ips:
+                    continue      # already a discovered device, by its own address
+                port, vlan = mac_index.get(mac, (None, None))
+                key = f"{ref}|{ip}"
+                if key in out:
+                    continue
+                out[key] = (ip, mac, ref, port, vlan, self._port_kind(device, port))
+        # Deterministic probe order: numeric by address, then reporting device.
+        def _ip_key(item):
+            ip = item[1][0]
+            try:
+                return (0, int(ipaddress.ip_address(ip)), item[1][2])
+            except ValueError:
+                return (1, 0, ip)
+        return [out[k] for k in sorted(out, key=lambda k: _ip_key((None, out[k])))]
+
+    def _discover_via_l2l3(
+        self,
+        visited: dict[str, DeviceResult],
+        *,
+        tables: Optional[dict[str, list[dict]]] = None,
+        session_factory: SessionFactory,
+        allowlist_of: Callable[[str], CommandAllowlist],
+        max_devices: int,
+        max_l3_probes: int,
+    ) -> tuple[list[L3Endpoint], list[CrawlLink]]:
+        """Discover what never advertised itself, and record all of it.
+
+        Two honesty rules shape the result:
+
+        * every endpoint found is recorded, including those not probed, with
+          the reason — nothing seen is silently dropped;
+        * a derived link is graded ``INFERRED``, or ``INTERMEDIATE_SUSPECTED``
+          when it was learned on a trunk (where an unannounced switch may sit
+          in between) — never as a confirmed neighbour.
+        """
+        candidates = self._l3_candidates(visited, tables)
+        endpoints: list[L3Endpoint] = []
+        links: list[CrawlLink] = []
+        probed = 0
+        for ip, mac, ref, port, vlan, port_kind in candidates:
+            device_ref = f"l3-{ip}"
+            if device_ref in visited:
+                endpoints.append(L3Endpoint(
+                    ip=ip, mac=mac, learned_on_device=ref, learned_on_port=port,
+                    vlan=vlan, port_kind=port_kind, probed=True,
+                    device_ref=device_ref,
+                    reason="already crawled during the CDP/LLDP pass"))
+                continue
+            if len(visited) >= max_devices:
+                endpoints.append(L3Endpoint(
+                    ip=ip, mac=mac, learned_on_device=ref, learned_on_port=port,
+                    vlan=vlan, port_kind=port_kind, probed=False, device_ref=None,
+                    reason=f"NOT_PROBED: device budget {max_devices} reached"))
+                continue
+            if probed >= max_l3_probes:
+                endpoints.append(L3Endpoint(
+                    ip=ip, mac=mac, learned_on_device=ref, learned_on_port=port,
+                    vlan=vlan, port_kind=port_kind, probed=False, device_ref=None,
+                    reason=f"NOT_PROBED: L3 probe budget {max_l3_probes} reached "
+                           f"(endpoint is recorded, never silently dropped)"))
+                continue
+            probed += 1
+            result = self._crawl_device(
+                device_ref=device_ref, family="UNKNOWN", hints=(ip,),
+                classification=DeviceClass.NEIGHBOR_L3_EVIDENCE,
+                session_factory=session_factory, allowlist_of=allowlist_of)
+            visited[device_ref] = result
+            endpoints.append(L3Endpoint(
+                ip=ip, mac=mac, learned_on_device=ref, learned_on_port=port,
+                vlan=vlan, port_kind=port_kind, probed=True,
+                device_ref=device_ref,
+                reason=("answered a management session"
+                        if result.status is DeviceStatus.COMPLETE
+                        else f"probed; status={result.status.value}")))
+            # The inferred link. Graded below PROBABLE on purpose: an ARP entry
+            # proves an address is live, not that it is directly attached.
+            state = (lf.INTERMEDIATE_SUSPECTED if port_kind == "TRUNK"
+                     else lf.INFERRED)
+            a = EndpointRef(ref, port)
+            b = EndpointRef(device_ref, None)
+            if b.key() < a.key():
+                a, b = b, a
+            links.append(CrawlLink(
+                link_id=_link_id(a, b), endpoint_a=a, endpoint_b=b,
+                fsm4_state=state, protocols=("ARP", "MAC_ADDRESS_TABLE"),
+                evidence_obs_ids=()))
+        return endpoints, links
 
     # ------------------------------------------------------------- one device
     def _crawl_device(
@@ -355,7 +559,9 @@ class DiscoveryCrawlEngine:
                 result.rejection_reasons.extend(issue.reasons)
 
         result.identity = self._identity_of(device_ref, plan, observations_all)
-        result.interface_table = self._interfaces_of(observations_all)
+        result.interface_table = self._table_of(observations_all, "interface_table")
+        result.arp_table = self._table_of(observations_all, "arp_table")
+        result.mac_table = self._table_of(observations_all, "mac_table")
         collected, planned = result.counts()
         result.status = (DeviceStatus.COMPLETE if collected == planned
                          else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)
@@ -424,15 +630,19 @@ class DiscoveryCrawlEngine:
         return rows
 
     @staticmethod
-    def _interfaces_of(observations: list[Observation]) -> tuple[dict, ...]:
-        """The OK ``interface_table`` observation, if the device produced one.
+    def _table_of(observations: list[Observation], field: str) -> tuple[dict, ...]:
+        """The OK observation for a tabular field, if the device produced one.
 
         Only an OK observation counts. A MISSING one (no header in the output)
-        leaves the tuple empty, which the Design Engine reads as "inventory
-        unavailable" and refuses to invent access ports from.
+        leaves the tuple empty, which downstream readers must treat as "table
+        unavailable" and refuse to invent anything from.
+
+        Was ``_interfaces_of``; generalised because ARP and the MAC address
+        table carry exactly the same "OK or unknowable, never silently empty"
+        contract as the port inventory.
         """
         for obs in observations:
-            if obs.field == "interface_table" and obs.parse_status is ParseStatus.OK \
+            if obs.field == field and obs.parse_status is ParseStatus.OK \
                     and isinstance(obs.value, list):
                 return tuple(dict(row) for row in obs.value if isinstance(row, dict))
         return ()

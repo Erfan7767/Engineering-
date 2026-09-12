@@ -448,9 +448,14 @@ def test_a_retried_device_reports_its_own_identity():
     assert access.identity.serial != seed.identity.serial
     assert access.identity.model != seed.identity.model
     assert access.status.value == "COMPLETE"
-    # both ends of the link corroborate each other, so no ONE_SIDED gap remains
+    # Both ends of the access-sw1 link corroborate each other, so that specific
+    # link has no weak-evidence gap. Other links legitimately do — Phase X adds
+    # ARP-derived ones graded INFERRED, which must never be laundered into a
+    # confirmed neighbour.
+    about_access = [g for g in report.topology.gaps
+                    if "access-sw1" in g and "l3-" not in g]
     assert not any("ONE_SIDED" in g or "LINK_EVIDENCE_BELOW_CONF" in g
-                   for g in report.topology.gaps), report.topology.gaps
+                   for g in about_access), about_access
 
 
 # ================================== 7. post-apply verification is factual, not

@@ -85,9 +85,13 @@ def test_catalog_registers_all_v1_parsers_with_unique_ids():
     ids = [builder().info.parser_id for builder in CATALOG_BUILDERS]
     # 6 identity parsers (D1) + 7 neighbor parsers (D5-capstone OI-0170)
     # + 1 interface-inventory parser (Phase W: the port evidence the Design
-    #   Engine needs to assign end-user access ports).
-    assert len(ids) == 14 and len(set(ids)) == len(ids)
+    #   Engine needs to assign end-user access ports)
+    # + 2 L2/L3 inventory parsers (Phase X: ARP and the MAC address table, so a
+    #   device with CDP/LLDP disabled is still discovered instead of ignored).
+    assert len(ids) == 16 and len(set(ids)) == len(ids)
     assert "regex/cisco_iosxe_show_interfaces_status" in ids
+    assert "regex/cisco_iosxe_show_ip_arp" in ids
+    assert "regex/cisco_iosxe_show_mac_address_table" in ids
     for parser_id in ids:
         assert registry.latest(parser_id).info.parser_id == parser_id
     families = {builder().info.vendor_family for builder in CATALOG_BUILDERS}

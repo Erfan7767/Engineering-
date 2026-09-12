@@ -6,16 +6,6 @@
     "READ_ONLY": {
       "entries": [
         {
-          "template": "show version",
-          "purpose": "identity",
-          "fields": [
-            "version",
-            "model",
-            "uptime",
-            "serial"
-          ]
-        },
-        {
           "template": "ping",
           "purpose": "ICMP reachability from the device",
           "fields": [
@@ -25,63 +15,19 @@
           ]
         },
         {
-          "template": "traceroute",
-          "purpose": "L3 path trace from the device",
+          "template": "ping <target>",
+          "purpose": "ICMP reachability from the device",
           "fields": [
             "target",
-            "hops"
+            "success_rate",
+            "rtt"
           ]
         },
         {
-          "template": "show inventory",
-          "purpose": "hardware inventory",
+          "template": "show archive config differences",
+          "purpose": "config change detection",
           "fields": [
-            "pid",
-            "vid",
-            "sn"
-          ]
-        },
-        {
-          "template": "show interfaces status",
-          "purpose": "L1/L2 port state",
-          "fields": [
-            "port",
-            "status",
-            "vlan",
-            "duplex",
-            "speed",
-            "type"
-          ]
-        },
-        {
-          "template": "show interfaces",
-          "purpose": "counters/errors",
-          "fields": [
-            "interface",
-            "input_errors",
-            "crc",
-            "output_errors"
-          ]
-        },
-        {
-          "template": "show interfaces trunk",
-          "purpose": "trunk evidence",
-          "fields": [
-            "port",
-            "mode",
-            "encapsulation",
-            "vlan"
-          ]
-        },
-        {
-          "template": "show lldp neighbors detail",
-          "purpose": "neighbor evidence (LLDP)",
-          "fields": [
-            "local_intf",
-            "neighbor",
-            "neighbor_intf",
-            "chassis_id",
-            "mgmt_ip"
+            "__diff__"
           ]
         },
         {
@@ -91,86 +37,6 @@
             "device_id",
             "local_interface",
             "platform",
-            "port_id",
-            "mgmt_ip"
-          ]
-        },
-        {
-          "template": "show vlan brief",
-          "purpose": "VLAN model",
-          "fields": [
-            "vlan_id",
-            "name",
-            "status",
-            "ports"
-          ]
-        },
-        {
-          "template": "show mac address-table",
-          "purpose": "MAC evidence",
-          "fields": [
-            "vlan",
-            "mac",
-            "type",
-            "port"
-          ]
-        },
-        {
-          "template": "show ip access-lists",
-          "purpose": "ACL audit",
-          "fields": [
-            "list",
-            "line",
-            "action",
-            "match",
-            "hits"
-          ]
-        },
-        {
-          "template": "show ip route",
-          "purpose": "routing state",
-          "fields": [
-            "protocol",
-            "network",
-            "next_hop",
-            "interface"
-          ]
-        },
-        {
-          "template": "show ip ospf neighbor",
-          "purpose": "OSPF neighbor state",
-          "fields": [
-            "neighbor",
-            "state",
-            "interface"
-          ]
-        },
-        {
-          "template": "show ip bgp summary",
-          "purpose": "BGP peer state",
-          "fields": [
-            "neighbor",
-            "state",
-            "as",
-            "uptime"
-          ]
-        },
-        {
-          "template": "show ip eigrp neighbors",
-          "purpose": "EIGRP neighbor state",
-          "fields": [
-            "neighbor",
-            "interface",
-            "uptime"
-          ]
-        },
-        {
-          "template": "show lldp neighbors detail",
-          "purpose": "LLDP neighbors",
-          "fields": [
-            "local_intf",
-            "chassis_id",
-            "system_name",
             "port_id",
             "mgmt_ip"
           ]
@@ -186,23 +52,84 @@
           ]
         },
         {
-          "template": "show vtp status",
-          "purpose": "VTP domain/mode/revision",
+          "template": "show clock detail",
+          "purpose": "device clock (untrusted, recorded)",
           "fields": [
-            "domain",
-            "mode",
-            "revision",
-            "md5"
+            "time",
+            "timezone",
+            "clock-source"
           ]
         },
         {
-          "template": "show spanning-tree",
-          "purpose": "STP topology",
+          "template": "show interfaces",
+          "purpose": "counters/errors",
           "fields": [
+            "interface",
+            "input_errors",
+            "crc",
+            "output_errors"
+          ]
+        },
+        {
+          "template": "show interfaces status",
+          "purpose": "L1/L2 port state",
+          "fields": [
+            "port",
+            "status",
             "vlan",
-            "root",
-            "root_port",
-            "cost"
+            "duplex",
+            "speed",
+            "type"
+          ]
+        },
+        {
+          "template": "show interfaces trunk",
+          "purpose": "trunk evidence",
+          "fields": [
+            "port",
+            "mode",
+            "encapsulation",
+            "vlan"
+          ]
+        },
+        {
+          "template": "show inventory",
+          "purpose": "hardware inventory",
+          "fields": [
+            "pid",
+            "vid",
+            "sn"
+          ]
+        },
+        {
+          "template": "show ip access-lists",
+          "purpose": "ACL audit",
+          "fields": [
+            "list",
+            "line",
+            "action",
+            "match",
+            "hits"
+          ]
+        },
+        {
+          "template": "show ip arp",
+          "purpose": "live L3 neighbours with MAC + learned interface (Phase X: finds devices that do not advertise via CDP/LLDP)",
+          "fields": [
+            "address",
+            "hardware_addr",
+            "interface",
+            "age_minutes"
+          ]
+        },
+        {
+          "template": "show ip bgp summary",
+          "purpose": "BGP peer state",
+          "fields": [
+            "neighbor",
+            "state",
+            "as",
+            "uptime"
           ]
         },
         {
@@ -225,14 +152,12 @@
           ]
         },
         {
-          "template": "show power inline",
-          "purpose": "PoE budget",
+          "template": "show ip eigrp neighbors",
+          "purpose": "EIGRP neighbor state",
           "fields": [
+            "neighbor",
             "interface",
-            "admin",
-            "oper",
-            "watts",
-            "class"
+            "uptime"
           ]
         },
         {
@@ -248,6 +173,68 @@
           ]
         },
         {
+          "template": "show ip ospf neighbor",
+          "purpose": "OSPF neighbor state",
+          "fields": [
+            "neighbor",
+            "state",
+            "interface"
+          ]
+        },
+        {
+          "template": "show ip route",
+          "purpose": "routing state",
+          "fields": [
+            "protocol",
+            "network",
+            "next_hop",
+            "interface"
+          ]
+        },
+        {
+          "template": "show lldp neighbors detail",
+          "purpose": "neighbor evidence (LLDP)",
+          "fields": [
+            "local_intf",
+            "neighbor",
+            "neighbor_intf",
+            "chassis_id",
+            "mgmt_ip"
+          ]
+        },
+        {
+          "template": "show lldp neighbors detail",
+          "purpose": "LLDP neighbors",
+          "fields": [
+            "local_intf",
+            "chassis_id",
+            "system_name",
+            "port_id",
+            "mgmt_ip"
+          ]
+        },
+        {
+          "template": "show mac address-table",
+          "purpose": "MAC evidence",
+          "fields": [
+            "vlan",
+            "mac",
+            "type",
+            "port"
+          ]
+        },
+        {
+          "template": "show power inline",
+          "purpose": "PoE budget",
+          "fields": [
+            "interface",
+            "admin",
+            "oper",
+            "watts",
+            "class"
+          ]
+        },
+        {
           "template": "show running-config",
           "purpose": "configuration (hash baseline)",
           "fields": [
@@ -255,28 +242,51 @@
           ]
         },
         {
-          "template": "show archive config differences",
-          "purpose": "config change detection",
+          "template": "show spanning-tree",
+          "purpose": "STP topology",
           "fields": [
-            "__diff__"
+            "vlan",
+            "root",
+            "root_port",
+            "cost"
           ]
         },
         {
-          "template": "show clock detail",
-          "purpose": "device clock (untrusted, recorded)",
+          "template": "show version",
+          "purpose": "identity",
           "fields": [
-            "time",
-            "timezone",
-            "clock-source"
+            "version",
+            "model",
+            "uptime",
+            "serial"
           ]
         },
         {
-          "template": "ping <target>",
-          "purpose": "ICMP reachability from the device",
+          "template": "show vlan brief",
+          "purpose": "VLAN model",
+          "fields": [
+            "vlan_id",
+            "name",
+            "status",
+            "ports"
+          ]
+        },
+        {
+          "template": "show vtp status",
+          "purpose": "VTP domain/mode/revision",
+          "fields": [
+            "domain",
+            "mode",
+            "revision",
+            "md5"
+          ]
+        },
+        {
+          "template": "traceroute",
+          "purpose": "L3 path trace from the device",
           "fields": [
             "target",
-            "success_rate",
-            "rtt"
+            "hops"
           ]
         },
         {
@@ -470,7 +480,7 @@
       ]
     },
     "CONFIG_HIGH_RISK": {
-      "notes": "High-risk templates \u2014 require a lock-out plan artifact + explicit human confirmation in production. Lab-verified for syntax; deploy only with adequate change window.",
+      "notes": "High-risk templates — require a lock-out plan artifact + explicit human confirmation in production. Lab-verified for syntax; deploy only with adequate change window.",
       "entries": [
         {
           "template": "router ospf <pid>",

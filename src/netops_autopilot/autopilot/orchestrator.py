@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -108,6 +110,10 @@ class AutopilotEngine:
             store=store, twin=self.twin, collector=None,  # set in run()
             parsers=self.registry, link_engine=self.links, claim_factory=self.claims)
         self.report = AutopilotReport()
+        #: device_ref → why no configuration was produced for it. Feeds the
+        #: execution gate's coverage check, so a managed device that ended up
+        #: with nothing is reported with a reason instead of vanishing.
+        self.render_failures: dict[str, str] = {}
 
     # ------------------------------------------------------------------ utils
     def _load_embedded_allowlists(self) -> dict[str, CommandAllowlist]:
@@ -476,12 +482,59 @@ class AutopilotEngine:
                 self.report.renders[ref] = rendered
             except Failure as exc:
                 lines = "; ".join(exc.causes)
+                # Remembered, not just printed: the execution gate has to know
+                # a managed device ended up with no configuration, and why.
+                self.render_failures[ref] = lines
                 self.io.show(f"Render {ref}: {lines}")
         shown = sum(1 for r in self.report.renders.values())
         for ref, rendered in sorted(self.report.renders.items()):
             self.io.show(rendered.to_text() + "\n")
         self._transition(Phase.DESIGN.value, Phase.RENDER.value, "RENDER", f"devices={shown}")
         self._phase(Phase.RENDER, "OK", f"rendered previews for {shown} device(s)")
+
+    # ------------------------------------------------------- config coverage
+    def _config_coverage(self, design: SiteDesign) -> tuple[list[str], list[tuple[str, str]]]:
+        """Split the managed set into configured and unconfigured devices.
+
+        "Managed" is the design's own statement — every role except
+        ``UNMANAGED_NEIGHBOR``. Deriving it from ``self.report.renders``
+        instead, which is what the gate used to do, made the check
+        self-confirming: a device that produced no configuration simply was not
+        in the dictionary, so it was not expected either, and the run reported
+        success over a network that was missing a device.
+
+        Returns ``(managed, unconfigured)`` where each unconfigured entry is
+        ``(device_ref, reason)``. The reason comes from the recorded render
+        failure when there is one; otherwise the honest statement that no
+        configuration was produced and the engine does not know why.
+        """
+        managed = sorted(
+            r.device_ref for r in design.roles if r.role != "UNMANAGED_NEIGHBOR")
+        unconfigured: list[tuple[str, str]] = []
+        for ref in managed:
+            if ref in self.report.renders:
+                continue
+            reason = self.render_failures.get(
+                ref,
+                "no configuration was produced for this device (no rendered "
+                "block and no recorded render failure)")
+            unconfigured.append((ref, reason))
+        return managed, unconfigured
+
+    def _announce_unconfigured(self, unconfigured: list[tuple[str, str]]) -> None:
+        """Say plainly which managed devices got nothing, and add a gap."""
+        for ref, reason in unconfigured:
+            self.io.show(
+                f"!! UNCONFIGURED {ref}: {reason} — this device is in the "
+                f"managed set and received NO configuration. The network is "
+                f"incomplete; this is never reported as a clean run.")
+            if self.report.topology is not None:
+                # ``gaps`` is an immutable tuple, so the map is rebuilt rather
+                # than mutated in place.
+                self.report.topology = dataclasses.replace(
+                    self.report.topology,
+                    gaps=tuple(self.report.topology.gaps)
+                    + (f"DEVICE_UNCONFIGURED {ref}: {reason}",))
 
     def _phase_execution_gate(self, design: SiteDesign, execute: bool,
                               mgmt_session_factory=None) -> None:
@@ -504,18 +557,29 @@ class AutopilotEngine:
         """
         from ..access.executor import ConfigExecutor, ChangeOutcome
         staged = sorted(self.report.renders)
+        managed, unconfigured = self._config_coverage(design)
+        if unconfigured:
+            self._announce_unconfigured(unconfigured)
         if not execute:
             self.report.execution = {
                 "requested": False,
-                "outcome": "STAGED",
-                "reason": "execute=False; changes are staged, not applied",
+                "outcome": "INCOMPLETE-STAGED" if unconfigured else "STAGED",
+                "reason": ("execute=False; changes are staged, not applied"
+                           if not unconfigured else
+                           "execute=False; staged, but managed device(s) have no "
+                           "configuration — see unconfigured_devices"),
                 "staged_devices": staged,
+                "managed_devices": managed,
+                "unconfigured_devices": [ref for ref, _ in unconfigured],
+                "unconfigured_reasons": {ref: why for ref, why in unconfigured},
                 "human_required_to_unlock": "re-run with --execute and a confirmation at the BOND gate",
             }
-            self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", "STAGED")
-            self._phase(Phase.EXECUTION_GATE, "OK",
-                        f"staged {len(staged)} device(s); apply with --execute")
-            self.report.final = "COMPLETE-STAGED"
+            self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE",
+                             "INCOMPLETE" if unconfigured else "STAGED")
+            self._phase(Phase.EXECUTION_GATE, "OK" if not unconfigured else "INCOMPLETE",
+                        f"staged {len(staged)}/{len(managed)} managed device(s); apply with --execute"
+                        + (f" — {len(unconfigured)} UNCONFIGURED" if unconfigured else ""))
+            self.report.final = "INCOMPLETE-STAGED" if unconfigured else "COMPLETE-STAGED"
             self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
             return
 
@@ -547,12 +611,20 @@ class AutopilotEngine:
         # executes for real, not just plans.
         records = []
         applied_sessions: list = []
+        skipped: list[tuple[str, str]] = []
         for ref, rendered in self.report.renders.items():
             family = self._family_of(ref)
             if not family:
+                # Was a bare `continue`: the device dropped out of the run and
+                # the verdict was computed over whatever was left, so a device
+                # with an unknown vendor family made the apply look complete.
+                skipped.append((ref, "VENDOR_FAMILY_UNKNOWN: no allowlist can be "
+                                     "selected, so nothing was sent"))
                 continue
             allowlist = self.catalog_allowlists.get(family)
             if not allowlist:
+                skipped.append((ref, f"NO_ALLOWLIST:{family}: configuration was "
+                                     "rendered but cannot be gated, so nothing was sent"))
                 continue
             ex = ConfigExecutor(allowlist=allowlist, store=self.store,
                                 run_id=f"{self._run_id_safe()}-{ref}",
@@ -605,6 +677,14 @@ class AutopilotEngine:
             records.append(record.to_dict())
 
         outcomes = [r["outcome"] for r in records]
+        # A managed device with no configuration at all, and a rendered device
+        # that never reached the wire, are both incompleteness — distinct from
+        # the safety failures below, but never something a clean verdict may
+        # paper over. ``all(...)`` over an empty list is vacuously True, so an
+        # apply that sent nothing used to report COMPLETE-APPLIED.
+        incomplete = sorted({ref for ref, _ in unconfigured} | {ref for ref, _ in skipped})
+        for ref, why in skipped:
+            self.io.show(f"!! NOT_SENT {ref}: {why}")
         if "PERSIST_FAILED" in outcomes:
             # Applied and verified, but not saved: the network works right now
             # and silently breaks at the next reload. Louder than PARTIAL.
@@ -616,9 +696,16 @@ class AutopilotEngine:
             # as COMPLETE while a device sits in a partial state.
             verdict = "ROLLBACK_FAILED"
             self.report.final = "BLOCKED-ROLLBACK-FAILED"
-        elif all(o == "APPLIED" for o in outcomes):
+        elif incomplete:
+            verdict = "INCOMPLETE"
+            self.report.final = "INCOMPLETE-APPLIED"
+        elif outcomes and all(o == "APPLIED" for o in outcomes):
             verdict = "APPLIED"
             self.report.final = "COMPLETE-APPLIED"
+        elif not outcomes:
+            # Nothing was sent to anything. Vacuous success is a lie.
+            verdict = "NOTHING_APPLIED"
+            self.report.final = "INCOMPLETE-APPLIED"
         elif "REJECTED" in outcomes:
             verdict = "REJECTED"
             self.report.final = "BLOCKED-APPLY"
@@ -633,11 +720,17 @@ class AutopilotEngine:
             "requested": True,
             "outcome": verdict,
             "staged_devices": staged,
+            "managed_devices": managed,
+            "unconfigured_devices": [ref for ref, _ in unconfigured],
+            "unconfigured_reasons": {ref: why for ref, why in unconfigured},
+            "not_sent": {ref: why for ref, why in skipped},
             "change_records": records,
         }
         self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", verdict)
-        self._phase(Phase.EXECUTION_GATE, "OK",
-                    f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(outcomes)} device(s)")
+        self._phase(Phase.EXECUTION_GATE, "OK" if not incomplete else "INCOMPLETE",
+                    f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(managed)} "
+                    f"managed device(s)"
+                    + (f" — {len(incomplete)} INCOMPLETE" if incomplete else ""))
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
 
     def _design_answers(self) -> dict[str, str]:
