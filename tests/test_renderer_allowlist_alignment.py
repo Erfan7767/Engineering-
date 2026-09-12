@@ -75,6 +75,11 @@ SAMPLES = {
     "bridge": "bridge",
     "ids": "10,20",
     "text": "uplink",
+    "acl_name": "ACL_USERS_IN",
+    "src_net": "10.240.0.0",
+    "src_wc": "0.0.0.127",
+    "dst_net": "10.240.0.192",
+    "dst_wc": "0.0.0.15",
 }
 
 

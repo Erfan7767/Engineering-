@@ -168,8 +168,21 @@ class LoopbackSession:
         Never synthesises a deny that was not configured: post-apply
         verification of a DENY requirement must be able to fail.
         """
-        body = [c for c in self.written_config
-                if c.lower().startswith(("access-list", "ip access-list"))]
+        # Reconstruct the ACL bodies, not just their headers. A real device
+        # prints each entry under the list it belongs to; returning headers only
+        # would make post-apply isolation checks find no `deny` lines and report
+        # the isolation as unenforced even when it was just configured.
+        body: list[str] = []
+        inside = False
+        for cmd in self.written_config:
+            low = cmd.lower()
+            if low.startswith(("ip access-list", "access-list")):
+                inside = True
+                body.append(cmd)
+            elif inside and low.startswith(("deny ", "permit ", "no deny ", "no permit ")):
+                body.append(" " + cmd)
+            else:
+                inside = False
         if not body:
             return ""
         return "\n".join(body) + "\n"

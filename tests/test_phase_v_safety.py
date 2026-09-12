@@ -87,7 +87,11 @@ BYPASS_ATTEMPTS = [
     "ip http server",
     "ip http secure-server",
     "ip nat inside source static 10.0.0.5 8.8.8.8",
-    "ip access-list extended EVIL",
+    # Extended ACLs are registered — the platform needs them to enforce the
+    # isolation the policy matrix requires. The *standard* form and the
+    # outbound direction are not, and stay outside the gate.
+    "ip access-list standard EVIL",
+    "ip access-group EVIL out",
     "switchport port-security maximum 1",
     "switchport voice vlan 999",
     "username attacker privilege 15 secret 0 cisco123",

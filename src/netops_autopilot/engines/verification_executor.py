@@ -288,6 +288,13 @@ class VerificationExecutor:
         if za is None or zb is None:
             return None, (f"DESIGN_HAS_NO_ZONE:{src if za is None else dst} "
                           f"— cannot verify isolation the design does not describe")
+        # The design states plainly which pairs it could not enforce. Reporting
+        # those as PASS because no route happens to exist would be exactly the
+        # false success this phase exists to prevent — the requirement is unmet
+        # and the operator is owed that fact, not a green tick.
+        for u_src, u_dst, why in getattr(design, "unenforceable_isolation", ()):
+            if (u_src, u_dst) == (src, dst):
+                return None, f"ISOLATION_NOT_ENFORCEABLE: {why}"
         device = za.routed_on
         ev_route = self._collect(device, "show ip route")
         ev_acl = self._collect(device, "show ip access-lists")

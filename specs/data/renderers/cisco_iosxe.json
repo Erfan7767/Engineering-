@@ -73,6 +73,24 @@
         "interface Vlan{vlan_id}",
         " ip address dhcp"
       ]
+    },
+    "acl_deny": {
+      "commands": [
+        "ip access-list extended {acl_name}",
+        " deny ip {src_net} {src_wc} {dst_net} {dst_wc}"
+      ]
+    },
+    "acl_permit": {
+      "commands": [
+        "ip access-list extended {acl_name}",
+        " permit ip any any"
+      ]
+    },
+    "acl_apply": {
+      "commands": [
+        "interface Vlan{vlan_id}",
+        " ip access-group {acl_name} in"
+      ]
     }
   }
 }

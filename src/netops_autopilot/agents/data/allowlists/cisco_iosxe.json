@@ -483,6 +483,44 @@
           "fields": [],
           "rollback": "no ip address",
           "scope": "interface"
+        },
+        {
+          "template": "ip access-list extended <name>",
+          "purpose": "enter the extended ACL to add its entries",
+          "fields": [
+            "name"
+          ],
+          "rollback": "no ip access-list extended <name>",
+          "scope": "acl",
+          "enters_mode": true
+        },
+        {
+          "template": "deny ip <src> <swc> <dst> <dwc>",
+          "purpose": "block one required-denied zone pair; the policy matrix asked for this",
+          "fields": [
+            "src",
+            "swc",
+            "dst",
+            "dwc"
+          ],
+          "rollback": "no deny ip <src> <swc> <dst> <dwc>",
+          "scope": "acl"
+        },
+        {
+          "template": "permit ip any any",
+          "purpose": "everything not denied above stays reachable, so the ACL cannot black-hole its zone",
+          "fields": [],
+          "rollback": "no permit ip any any",
+          "scope": "acl"
+        },
+        {
+          "template": "ip access-group <name> in",
+          "purpose": "apply the ACL inbound on the source zone's gateway so it actually filters",
+          "fields": [
+            "name"
+          ],
+          "rollback": "no ip access-group <name> in",
+          "scope": "interface"
         }
       ]
     },

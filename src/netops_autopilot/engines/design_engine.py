@@ -104,6 +104,24 @@ class SiteDesign:
     blocking_questions: tuple[str, ...]
     blocked: bool
     blocked_reasons: tuple[str, ...]
+    #: Zone pairs the compiled policy requires to be DENIED, as ``(src, dst)``.
+    #:
+    #: The design carries them because it is the design that has to enforce
+    #: them. Until it did, three of the six blueprints declared
+    #: ``guest_isolation=True`` and nothing on any device implemented it: the
+    #: router had every zone directly connected and no ACL, so guest traffic
+    #: reached the corporate VLAN. Phase 7 reported that honestly as six
+    #: CONNECTIVITY_DENY failures; this field is what closes them.
+    denied_pairs: tuple[tuple[str, str], ...] = ()
+    #: Pairs the policy requires DENIED that this platform cannot enforce, as
+    #: ``(src, dst, reason)``.
+    #:
+    #: A zone whose address the provider assigns has no subnet the platform
+    #: chose, so a `deny ip <that subnet>` rule would name a network that does
+    #: not exist on the device — configuration that looks correct, passes
+    #: review, and protects nothing. Emitting it would be worse than not
+    #: emitting it, so the pair is reported instead (L01, T2).
+    unenforceable_isolation: tuple[tuple[str, str, str], ...] = ()
 
 
 # ------------------------------------------------------------------ harvest
@@ -290,6 +308,9 @@ class DesignEngine:
             roles=tuple(roles), zones=tuple(zone_assigns), uplinks=tuple(uplinks),
             access=tuple(access), mgmt_subnet=mgmt_subnet,
             blocking_questions=tuple(sorted(questions)),
+            denied_pairs=effective_denied_pairs(intent),
+            unenforceable_isolation=_unenforceable_isolation(
+                intent, zone_assigns, answers.get("wan_handoff")),
             blocked=blocked,
             blocked_reasons=tuple(reasons + ([f"HQ-PENDING: {q}" for q in questions] if questions else [])),
         )
@@ -553,6 +574,73 @@ class DesignEngine:
                         requires=(f"l3:{zone.zone}",),
                         provides=()))
             out[target] = _IR(target, os_name, tuple(nodes))
+
+        # --- inter-zone isolation ----------------------------------------
+        # The policy matrix says these pairs must not reach each other. Every
+        # zone gateway lives on this router, so without an explicit deny the
+        # router forwards between them and the requirement is unmet — silently.
+        # Enforced inbound on the SOURCE zone's SVI, denies first and an
+        # explicit `permit ip any any` last, so nothing outside the denied set
+        # is dropped by accident (a deny-only ACL would black-hole the zone).
+        zone_by_name = {z.zone: z for z in design.zones}
+        provider_assigned = {z.zone for z in design.zones
+                             if z.kind == "WAN"
+                             and handoff_is_dhcp(answers.get("wan_handoff"))}
+        by_src: dict[str, list[str]] = {}
+        for src, dst in design.denied_pairs:
+            by_src.setdefault(src, []).append(dst)
+        for src in sorted(by_src):
+            src_zone = zone_by_name.get(src)
+            if src_zone is None:
+                continue
+            target = src_zone.routed_on
+            if role_of.get(target) not in {"ROUTER", "L3_SWITCH_DIST"}:
+                continue
+            os_name = vendor_os_of.get(target, "UNKNOWN")
+            nodes = list(out[target].nodes) if target in out else []
+            acl_name = f"ACL_{src.upper()}_IN"
+            src_net = ipaddress.ip_network(src_zone.subnet, strict=False)
+            for dst in sorted(by_src[src]):
+                dst_zone = zone_by_name.get(dst)
+                if dst_zone is None:
+                    continue
+                if src in provider_assigned or dst in provider_assigned:
+                    # Not emitted. See SiteDesign.unenforceable_isolation: a
+                    # deny naming a provider-chosen subnet matches nothing.
+                    continue
+                dst_net = ipaddress.ip_network(dst_zone.subnet, strict=False)
+                nodes.append(IRNode(
+                    node_id=f"acl-deny-{src}-{dst}", target=_REF(target),
+                    operation=Operation.CREATE, feature="acl_deny", vendor_os=os_name,
+                    parameters={
+                        "acl_name": acl_name,
+                        "src_net": str(src_net.network_address),
+                        "src_wc": str(src_net.hostmask),
+                        "dst_net": str(dst_net.network_address),
+                        "dst_wc": str(dst_net.hostmask),
+                        "reason": (f"policy requires {src}->{dst} DENIED; enforced "
+                                   f"inbound on the {src} gateway"),
+                    },
+                    reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                    requires=(f"l3:{src}",), provides=()))
+            nodes.append(IRNode(
+                node_id=f"acl-permit-{src}", target=_REF(target),
+                operation=Operation.CREATE, feature="acl_permit", vendor_os=os_name,
+                parameters={"acl_name": acl_name,
+                            "reason": (f"everything not denied above stays reachable "
+                                       f"from {src}; without it the ACL black-holes "
+                                       f"the zone")},
+                reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                requires=(f"l3:{src}",), provides=()))
+            nodes.append(IRNode(
+                node_id=f"acl-apply-{src}", target=_REF(target),
+                operation=Operation.UPDATE, feature="acl_apply", vendor_os=os_name,
+                parameters={"acl_name": acl_name, "vlan_id": src_zone.vlan_id,
+                            "reason": f"{acl_name} applied inbound on Vlan{src_zone.vlan_id}"},
+                reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                requires=(f"l3:{src}",), provides=()))
+            out[target] = _IR(target, os_name, tuple(nodes))
+
         for up in design.uplinks:
             ref = up.device_ref
             os_name = vendor_os_of.get(ref, "UNKNOWN")
@@ -690,6 +778,55 @@ def _prefix_to_mask(prefix: str) -> Optional[str]:
 def _REF(device_ref: str):
     from .config_ir import EntityRef
     return EntityRef(entity_type="DEVICE", entity_ref=device_ref)
+
+
+def _unenforceable_isolation(intent, zones, wan_handoff) -> tuple[tuple[str, str, str], ...]:
+    """Denied pairs the platform cannot express as a real ACL, and why.
+
+    A DHCP-handoff WAN takes its address from the provider, so the subnet this
+    platform allocated for it is never on the wire. Any deny rule naming it
+    would match nothing, so the pair is reported rather than misconfigured.
+    """
+    if not handoff_is_dhcp(wan_handoff):
+        return ()
+    provider = {z.zone for z in zones if z.kind == "WAN"}
+    out: list[tuple[str, str, str]] = []
+    for src, dst in effective_denied_pairs(intent):
+        for z in (src, dst):
+            if z in provider:
+                out.append((src, dst,
+                            f"zone {z!r} takes its address from the provider (WAN "
+                            f"handoff {wan_handoff!r}), so the allocated subnet is "
+                            f"not on the wire and a deny rule naming it would match "
+                            f"nothing — enforce this pair at the firewall or with a "
+                            f"reflexive ACL"))
+                break
+    return tuple(out)
+
+
+def effective_denied_pairs(intent: NetworkIntent) -> tuple[tuple[str, str], ...]:
+    """The zone pairs whose effective policy is DENY.
+
+    Computed with exactly the precedence rule :class:`VerificationPlanner`
+    uses — lowest ``precedence`` wins — so the design enforces the same matrix
+    the verification phase grades against. Two different interpretations of the
+    same rule set is how a network ends up enforcing something other than what
+    it was asked to enforce.
+    """
+    from .intent_compiler import RuleAction
+
+    names = sorted({z.name for z in intent.zones})
+    denied: list[tuple[str, str]] = []
+    for src in names:
+        for dst in names:
+            rules = [r for r in intent.rules
+                     if r.src_zone == src and r.dst_zone == dst]
+            if not rules:
+                continue
+            effective = min(rules, key=lambda r: r.precedence)
+            if effective.action is RuleAction.DENY:
+                denied.append((src, dst))
+    return tuple(denied)
 
 
 def handoff_is_dhcp(handoff: Optional[str]) -> bool:
