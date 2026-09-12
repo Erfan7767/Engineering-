@@ -115,6 +115,7 @@ class ChangeOutcome(str, Enum):
     PERSIST_FAILED = "PERSIST_FAILED"              # applied + verified, but NOT saved to startup
     REJECTED = "REJECTED"                          # allowlist rejected a command
     BLOCKED_DRY_RUN_MISMATCH = "BLOCKED_DRY_RUN_MISMATCH"
+    DRY_RUN = "DRY_RUN"                            # plan passed the gate; NOTHING was sent
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,12 @@ class ChangeRecord:
 
     @property
     def applied_count(self) -> int:
+        # A dry-run record carries the planned commands with phase="APPLY" so
+        # command_count stays meaningful, but none of them reached a device.
+        # Reporting them as applied would put a number on the record that
+        # contradicts its own outcome.
+        if self.outcome == ChangeOutcome.DRY_RUN:
+            return 0
         return sum(1 for c in self.commands
                    if c.phase == "APPLY" and c.classification in CONFIG_CLASSES and c.ok())
 
@@ -419,7 +426,14 @@ class ConfigExecutor:
                     phase="APPLY" if p.kind == "CONFIG" else "MODE",
                     depth=p.depth,
                 ))
-            record.outcome = ChangeOutcome.APPLIED
+            # A dry run proves the plan clears the allowlist gate. It does not
+            # put anything on the device, so claiming APPLIED here would report
+            # an unreachable or untouched device as configured — the one thing
+            # a change record must never get wrong.
+            record.outcome = ChangeOutcome.DRY_RUN
+            record.failure_causes.append(
+                "DRY_RUN_ONLY: plan validated against the allowlist; no command "
+                "was sent to the device")
             record.finished_at = self._clock()
             self._record_to_ledger(record)
             return record

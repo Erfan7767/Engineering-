@@ -240,9 +240,15 @@ def test_dry_run_does_not_touch_device():
     rec = ex.apply("dev1", sess, ["hostname router-a", "vlan 10"], dry_run=True)
     # No commands were actually sent (no show running-config either).
     assert sess.sent == []
-    # All commands were classified as allowed.
-    assert rec.outcome is ChangeOutcome.APPLIED
-    assert rec.applied_count == 2
+    # All commands cleared the allowlist gate...
+    assert len(rec.commands) == 2
+    assert rec.rejected_count == 0
+    # ...but nothing was sent, so the record must not claim they were applied.
+    # A dry run validates the plan; reporting it as applied would say an
+    # untouched (or unreachable) device now has the configuration.
+    assert rec.outcome is ChangeOutcome.DRY_RUN
+    assert rec.applied_count == 0
+    assert any(c.startswith("DRY_RUN_ONLY") for c in rec.failure_causes)
     # No before/after hashes.
     assert rec.before_hash is None
     assert rec.after_hash is None

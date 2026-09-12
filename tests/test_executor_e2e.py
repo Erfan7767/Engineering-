@@ -73,12 +73,17 @@ def test_executor_dry_run_does_not_touch_device():
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     session = fabric.open("seed-01", ("cisco/ios-xe",))
     ex = ConfigExecutor(allowlist=al, run_id="dry-vlan")
+    before = session.running_config()
     rec = ex.apply(
         "seed-01", session, ["hostname router-a", "vlan 10"], dry_run=True,
     )
-    assert rec.outcome is ChangeOutcome.APPLIED
-    # Dry-run never opens a session.
+    # Dry-run never sends anything...
     assert "vlan 10" not in session.executed
+    assert session.running_config() == before
+    # ...so the record must not claim the device was changed. Saying APPLIED
+    # here would report an untouched (or unreachable) device as configured.
+    assert rec.outcome is ChangeOutcome.DRY_RUN
+    assert rec.applied_count == 0
 
 
 def test_executor_rejects_unsafe_command():

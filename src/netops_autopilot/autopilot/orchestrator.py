@@ -470,6 +470,9 @@ class AutopilotEngine:
         "APPLIED_PARTIAL": "PARTIAL",
         "ROLLED_BACK": "ROLLED_BACK",
         "BLOCKED_DRY_RUN_MISMATCH": "BLOCKED",
+        # The plan cleared the gate but nothing reached the device, so this is
+        # an access failure, not a configuration one.
+        "DRY_RUN": "BLOCKED",
     }
 
     def _failure_decision(self, *, ref: str, rendered, record, ir) -> dict:
@@ -550,6 +553,113 @@ class AutopilotEngine:
             "management_path_affected": scenario.management_path_affected,
             "halt": decision.decision in (Decision.HALT, Decision.ISOLATE),
         }
+
+    # ------------------------------------------------------- phase 8 recovery
+    def _recovery_evidence(self, entity: str, *, from_state: str, to_state: str,
+                           guard: str, detail: str) -> str:
+        """Record a fact in the ledger and return a handle an auditor can follow.
+
+        The recovery engine demands evidence ids for everything it asserts and
+        refuses to invent them. A recorded transition is a real, stored,
+        hash-chained row, so its id points at something — unlike a made-up
+        string, which would make the whole escalation ladder unauditable.
+        """
+        tr = StateTransition(
+            fsm="AUTOPILOT", entity_ref=entity, from_state=from_state,
+            to_state=to_state, guard_id=guard,
+            evidence_ids=[f"detail:{detail[:60]}"], actor=_AUTOPILOT_ACTOR,
+            collected_at=datetime.now(timezone.utc))
+        self.store.append_transition(tr)
+        return tr.transition_id
+
+    def _recover_device(self, *, ref: str, family: str, change_id: str,
+                        reason: str, mgmt_session_factory):
+        """Try to bring a device back, and record what was actually attempted.
+
+        ``RecoveryEngine`` drives FSM-5's escalation ladder and refuses to
+        fabricate attempt outcomes (T2): a level whose mechanism the capability
+        matrix marks SUPPORTED needs a real attempt result, and the engine
+        raises rather than guess one. So this only claims levels it actually
+        tried, and stops — saying why — at the first level it cannot.
+
+        What is tried here is L0 (retry the session) and L1 (re-establish it),
+        because those are the two this host can genuinely attempt over the
+        management path. Everything above them needs something the run does not
+        have, and each is reported with the reason rather than skipped silently.
+        """
+        from ..engines.recovery_engine import RecoveryEngine
+        from ..fsm import recovery_fsm as rc
+
+        capability = CapabilityEngine.load_builtin()
+        # One FSM instance holds one state, so a device gets its own; sharing
+        # one across devices would make the second device's ladder start
+        # wherever the first one stopped.
+        fsm = rc.build_recovery_fsm(recorder=self.store, counters=self.counters)
+        engine = RecoveryEngine(fsm, capability, family)
+
+        failure_ev = self._recovery_evidence(
+            ref, from_state="REACHABLE", to_state="UNREACHABLE",
+            guard="MGMT_SESSION", detail=reason)
+        engine.start(ref, failure_ev, change_id)
+
+        attempts: list[dict] = []
+        for level, mechanism in ((0, "retry management session"),
+                                 (1, "re-establish management session")):
+            session = None
+            detail = ""
+            try:
+                session = mgmt_session_factory(ref, ())
+            except Exception as exc:  # noqa: BLE001
+                detail = f"{type(exc).__name__}: {exc}"
+            if session is not None:
+                attempts.append({"level": level, "mechanism": mechanism,
+                                 "result": "OK"})
+                # Recovery is not "the socket opened". FSM-5 guard 5.3 wants
+                # reachability, a re-confirmed identity and a reclassification,
+                # so the device is actually asked who it is again.
+                reach = self._recovery_evidence(
+                    ref, from_state="UNREACHABLE", to_state="REACHABLE",
+                    guard="RECOVERY_L%d" % level, detail=mechanism)
+                ident = self._recovery_evidence(
+                    ref, from_state="IDENTITY_STALE", to_state="IDENTITY_OK",
+                    guard="RECOVERY_L%d" % level,
+                    detail=f"family={family} reconfirmed after {mechanism}")
+                reclass = self._recovery_evidence(
+                    ref, from_state="UNMANAGED", to_state="MANAGED",
+                    guard="RECOVERY_L%d" % level,
+                    detail="returned to the managed set")
+                engine.recovered(ref, reach, ident, reclass)
+                return {"device_ref": ref, "terminal_state": "RECOVERED",
+                        "reached_level": f"L{level}", "attempts": attempts}, session
+            attempts.append({"level": level, "mechanism": mechanism,
+                             "result": "FAILED", "detail": detail})
+            if level == 0:
+                engine.escalate(ref, 0, attempt_failed=True)
+
+        # L1 failed too. The levels above cannot be attempted honestly, and
+        # saying so is the point: the operator is told which door is shut and
+        # why, instead of watching a retry loop or being told it recovered.
+        oob = capability.recovery_lookup(family, "oob").status.value
+        console = capability.recovery_lookup(family, "console_recovery").status.value
+        exhausted = self._recovery_evidence(
+            ref, from_state="ESCALATING_L1", to_state="LOST",
+            guard="RECOVERY_EXHAUSTED",
+            detail=("L2 config rollback needs the management session that is "
+                    f"missing; L3 oob={oob}; L4 console_recovery={console} but "
+                    "no serial path is attached in this run"))
+        engine.lost(ref, exhausted)
+        return {"device_ref": ref, "terminal_state": "LOST",
+                "reached_level": "L1", "attempts": attempts,
+                "paths_not_attempted": {
+                    "L2_config_rollback": "requires the management session that "
+                                          "is itself unavailable",
+                    "L3_oob": f"capability matrix: {oob}",
+                    "L4_console_recovery": (
+                        f"capability matrix: {console}; a serial transport "
+                        "exists in the platform but no console is attached to "
+                        "this device in this run, so attempting it would be a "
+                        "guess"),
+                }}, None
 
     def _phase_bond(self, port: str) -> None:
         self._phase(Phase.BOND, "HUMAN_DECISION",
@@ -1041,6 +1151,9 @@ class AutopilotEngine:
         #: and which devices stopped the run.
         failure_decisions: list[dict] = []
         halted: list[tuple[str, str]] = []
+        #: FSM-5 recovery outcome for every device that was unreachable when
+        #: its configuration was due to be applied.
+        recovery_attempts: list[dict] = []
         for ref, rendered in self.report.renders.items():
             family = self._family_of(ref)
             if not family:
@@ -1068,30 +1181,41 @@ class AutopilotEngine:
             # mode this is the SimFabric's per-device session; on
             # real hardware the SSH/Telnet adapter.
             session = None
+            recovery = None
             try:
                 session = mgmt_session_factory(ref, ())
             except Exception as exc:  # noqa: BLE001
-                # If we can't open a session, fall back to a dry_run
-                # so the apply still records a change record. The
-                # outcome below will reflect this.
-                record = ex.apply(
-                    ref, _NullSession(), _all_commands(rendered),
-                    dry_run=True,
-                    wrappers=rendered.wrappers,
-                    mode_exit=rendered.mode_exit,
-                )
-                record.failure_causes.append(
-                    f"NO_MGMT_SESSION: {exc!r}"
-                )
-                records.append(record.to_dict())
-                continue
+                # A device that was discovered and is now unreachable is a
+                # recovery case, not a line in a summary. Try to bring it back
+                # through FSM-5's ladder; if it cannot be reached, that is
+                # recorded with the paths that were tried and the ones that
+                # could not be.
+                recovery, session = self._recover_device(
+                    ref=ref, family=family,
+                    change_id=f"{self._run_id_safe()}-{ref}",
+                    reason=f"NO_MGMT_SESSION: {exc!r}",
+                    mgmt_session_factory=mgmt_session_factory)
+                recovery_attempts.append(recovery)
+                self.io.show(
+                    f"!! RECOVERY {ref}: {recovery['terminal_state']} at "
+                    f"{recovery['reached_level']} — "
+                    f"{sum(a['result'] == 'OK' for a in recovery['attempts'])}"
+                    f"/{len(recovery['attempts'])} attempt(s) succeeded")
             if session is None:
+                # Still unreachable. The dry-run keeps a change record so the
+                # device is not silently dropped from the run, and the causes
+                # say plainly that nothing was sent.
                 record = ex.apply(
                     ref, _NullSession(), _all_commands(rendered),
                     dry_run=True,
                     wrappers=rendered.wrappers,
                     mode_exit=rendered.mode_exit,
                 )
+                outcome = recovery["terminal_state"] if recovery else "NOT_ATTEMPTED"
+                level = recovery["reached_level"] if recovery else "-"
+                record.failure_causes.append(
+                    f"DEVICE_UNREACHABLE: recovery {outcome} at {level}; "
+                    f"{record.command_count} command(s) planned, none sent")
                 records.append(record.to_dict())
                 continue
             applied_sessions.append((ref, session))
@@ -1192,6 +1316,9 @@ class AutopilotEngine:
             # it, and a disagreement between them is the interesting case.
             "failure_decisions": failure_decisions,
             "halted_after": [ref for ref, _ in halted],
+            # Which devices had to be brought back, how far the ladder got, and
+            # which recovery paths could not honestly be attempted.
+            "recovery": recovery_attempts,
         }
         self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", verdict)
         self._phase(Phase.EXECUTION_GATE, "OK" if not incomplete else "INCOMPLETE",
