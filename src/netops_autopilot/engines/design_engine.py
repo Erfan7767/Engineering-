@@ -459,6 +459,29 @@ class DesignEngine:
                 parameters={"vlan_id": zone.vlan_id, "name": zone.zone, "reason": zone.reason},
                 reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
                 provides=(f"vlan:{zone.zone}",)))
+            # The operator is asked to describe the WAN handoff and the answer
+            # used to be validated as present and then never read — the same
+            # "asked, answered, ignored" defect that dropped the DNS servers.
+            # When the handoff is DHCP the provider assigns both the address and
+            # the default route, so configuring the designed static gateway here
+            # would be wrong AND would leave the site with no internet egress.
+            if zone.kind == "WAN" and handoff_is_dhcp(answers.get("wan_handoff")):
+                nodes.append(IRNode(
+                    node_id=f"wan-dhcp-{zone.zone}",
+                    target=_REF(target),
+                    operation=Operation.CREATE, feature="wan_dhcp", vendor_os=os_name,
+                    parameters={
+                        "vlan_id": zone.vlan_id, "zone": zone.zone,
+                        "reason": (f"WAN handoff declared DHCP "
+                                   f"({answers.get('wan_handoff')!r}): the provider assigns "
+                                   f"the address and installs the default route, so no static "
+                                   f"gateway is configured and none is invented"),
+                    },
+                    reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+                    requires=(f"vlan:{zone.zone}",),
+                    provides=(f"l3:{zone.zone}", "egress:default")))
+                out[target] = _IR(target, os_name, tuple(nodes))
+                continue
             svi_params = {
                 "vlan_id": zone.vlan_id,
                 # CIDR form — the syntax Junos/RouterOS renderers require.
@@ -667,6 +690,17 @@ def _prefix_to_mask(prefix: str) -> Optional[str]:
 def _REF(device_ref: str):
     from .config_ir import EntityRef
     return EntityRef(entity_type="DEVICE", entity_ref=device_ref)
+
+
+def handoff_is_dhcp(handoff: Optional[str]) -> bool:
+    """True when the operator declared that the provider assigns the WAN address.
+
+    Only an explicit statement counts. An unrecognised handoff description is
+    NOT assumed to be DHCP: putting a provider-assumed address on the WAN
+    interface would be inventing the one thing the platform cannot know (L01).
+    """
+    text = (handoff or "").lower()
+    return "dhcp" in text or "dynamic" in text
 
 
 def _IR(device_ref: str, os_name: str, nodes) -> ConfigIR:

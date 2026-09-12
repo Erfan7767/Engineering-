@@ -250,7 +250,8 @@ class VerificationExecutor:
         device = za.routed_on
         ev_vlan = self._collect(device, "show vlan brief")
         ev_svi = self._collect(device, "show ip interface brief")
-        if ev_vlan is None or ev_svi is None:
+        ev_cfg = self._collect(device, "show running-config")
+        if ev_vlan is None or ev_svi is None or ev_cfg is None:
             return None, (f"NO_EVIDENCE from {device}: "
                           f"{self._unavailable.get(device, 'command refused')}")
 
@@ -266,7 +267,7 @@ class VerificationExecutor:
             elif not svi.up:
                 problems.append(f"SVI Vlan{zone.vlan_id} ({zone.zone}) is "
                                 f"{svi.status}/{svi.protocol}, not up/up")
-            else:
+            elif not self._address_is_provider_assigned(ev_cfg, zone):
                 want = str(ipaddress.ip_network(zone.subnet, strict=False).network_address)
                 if not svi.ip.startswith(want.rsplit(".", 1)[0] + "."):
                     problems.append(f"SVI Vlan{zone.vlan_id} ({zone.zone}) holds "
@@ -319,6 +320,24 @@ class VerificationExecutor:
                            evidence_id=ev_route.raw_id), why)
 
     @staticmethod
+    def _address_is_provider_assigned(ev: Evidence, zone: ZoneAssignment) -> bool:
+        """True when this SVI takes its address from the provider, not from us.
+
+        On a WAN handed off by DHCP the operator's provider chooses the address,
+        so comparing it against the subnet the design allocated is meaningless —
+        the designed block was never meant to be used. Checked against what the
+        device actually reports rather than assumed from the zone kind.
+        """
+        marker = f"interface Vlan{zone.vlan_id}"
+        idx = ev.text.lower().find(marker.lower())
+        if idx < 0:
+            return False
+        rest = ev.text[idx + len(marker):]
+        nxt = rest.lower().find("\ninterface ")
+        body = rest if nxt < 0 else rest[:nxt]
+        return "ip address dhcp" in body.lower()
+
+    @staticmethod
     def _acl_denies(acl_text: str, src: ZoneAssignment, dst: ZoneAssignment) -> bool:
         """An explicit `deny ip <src> <wc> <dst> <wc>` covering the pair."""
         s_net, s_mask = VerificationExecutor._network_of(src.subnet)
@@ -352,7 +371,15 @@ class VerificationExecutor:
         if service == "dns":
             return self._grade_dns(spec, ev, internal)
         if service == "internet_egress":
-            return self._grade_egress(spec, ev, gw)
+            # Graded from the routing table, not from running-config. A static
+            # default route appears in both, but a route learned from a
+            # provider's DHCP lease exists ONLY in the table — grading it from
+            # the config text reported "no default route" on a WAN that had one.
+            route_ev = self._collect(gw, "show ip route")
+            if route_ev is None:
+                return None, (f"NO_EVIDENCE from {gw}: "
+                              f"{self._unavailable.get(gw, 'command refused')}")
+            return self._grade_egress(spec, route_ev, gw)
         return None, f"SERVICE_NOT_MODELED:{service} — no real check exists for it"
 
     def _grade_dhcp(self, spec: TestSpec, ev: Evidence,

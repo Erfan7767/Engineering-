@@ -22,6 +22,13 @@ class LoopbackSession:
     success response and are recorded in ``self.written_config``.
     """
 
+    #: Documentation-only space (RFC 5737 TEST-NET-3) used to model a provider
+    #: DHCP lease. These addresses are not routable anywhere, so a simulated
+    #: lease can never be mistaken for real production addressing — and a test
+    #: that depends on them cannot pass against real hardware by accident.
+    DHCP_LEASE_GATEWAY = "203.0.113.1"
+    DHCP_LEASE_FIRST = "203.0.113.2"
+
     TIMEOUT_SENTINEL = "__TIMEOUT__"
     CONNFAIL_SENTINEL = "__CONNFAIL__"
 
@@ -36,6 +43,9 @@ class LoopbackSession:
         #: parser written against real output silently matches nothing here.
         self.written_indented: list[tuple[int, str]] = []
         self._mode_depth = 0
+        #: VLAN ids whose SVI was configured `ip address dhcp`, in order. The
+        #: provider's lease is modelled, not known — see DHCP_LEASE_GATEWAY.
+        self.dhcp_interfaces: list[int] = []
         self.closed = False
         self.started_in_config_mode: bool = False
 
@@ -44,6 +54,8 @@ class LoopbackSession:
         if self.fail_times.get(command, 0) > 0:
             self.fail_times[command] -= 1
             raise ConnectionError("loopback injected transport failure")
+        if command.strip().lower() == "show ip route" and self.dhcp_interfaces:
+            return self.ip_route().encode("utf-8")
         out = self.outputs.get(command, b"")
         if not out:
             # Try prefix match: ``ping 10.0.0.1 repeat 5`` → ``ping``
@@ -92,6 +104,10 @@ class LoopbackSession:
                 elif self._opens_mode(cmd_stripped):
                     # A real device indents everything entered from here.
                     self._mode_depth += 1
+                if cmd_stripped.lower() == "ip address dhcp":
+                    inside = self.current_interface()
+                    if inside is not None and inside not in self.dhcp_interfaces:
+                        self.dhcp_interfaces.append(inside)
                 # Standard Cisco IOS-XE success response
                 return b""
         return out
@@ -128,6 +144,14 @@ class LoopbackSession:
             if head:
                 current = int(head.group(1))
                 continue
+            if cmd.lower() == "ip address dhcp" and current is not None:
+                idx = (self.dhcp_interfaces.index(current)
+                       if current in self.dhcp_interfaces else 0)
+                protocol = "up" if members.get(current) else "down"
+                lines.append(f"Vlan{current:<18} {self.dhcp_lease_for(idx):<15} YES DHCP  "
+                             f"up                    {protocol}")
+                current = None
+                continue
             addr = re.match(r"^ip address (\S+) (\S+)$", cmd)
             if addr and current is not None:
                 protocol = "up" if members.get(current) else "down"
@@ -154,6 +178,40 @@ class LoopbackSession:
         "interface", "vlan", "router", "line", "ip", "access-list",
         "username", "crypto", "class-map", "policy-map",
     })
+
+    def current_interface(self) -> Optional[int]:
+        """The SVI the session is currently inside, if any."""
+        for _depth, cmd in reversed(self.written_indented):
+            head = re.match(r"^interface Vlan(\d+)$", cmd, re.IGNORECASE)
+            if head:
+                return int(head.group(1))
+            if cmd.lower() in ("exit", "end"):
+                return None
+        return None
+
+    def dhcp_lease_for(self, index: int) -> str:
+        """Deterministic modelled lease: 203.0.113.2, .3, .4 …"""
+        head, last = self.DHCP_LEASE_FIRST.rsplit(".", 1)
+        return f"{head}.{int(last) + index}"
+
+    def ip_route(self) -> str:
+        """`show ip route` with the default route a DHCP WAN handoff installs.
+
+        A real device learns the default route from the provider's lease, which
+        is exactly why the design must not configure a static gateway on a
+        DHCP-handoff WAN. Merged onto the canned table rather than replacing it,
+        so the pre-existing connected routes stay visible.
+        """
+        base = self.outputs.get("show ip route", b"").decode("utf-8", "replace")
+        vlan = self.dhcp_interfaces[0]
+        gw_head = self.DHCP_LEASE_GATEWAY.rsplit(".", 1)[0]
+        extra = [
+            f"Gateway of last resort is {self.DHCP_LEASE_GATEWAY} to network 0.0.0.0",
+            "",
+            f"      {gw_head}.0/29 is directly connected, Vlan{vlan}",
+            f"S*    0.0.0.0/0 [254/0] via {self.DHCP_LEASE_GATEWAY}",
+        ]
+        return base.rstrip("\n") + "\n" + "\n".join(extra) + "\n"
 
     @classmethod
     def _opens_mode(cls, command: str) -> bool:

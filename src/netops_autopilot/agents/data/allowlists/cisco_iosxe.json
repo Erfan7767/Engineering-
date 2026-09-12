@@ -476,6 +476,13 @@
           "template": "domain-name <name>",
           "purpose": "pool DNS domain",
           "rollback": "no domain-name"
+        },
+        {
+          "template": "ip address dhcp",
+          "purpose": "take the interface address (and the provider's default route) from the ISP's DHCP server",
+          "fields": [],
+          "rollback": "no ip address",
+          "scope": "interface"
         }
       ]
     },

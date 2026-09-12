@@ -497,6 +497,13 @@ class AutopilotEngine:
         answers["dns_servers"] = self.io.ask(
             "DNS server(s) handed to clients, comma-separated (blank = none): ").strip()
         self._dns_servers = answers["dns_servers"]
+        # Keep the whole set. Every one of these was asked of a human, and the
+        # design engine is the consumer — handing it a hand-picked subset is how
+        # an answered requirement gets silently dropped. Two already had been:
+        # `dns_servers` (no resolver ever reached a DHCP pool) and `wan_handoff`
+        # (the WAN was given a static gateway the operator never described, and
+        # the site was left with no internet egress).
+        self._operator_answers = dict(answers)
         request, missing = business_intent_from_blueprint(
             bp, answers=answers, requirement_text=answer)
         if missing:
@@ -521,17 +528,7 @@ class AutopilotEngine:
         assert self.report.crawl is not None and self.report.intent is not None
         capability = CapabilityEngine.load_builtin()
         engine = DesignEngine(capability)
-        answers = {
-            "router_device": self._ask_again("router_device", "seed-01"),
-        }
-        # The operator was asked for the resolvers to hand to clients during
-        # INTENT_ELICITATION. They were stored and then never passed on, so the
-        # answer was silently discarded and every DHCP pool went out with no
-        # `dns-server` line — a requirement that was asked for, answered, and
-        # ignored. Phase 7 verification caught it as SERVICE_UP:dns FAILED.
-        dns = getattr(self, "_dns_servers", "")
-        if dns:
-            answers["dns_servers"] = dns
+        answers = self._design_answers()
         design = engine.design(
             intent=self.report.intent, blueprint=blueprint, report=self.report.crawl,
             answers=answers, site_block_v4="10.240.0.0/16")
@@ -884,16 +881,22 @@ class AutopilotEngine:
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
 
     def _design_answers(self) -> dict[str, str]:
-        """The operator answers the IR needs (client DNS, router choice).
+        """Every answer the operator gave, for the design and the IR alike.
 
         Values come from what the human actually typed during elicitation.
         Anything not asked for is simply absent, so the renderer reports the
         gap instead of inventing a value.
+
+        This is the single place that hands operator input to the engines. It
+        used to be two — this helper for the IR and a separate literal dict in
+        ``_phase_design`` — and each hand-picked a different subset, which is
+        exactly how two answered requirements went missing: ``dns_servers``
+        never reached a DHCP pool, and ``wan_handoff`` never reached the WAN,
+        so the site was built with a static gateway the operator never
+        described and no internet egress at all.
         """
-        answers = {"router_device": self._ask_again("router_device", "seed-01")}
-        dns = getattr(self, "_dns_servers", "")
-        if dns:
-            answers["dns_servers"] = dns
+        answers = dict(getattr(self, "_operator_answers", {}))
+        answers["router_device"] = self._ask_again("router_device", "seed-01")
         return answers
 
     def _bind_mgmt_context(self, mgmt_session_factory, console_session) -> None:

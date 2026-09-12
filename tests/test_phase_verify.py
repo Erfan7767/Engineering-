@@ -26,6 +26,7 @@ import pytest
 
 from netops_autopilot.autopilot.orchestrator import AutopilotEngine, Phase
 from netops_autopilot.cli.scenarios import make_scenario_io
+from netops_autopilot.engines.verification import VerificationPlanner
 from netops_autopilot.engines.verification_executor import (
     CLIENT_ZONE_KINDS,
     VerificationExecutor,
@@ -35,6 +36,7 @@ from tests.support.simfabric import SimFabricFactory, make_ledger_stack
 
 def _run(execute: bool = True):
     store, key_id, _counters, ta = make_ledger_stack()
+    _run.key_id = key_id
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io("branch")
     if execute:
@@ -153,21 +155,47 @@ def test_the_operators_dns_answer_reaches_the_devices():
 
 
 def test_verification_grades_from_applied_state_not_from_the_design():
-    """Break the apply and the verdict must move with it.
+    """Wipe what was applied and re-run: the verdict must move with the device.
 
     If verification were reading the design instead of the device, removing the
     configuration would change nothing and the phase would be decoration.
     """
     store, fabric, report = _run()
-    assert report.verification is not None
+    assert report.verification["verdict"] == "PASS", report.verification["failed"]
+
     session = fabric.open("seed-01", ())
-    before = session.running_config()
-    assert "ip dhcp pool" in before
-    # Wipe what was applied and re-derive the same evidence: the DHCP service
-    # test must no longer find pools, so the outcome cannot be design-derived.
+    assert "ip dhcp pool" in session.running_config()
+    # Remove the pools the executor actually wrote, then ask the same question
+    # again against the same devices.
     session.written_config = [c for c in session.written_config
                               if not c.startswith("ip dhcp pool")]
     session.written_indented = [(d, c) for d, c in session.written_indented
                                 if not c.startswith("ip dhcp pool")]
     assert "ip dhcp pool" not in session.running_config()
-    assert report.verification["verdict"] != "PASS" or report.verification["failed"]
+
+    specs = VerificationPlanner().derive(report.intent)
+    executor = VerificationExecutor(
+        _collector_for(store, _run.key_id), lambda ref, _kind: fabric(ref, ()))
+    again = executor.run(specs=specs, design=report.design)
+    dhcp = [r for r in again.results if "SERVICE_UP:dhcp" in r.test_id]
+    assert dhcp, f"dhcp test not graded; unrun={again.unrun}"
+    assert dhcp[0].outcome.value == "FAIL", (
+        "removing the applied pools did not change the verdict — verification "
+        "is reading the design, not the device")
+    assert again.reasons.get(dhcp[0].test_id)
+
+
+def _collector_for(store, key_id):
+    from netops_autopilot.access.collector import Collector, SessionLockManager
+    from netops_autopilot.access.collector import CommandBudget
+    from netops_autopilot.access.allowlist import CommandAllowlist
+    from netops_autopilot.core.timeauth import TimeAuthority
+    from pathlib import Path
+    from datetime import datetime, timezone
+    allowlist = CommandAllowlist.load_vendor(
+        Path("specs/data/allowlists"), "cisco/ios-xe")
+    return Collector(store=store, key_id=key_id, allowlist=allowlist,
+                     time_authority=TimeAuthority(
+                         clock=lambda: datetime.now(timezone.utc)),
+                     locks=SessionLockManager(),
+                     default_budget=CommandBudget(max_retries=1))
