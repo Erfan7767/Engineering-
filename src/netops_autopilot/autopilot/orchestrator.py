@@ -27,6 +27,8 @@ from ..engines.day0_bootstrap import Day0BootstrapEngine, load_bootstrap_steps
 from ..engines.design_engine import DesignEngine, SiteDesign
 from ..engines.discovery_crawl import CrawlReport, DeviceClass, DiscoveryCrawlEngine, SessionFactory
 from ..engines.intent_compiler import IntentCompiler, NetworkIntent
+from ..engines.verification import VerificationEngine, VerificationPlanner
+from ..engines.verification_executor import CLIENT_ZONE_KINDS, VerificationExecutor
 from ..engines.link_evidence import LinkEvidenceEngine
 from ..engines.service_graph import ServiceGraph
 from ..engines.topology_map import TopologyMap, TopologyMapEngine
@@ -49,6 +51,10 @@ class Phase(str, Enum):
     DESIGN = "DESIGN"
     RENDER = "RENDER"
     EXECUTION_GATE = "EXECUTION_GATE"
+    #: Phase 7 — ask the network whether it actually does what was asked.
+    #: "Config stuck" is not "requirement met": the executor already proves the
+    #: lines landed, this proves the network behaves.
+    VERIFY = "VERIFY"
     REPORT = "REPORT"
 
 
@@ -79,6 +85,7 @@ class AutopilotReport:
     design: Optional[SiteDesign] = None
     renders: dict[str, RenderedConfig] = field(default_factory=dict)
     execution: Optional[dict] = None
+    verification: Optional[dict] = None
     final: str = "RUNNING"            # COMPLETE-STAGED | BLOCKED-*
 
 
@@ -180,12 +187,90 @@ class AutopilotEngine:
             self._phase_render(design)
             self._bind_mgmt_context(mgmt_session_factory, session)
             self._phase_execution_gate(design, execute, mgmt_session_factory)
+            if execute:
+                self._phase_verify(design, mgmt_session_factory)
         except Failure as exc:
             self._phase(Phase.REPORT, "TYPED_STOP", "; ".join(exc.causes))
             self.report.final = f"BLOCKED-{exc.cls.value}"
         return self.report
 
     # ----------------------------------------------------------------- phases
+    def _phase_verify(self, design: SiteDesign, mgmt_session_factory) -> None:
+        """Phase 7 — verify the network, not the config text.
+
+        ``VerificationPlanner`` derives the mandatory matrix from the compiled
+        intent (every zone pair, plus every required service); this phase runs
+        each test against the real devices and grades it only from what they
+        answered. Evidence is collected through the ``Collector``, so every
+        graded test is backed by a ledgered Artifact and the ``evidence_id`` on
+        the result is that artifact.
+
+        Three outcomes are kept strictly distinct, because conflating them is
+        how a run ends up claiming success it did not earn:
+
+        * ``PASS``     — every precondition positively observed on the device.
+        * ``FAILED``   — a precondition was positively contradicted, and the
+                         reason names the specific missing piece.
+        * ``INCOMPLETE`` — the test could not be graded because its evidence
+                         could not be obtained. Never reported as PASS.
+        """
+        assert self.report.intent is not None
+        specs = VerificationPlanner().derive(self.report.intent)
+        executor = VerificationExecutor(
+            self.collector,
+            lambda ref, _kind: mgmt_session_factory(ref, ()))
+        outcome = executor.run(specs=specs, design=design)
+
+        if not outcome.results:
+            verdict = "INCOMPLETE"
+        elif outcome.unrun:
+            verdict = "INCOMPLETE"
+        elif outcome.failed:
+            verdict = "FAILED"
+        else:
+            verdict = "PASS"
+
+        self.report.verification = {
+            "tests_total": len(specs),
+            "graded": outcome.graded,
+            "passed": outcome.passed,
+            "failed": outcome.failed,
+            "reasons": dict(outcome.reasons),
+            "unrun": {tid: why for tid, why in outcome.unrun},
+            "dhcp_scope": [z.zone for z in design.zones
+                           if z.kind in CLIENT_ZONE_KINDS],
+            "evidence_count": len(outcome.evidence),
+            "evidence_ids": [e.raw_id for e in outcome.evidence],
+            "verdict": verdict,
+        }
+        # Cross-check against the engine that grades results: it refuses to
+        # accept a result set that does not match the derived matrix exactly,
+        # so a silently dropped test cannot slip through as a pass.
+        if outcome.results and not outcome.unrun:
+            engine_report = VerificationEngine().evaluate(specs, outcome.results)
+            self.report.verification["engine_all_pass"] = engine_report.all_pass
+
+        self._transition(Phase.EXECUTION_GATE.value, Phase.VERIFY.value,
+                         "VERIFY", verdict)
+        detail = (f"{len(outcome.passed)}/{len(specs)} passed"
+                  + (f", {len(outcome.failed)} FAILED" if outcome.failed else "")
+                  + (f", {len(outcome.unrun)} unrun" if outcome.unrun else ""))
+        self._phase(Phase.VERIFY, verdict if verdict != "PASS" else "OK", detail)
+        for tid in outcome.failed:
+            self.io.show(f"!! VERIFY FAIL {tid}: {outcome.reasons.get(tid, '')}")
+            if self.report.topology is not None:
+                self.report.topology = dataclasses.replace(
+                    self.report.topology,
+                    gaps=tuple(self.report.topology.gaps)
+                    + (f"VERIFY_FAILED {tid}: {outcome.reasons.get(tid, '')}",))
+        for tid, why in outcome.unrun:
+            self.io.show(f"!! VERIFY UNRUN {tid}: {why}")
+
+        if verdict != "PASS" and self.report.final.startswith("COMPLETE"):
+            # An applied run whose network does not do what was asked is not
+            # complete. The config landed; the requirement did not.
+            self.report.final = "INCOMPLETE-" + self.report.final.split("-", 1)[1]
+
     def _phase_bond(self, port: str) -> None:
         self._phase(Phase.BOND, "HUMAN_DECISION",
                     f"confirm the physical binding: PC port {port} ↔ the SEED device console/email link "
@@ -439,6 +524,14 @@ class AutopilotEngine:
         answers = {
             "router_device": self._ask_again("router_device", "seed-01"),
         }
+        # The operator was asked for the resolvers to hand to clients during
+        # INTENT_ELICITATION. They were stored and then never passed on, so the
+        # answer was silently discarded and every DHCP pool went out with no
+        # `dns-server` line — a requirement that was asked for, answered, and
+        # ignored. Phase 7 verification caught it as SERVICE_UP:dns FAILED.
+        dns = getattr(self, "_dns_servers", "")
+        if dns:
+            answers["dns_servers"] = dns
         design = engine.design(
             intent=self.report.intent, blueprint=blueprint, report=self.report.crawl,
             answers=answers, site_block_v4="10.240.0.0/16")

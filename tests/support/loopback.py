@@ -7,6 +7,9 @@ before lab-hardware adapters land (ADR-0006 tiers run on hardware later).
 
 from __future__ import annotations
 
+import re
+from typing import Optional
+
 from netops_autopilot.adapters.interfaces import AccessAdapter, CapabilityState, ExecSession
 
 
@@ -27,6 +30,12 @@ class LoopbackSession:
         self.fail_times = dict(fail_times or {})
         self.executed: list[str] = []
         self.written_config: list[str] = []
+        #: ``(display_depth, command)`` for everything written. A real device
+        #: re-indents sub-mode commands in ``show running-config`` even though
+        #: it accepts them unindented, so the double has to model that or a
+        #: parser written against real output silently matches nothing here.
+        self.written_indented: list[tuple[int, str]] = []
+        self._mode_depth = 0
         self.closed = False
         self.started_in_config_mode: bool = False
 
@@ -66,14 +75,23 @@ class LoopbackSession:
             # the executor's post-apply verification hook.
             if cmd_stripped == "show running-config":
                 return self.running_config().encode("utf-8")
+            if cmd_stripped == "show ip interface brief":
+                return self.ip_interface_brief().encode("utf-8")
+            if cmd_stripped == "show ip access-lists":
+                return self.ip_access_lists().encode("utf-8")
             READ_HEADS = {"show", "ping", "traceroute"}
             if head and head.lower() not in READ_HEADS and not cmd_stripped.startswith("!"):
                 self.written_config.append(cmd_stripped)
+                self.written_indented.append((self._mode_depth, cmd_stripped))
                 # Transition tracking
                 if head.lower() in ("configure", "conf"):
                     self.started_in_config_mode = True
-                elif cmd_stripped.lower() == "end":
-                    self.started_in_config_mode = False
+                elif cmd_stripped.lower() in ("end", "exit"):
+                    self.started_in_config_mode = cmd_stripped.lower() == "exit"
+                    self._mode_depth = 0
+                elif self._opens_mode(cmd_stripped):
+                    # A real device indents everything entered from here.
+                    self._mode_depth += 1
                 # Standard Cisco IOS-XE success response
                 return b""
         return out
@@ -81,19 +99,103 @@ class LoopbackSession:
     def close(self) -> None:
         self.closed = True
 
+    def vlan_members(self) -> dict[int, list[str]]:
+        """L2 membership exactly as the device reports it in its VLAN table."""
+        text = self.outputs.get("show vlan brief", b"").decode("utf-8", "replace")
+        out: dict[int, list[str]] = {}
+        for line in text.splitlines():
+            m = re.match(r"^(\d+)\s+(\S+)\s+(\S+)\s*(.*)$", line)
+            if not m:
+                continue
+            out[int(m.group(1))] = [p.strip() for p in m.group(4).split(",") if p.strip()]
+        return out
+
+    def ip_interface_brief(self) -> str:
+        """`show ip interface brief` derived from what was actually applied.
+
+        An SVI is reported `up/up` only when its VLAN has a member port, which
+        is what a real device does: an SVI on an empty VLAN is admin-up but
+        protocol-down. Reporting `up/up` unconditionally would let verification
+        pass on a network that cannot actually forward, which is exactly the
+        false success this double exists to avoid.
+        """
+        lines = ["Interface              IP-Address      OK? Method Status"
+                 "                Protocol"]
+        members = self.vlan_members()
+        current: Optional[int] = None
+        for cmd in self.written_config:
+            head = re.match(r"^interface Vlan(\d+)$", cmd, re.IGNORECASE)
+            if head:
+                current = int(head.group(1))
+                continue
+            addr = re.match(r"^ip address (\S+) (\S+)$", cmd)
+            if addr and current is not None:
+                protocol = "up" if members.get(current) else "down"
+                lines.append(f"Vlan{current:<18} {addr.group(1):<15} YES manual "
+                             f"up                    {protocol}")
+                current = None
+        return "\n".join(lines) + "\n"
+
+    def ip_access_lists(self) -> str:
+        """ACLs derived from what was actually applied — empty means none exist.
+
+        Never synthesises a deny that was not configured: post-apply
+        verification of a DENY requirement must be able to fail.
+        """
+        body = [c for c in self.written_config
+                if c.lower().startswith(("access-list", "ip access-list"))]
+        if not body:
+            return ""
+        return "\n".join(body) + "\n"
+
+    #: Commands that open a CLI sub-mode, so a real device indents the lines
+    #: entered from them. First token only.
+    _MODE_OPENERS = frozenset({
+        "interface", "vlan", "router", "line", "ip", "access-list",
+        "username", "crypto", "class-map", "policy-map",
+    })
+
+    @classmethod
+    def _opens_mode(cls, command: str) -> bool:
+        """True when a real device would indent the lines entered from here.
+
+        ``ip`` is a container only for ``ip dhcp pool`` and ``ip access-list``;
+        ``ip address`` and ``ip route`` are leaf statements that stay at the
+        current level. Treating every ``ip`` line as a mode entry would indent
+        address lines and make the blob unlike anything a device emits.
+        """
+        tokens = command.split()
+        if not tokens:
+            return False
+        head = tokens[0].lower()
+        if head == "ip":
+            return len(tokens) >= 3 and (
+                (tokens[1].lower() == "dhcp" and tokens[2].lower() == "pool")
+                or tokens[1].lower() == "access-list")
+        return head in cls._MODE_OPENERS - {"ip"}
+
     def running_config(self) -> str:
         """Return the running-config as a Cisco-style text blob.
 
-        Built from the lines that were written. This is what a real
-        ``show running-config`` would return after the changes were
-        applied.
+        Built from the lines that were written, re-indented the way a real
+        device formats them: sub-mode commands sit one space in per level.
+        Without that indentation a parser written against real ``show
+        running-config`` output — which is what production devices emit —
+        matches nothing here, and verification would grade a correctly
+        configured device as broken.
         """
         lines = [
             "! Last applied by NetOps Autopilot",
             f"! {len(self.written_config)} command(s) committed",
             "!",
         ]
-        lines.extend(self.written_config)
+        for depth, cmd in self.written_indented:
+            # `ip` opens a mode only as a container prefix (`ip dhcp pool`,
+            # `ip access-list`); a plain `ip address` / `ip route` is a leaf.
+            if depth > 0:
+                lines.append(" " * depth + cmd)
+            else:
+                lines.append(cmd)
         return "\n".join(lines) + "\n"
 
 
