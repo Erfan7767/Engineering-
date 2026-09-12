@@ -200,7 +200,10 @@ def _make_operator(runner=None) -> ChatOperator:
     ("verify", IntentVerb.VERIFY),
     ("تحقق", IntentVerb.VERIFY),
     ("bond", IntentVerb.BOND),
-    ("اربط", IntentVerb.BOND),
+    # Not the bare verb "اربط" — it means "connect/link" in ordinary network
+    # requests and used to fire the identity-binding gate on a sentence that
+    # never mentioned binding. The confirmation has to be unambiguous.
+    ("أكد الربط", IntentVerb.BOND),
     ("help", IntentVerb.HELP),
     ("مساعدة", IntentVerb.HELP),
     ("status", IntentVerb.STATUS),

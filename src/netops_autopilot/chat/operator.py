@@ -179,6 +179,10 @@ class IntentVerb(str, Enum):
 
     # Meta
     BOND = "bond"                       # confirm physical binding
+    #: A request to CREATE something, as distinct from looking at it. Routing a
+    #: creation request to a read-only verb answers a question nobody asked and
+    #: leaves the operator believing something was built.
+    CREATE_VLAN = "create_vlan"
     HELP = "help"                       # list available commands
     STATUS = "status"                   # run / system status
     UNKNOWN = "unknown"                 # could not classify
@@ -220,6 +224,10 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.SHOW_NEIGHBORS, (
         "الجيران", "الأجهزة المتصلة", "lldp", "cdp", "الجوار",
         "show neighbors", "show lldp", "show cdp",
+    )),
+    (IntentVerb.CREATE_VLAN, (
+        "أنشئ vlan", "انشئ vlan", "أنشئ شبكة محلية", "إنشاء vlan",
+        "أضف vlan", "اضف vlan", "vlan جديد", "vlan جديدة",
     )),
     (IntentVerb.SHOW_VLANS, (
         "vlans", "الشبكات المحلية", "الفلانات", "vlan", "show vlan",
@@ -351,7 +359,12 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         "توصيات", "نصائح", "توصية", "recommend",
     )),
     (IntentVerb.BOND, (
-        "اربط", "أكد الربط", "bond",
+        # NOT the bare verb "اربط": it means "connect/link" in ordinary network
+        # requests ("اربط هذا الفرع بالمقر"), and it was firing the
+        # identity-binding confirmation gate — a security-relevant human
+        # decision — on a sentence that never mentioned binding.
+        "أكد الربط", "تأكيد الربط", "الربط مؤكد", "اربط الجهاز بالكمبيوتر",
+        "bond",
     )),
     (IntentVerb.HELP, (
         "مساعدة", "ساعدني", "الأوامر", "help", "ما الذي تستطيع فعله",
@@ -418,6 +431,10 @@ _EN_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.SHOW_INTERFACES, (        # plural BEFORE singular
         "show interfaces", "show ip interface brief",
         "list interfaces", "interfaces",
+    )),
+    (IntentVerb.CREATE_VLAN, (
+        "create vlan", "create a vlan", "add vlan", "add a vlan",
+        "new vlan", "make vlan", "make a vlan",
     )),
     (IntentVerb.SHOW_VLANS, (             # plural BEFORE singular
         "show vlans", "list vlans", "vlan table",
@@ -1239,6 +1256,9 @@ class ChatOperator:
         if verb is IntentVerb.SHOW_NEIGHBORS:
             return self._do_show_neighbors(args.get("device"), lang)
 
+        if verb is IntentVerb.CREATE_VLAN:
+            return self._do_create_vlan(args, lang)
+
         if verb is IntentVerb.SHOW_VLANS:
             return self._do_show_vlans(args.get("device"), lang)
 
@@ -1797,6 +1817,42 @@ class ChatOperator:
                      else f"{len(edges)} رابط جوار لـ {ref}"),
             detail="\n".join(lines),
         )
+
+    def _do_create_vlan(self, args: dict[str, str], lang: str) -> OperatorReply:
+        """A request to create a VLAN — reported honestly, never faked.
+
+        The chat's device runner is read-only by construction
+        (``DeviceCommandRunner._ensure_read_only``), so a single VLAN cannot be
+        pushed from here. VLANs ARE configured for real, but only through the
+        design → render → apply path, which is allowlisted, ledgered and
+        verified. Saying so is the honest answer; showing the VLAN table back
+        and implying something was created is not.
+        """
+        vlan_id = args.get("vlan_id")
+        name = args.get("vlan_name")
+        understood = ", ".join(x for x in (
+            f"vlan_id={vlan_id}" if vlan_id else None,
+            f"name={name}" if name else None) if x) or "— not parsed"
+        if lang == "en":
+            summary = "create VLAN — not executed"
+            detail = (
+                f"Understood: {understood}\n"
+                "This chat path is read-only against devices, so it did not "
+                "change anything on the network.\n"
+                "VLANs are configured for real by 'apply <network type>', which "
+                "renders, allowlist-gates, applies and then verifies them.\n"
+                "Nothing was created. No device was modified.")
+        else:
+            summary = "إنشاء VLAN — لم يُنفَّذ"
+            detail = (
+                f"المفهوم: {understood}\n"
+                "مسار المحادثة للقراءة فقط تجاه الأجهزة، لذلك لم يُغيَّر شيء "
+                "على الشبكة.\n"
+                "تُهيَّأ شبكات VLAN فعلياً عبر 'apply <نوع الشبكة>' الذي يصيّر "
+                "ويمرّر عبر قائمة السماح ثم يطبّق ثم يتحقق.\n"
+                "لم يُنشأ شيء. لم يُعدَّل أي جهاز.")
+        return self._reply(IntentVerb.CREATE_VLAN, ReplyStatus.BLOCKED,
+                           summary=summary, detail=detail)
 
     def _do_show_vlans(self, ref: Optional[str], lang: str) -> OperatorReply:
         # Real execution: run ``show vlan brief`` on the device.
