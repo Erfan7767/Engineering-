@@ -347,22 +347,97 @@ class LoopbackSession:
                 or tokens[1].lower() == "access-list")
         return head in cls._MODE_OPENERS - {"ip"}
 
+    def effective_config(self) -> list:
+        """The command log with undo applied — i.e. the device's real state.
+
+        A real IOS device does not keep a transcript. ``no vlan 10`` removes
+        the VLAN; ``default interface Vlan10`` drops the interface and its
+        children. Replaying the transcript verbatim instead meant a rollback
+        left the undo lines *in* the running-config, so the post-rollback hash
+        could never match the pre-change hash and every rollback read as
+        ROLLBACK_FAILED — a loud false alarm, and one that hides the real
+        thing the distinction exists to catch.
+        """
+        state: list = []
+        for depth, cmd in self.written_indented:
+            text = cmd.strip()
+            low = text.lower()
+            # Mode transitions and saves are things an operator *does*, not
+            # lines the device holds. A real `show running-config` never
+            # contains `configure terminal` or `write memory`, and leaving them
+            # here meant the config text could never return to its pre-change
+            # form — so a rollback that genuinely restored the device still
+            # hashed differently and read as ROLLBACK_FAILED.
+            if low.split(" ", 1)[0] in ("enable", "configure", "end", "exit",
+                                        "write", "show"):
+                continue
+            if low.startswith("no "):
+                target = text[3:].strip().lower()
+                words = target.split()
+                hit = -1
+                # Innermost first: a bare `no name` inside a vlan sub-mode must
+                # not delete some other object's name further up the config.
+                for i in range(len(state) - 1, -1, -1):
+                    line = state[i][1].strip().lower()
+                    head = line.split()
+                    if not head:
+                        continue
+                    # `no <keyword>` clears that attribute whatever its value;
+                    # `no <cmd> <args>` removes one specific line.
+                    if len(words) == 1 and head[0] == words[0]:
+                        hit = i
+                        break
+                    if len(words) > 1 and line == target:
+                        hit = i
+                        break
+                if hit >= 0:
+                    # Removing a top-level object removes its sub-mode children
+                    # with it — a real device does not leave an orphaned body
+                    # under a parent that no longer exists.
+                    parent_depth = state[hit][0]
+                    tail = hit + 1
+                    while tail < len(state) and state[tail][0] > parent_depth:
+                        tail += 1
+                    del state[hit:tail]
+                continue
+            if low.startswith("default interface"):
+                name = text.split(None, 2)[-1].strip().lower()
+                kept: list = []
+                skipping = False
+                for d, c in state:
+                    if d == 0 and c.strip().lower() == f"interface {name}":
+                        skipping = True
+                        continue
+                    if skipping and d > 0:
+                        continue
+                    skipping = False
+                    kept.append((d, c))
+                state = kept
+                continue
+            state.append((depth, cmd))
+        return state
+
     def running_config(self) -> str:
         """Return the running-config as a Cisco-style text blob.
 
-        Built from the lines that were written, re-indented the way a real
-        device formats them: sub-mode commands sit one space in per level.
-        Without that indentation a parser written against real ``show
-        running-config`` output — which is what production devices emit —
-        matches nothing here, and verification would grade a correctly
-        configured device as broken.
+        Built from the effective state, re-indented the way a real device
+        formats it: sub-mode commands sit one space in per level. Without that
+        indentation a parser written against real ``show running-config``
+        output — which is what production devices emit — matches nothing here,
+        and verification would grade a correctly configured device as broken.
+
+        The header counts effective lines, not commands sent. Counting the
+        transcript made the text differ after every single command, so a hash
+        comparison could never report "unchanged" even when the device really
+        was back where it started.
         """
+        state = self.effective_config()
         lines = [
             "! Last applied by NetOps Autopilot",
-            f"! {len(self.written_config)} command(s) committed",
+            f"! {len(state)} configuration line(s) in effect",
             "!",
         ]
-        for depth, cmd in self.written_indented:
+        for depth, cmd in state:
             # `ip` opens a mode only as a container prefix (`ip dhcp pool`,
             # `ip access-list`); a plain `ip address` / `ip route` is a leaf.
             if depth > 0:

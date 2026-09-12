@@ -112,6 +112,9 @@ class AutopilotEngine:
         time_authority: Optional[TimeAuthority] = None,
     ) -> None:
         self.store = store
+        #: Per-device ConfigIR from the render phase, kept for the failure
+        #: policy (node reversibility is not in the rendered text).
+        self._irs: dict = {}
         self.key_id = key_id
         self.io = io
         self.counters = CounterCollector()
@@ -445,6 +448,109 @@ class AutopilotEngine:
             self.io.show(f"!! NEEDS HUMAN {o['cause']} on {o['device']} "
                          f"({o['zone']}): {o['why_not_fixed']}")
 
+    # ------------------------------------------------- phase 6 failure policy
+    def _seed_ref(self) -> Optional[str]:
+        """The device the operator cabled to this computer, if one was found."""
+        if self.report.crawl is None:
+            return None
+        for dev in self.report.crawl.devices:
+            cls = getattr(dev.classification, "value", str(dev.classification))
+            if cls == "SEED":
+                return dev.device_ref
+        return None
+
+    #: Record outcome -> the failure vocabulary the orchestrator decides on.
+    #: Deliberately conservative: anything whose device state is not confirmed
+    #: clean goes to MANUAL_REQUIRED, because an automatic rollback over an
+    #: unconfirmed device is how a bad state gets reported as a safe one.
+    _OUTCOME_CLASS = {
+        "REJECTED": "BLOCKED",
+        "ROLLBACK_FAILED": "MANUAL_REQUIRED",
+        "PERSIST_FAILED": "MANUAL_REQUIRED",
+        "APPLIED_PARTIAL": "PARTIAL",
+        "ROLLED_BACK": "ROLLED_BACK",
+        "BLOCKED_DRY_RUN_MISMATCH": "BLOCKED",
+    }
+
+    def _failure_decision(self, *, ref: str, rendered, record, ir) -> dict:
+        """Ask the failure orchestrator what to do about a device that failed.
+
+        The executor already handled the *device*-level rollback: it issues the
+        plan it pre-built and reports whether the device was confirmed clean.
+        This is the *run*-level decision — keep going, isolate this device, or
+        halt the run — and it is taken by ``FailureOrchestrator``, a pure
+        deterministic function, not by ad-hoc branching written here.
+
+        The decision and the executor's actual outcome are recorded side by
+        side. One is policy, the other is what happened to the box; a
+        disagreement between them is precisely what an operator must see, and
+        collapsing them into a single status word would hide it.
+        """
+        from ..core.failures import Failure, FailureClass
+        from ..engines.failure_orchestrator import (
+            Decision, FailureOrchestrator, FailureScenario)
+
+        outcome = getattr(record.outcome, "value", str(record.outcome))
+        applied_cmds = {c.command for c in record.commands
+                        if c.phase == "APPLY" and c.ok}
+        failed_cmds = {c.command for c in record.commands
+                       if c.phase == "APPLY" and not c.ok}
+
+        # A node counts as applied only when every one of its rendered lines
+        # is in the applied set. Counting a node as applied because *some* of
+        # its lines landed is how a half-configured VLAN gets reported whole.
+        node_of = {n.node_id: n for n in (ir.nodes if ir is not None else ())}
+        applied_nodes: list = []
+        failed_node = None
+        remaining: list = []
+        for block in getattr(rendered, "blocks", ()):
+            node = node_of.get(block.node_id)
+            if node is None or not block.commands:
+                continue
+            if any(c in failed_cmds for c in block.commands):
+                if failed_node is None:
+                    failed_node = node
+                else:
+                    remaining.append(node)
+            elif all(c in applied_cmds for c in block.commands):
+                applied_nodes.append(node)
+            else:
+                remaining.append(node)
+
+        cls_name = self._OUTCOME_CLASS.get(outcome, "BLOCKED")
+        failure = Failure(cls=FailureClass(cls_name), causes=tuple(
+            record.failure_causes or (f"APPLY_{outcome}",)))
+
+        scenario = FailureScenario(
+            change_id=f"{self._run_id_safe()}-{ref}",
+            failure=failure,
+            applied_nodes=tuple(applied_nodes),
+            failed_node=failed_node,
+            remaining_nodes=tuple(remaining),
+            # The executor sends each line once and has no retry layer, so
+            # there is genuinely no budget left. Claiming otherwise would let
+            # the orchestrator decide CONTINUE on a failure nothing will retry.
+            attempts_used=1,
+            attempt_budget=1,
+            # The seed is the operator's only management path into the site, so
+            # a failure there can cut off every later device.
+            management_path_affected=(ref == self._seed_ref()),
+        )
+        decision = FailureOrchestrator().decide(scenario)
+
+        return {
+            "device_ref": ref,
+            "executor_outcome": outcome,
+            "decision": decision.decision.value,
+            "reasons": list(decision.reasons),
+            "counts_and_causes": decision.counts_and_causes,
+            "applied_nodes": [n.node_id for n in applied_nodes],
+            "failed_node": failed_node.node_id if failed_node else None,
+            "remaining_nodes": [n.node_id for n in remaining],
+            "management_path_affected": scenario.management_path_affected,
+            "halt": decision.decision in (Decision.HALT, Decision.ISOLATE),
+        }
+
     def _phase_bond(self, port: str) -> None:
         self._phase(Phase.BOND, "HUMAN_DECISION",
                     f"confirm the physical binding: PC port {port} ↔ the SEED device console/email link "
@@ -740,6 +846,10 @@ class AutopilotEngine:
                 vendor_os_of[dev.device_ref] = dev.identity.vendor_family.split("/")[-1]
         irs = DesignEngine(CapabilityEngine.load_builtin()).render_ir(
             design, vendor_os_of=vendor_os_of, answers=self._design_answers())
+        # Retained: deciding what to do about a failed apply needs each node's
+        # reversibility, and the rendered text the executor works from does not
+        # carry it. Recomputing it later would risk the two disagreeing.
+        self._irs = dict(irs)
         for ref, ir in sorted(irs.items()):
             try:
                 rendered = render_ir(ref, ir)
@@ -927,6 +1037,10 @@ class AutopilotEngine:
         records = []
         applied_sessions: list = []
         skipped: list[tuple[str, str]] = []
+        #: What the failure orchestrator decided for each device that failed,
+        #: and which devices stopped the run.
+        failure_decisions: list[dict] = []
+        halted: list[tuple[str, str]] = []
         for ref, rendered in self.report.renders.items():
             family = self._family_of(ref)
             if not family:
@@ -994,15 +1108,41 @@ class AutopilotEngine:
             )
             records.append(record.to_dict())
 
+            # A device that did not take its configuration is a decision
+            # point, not a line in a summary. The executor has already dealt
+            # with the box; this decides what the RUN does next.
+            outcome = getattr(record.outcome, "value", str(record.outcome))
+            if outcome != "APPLIED":
+                dec = self._failure_decision(ref=ref, rendered=rendered,
+                                             record=record,
+                                             ir=self._irs.get(ref))
+                failure_decisions.append(dec)
+                self.io.show(
+                    f"!! APPLY FAIL {ref}: {outcome} → {dec['decision']} "
+                    f"({'; '.join(dec['reasons'][:2])})")
+                if dec["halt"]:
+                    halted.append((ref, dec["decision"]))
+                    self.io.show(
+                        f"!! HALT: {dec['decision']} after {ref}; "
+                        f"{len(self.report.renders) - len(records)} device(s) "
+                        f"left unapplied — the run does not continue past this")
+                    break
+
         outcomes = [r["outcome"] for r in records]
         # A managed device with no configuration at all, and a rendered device
         # that never reached the wire, are both incompleteness — distinct from
         # the safety failures below, but never something a clean verdict may
         # paper over. ``all(...)`` over an empty list is vacuously True, so an
         # apply that sent nothing used to report COMPLETE-APPLIED.
+        # A device that failed its apply, and every device left unapplied
+        # because the run halted, are incompleteness too. Leaving them out
+        # would let a halted run report a clean verdict over the devices it
+        # never reached.
         incomplete = sorted({ref for ref, _ in unconfigured}
                             | {ref for ref, _ in skipped}
-                            | {ref for ref, _ in partial})
+                            | {ref for ref, _ in partial}
+                            | {ref for ref, _ in halted}
+                            | {d["device_ref"] for d in failure_decisions})
         for ref, why in skipped:
             self.io.show(f"!! NOT_SENT {ref}: {why}")
         if "PERSIST_FAILED" in outcomes:
@@ -1046,6 +1186,12 @@ class AutopilotEngine:
             "partially_rendered": {ref: why for ref, why in partial},
             "not_sent": {ref: why for ref, why in skipped},
             "change_records": records,
+            # Phase 6 failure policy. The executor's per-device outcome and the
+            # run-level decision are both here and deliberately not merged: one
+            # says what happened to the box, the other what the run did about
+            # it, and a disagreement between them is the interesting case.
+            "failure_decisions": failure_decisions,
+            "halted_after": [ref for ref, _ in halted],
         }
         self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", verdict)
         self._phase(Phase.EXECUTION_GATE, "OK" if not incomplete else "INCOMPLETE",
