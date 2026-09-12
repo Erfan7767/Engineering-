@@ -368,6 +368,7 @@ class ConfigExecutor:
         dry_run: bool = False,
         wrappers: tuple[Sequence[str], Sequence[str]] = ((), ()),
         persist: Sequence[str] = (),
+        mode_exit: str = "exit",
     ) -> ChangeRecord:
         """Apply ``commands`` to ``device_ref`` via ``session``.
 
@@ -387,7 +388,7 @@ class ConfigExecutor:
         # ----- Phase 0: plan. Classify every line and compute mode depth.
         try:
             planned = self._plan(list(enter), list(commands), list(exit_),
-                                 record=record)
+                                 record=record, mode_exit=mode_exit)
         except Failure as exc:
             record.outcome = ChangeOutcome.REJECTED
             record.failure_causes.extend(exc.causes)
@@ -440,11 +441,12 @@ class ConfigExecutor:
                 if not result.ok():
                     return self._abort(session, record, plan, applied,
                                        f"MODE_COMMAND_FAILED:{p.stripped}:{result.error}",
-                                       current_depth)
-                # An `exit` recorded at depth d means "leaving d+1 for d".
-                # Other wrappers (configure terminal / end / commit) do not
-                # change the sub-mode depth the CONFIG lines are counted in.
-                if p.stripped.lower() == "exit":
+                                       current_depth, mode_exit=mode_exit)
+                # A one-level exit recorded at depth d means "leaving d+1 for
+                # d". Cisco and ArubaOS call it `exit`; FortiOS calls it `end`.
+                # Other wrappers (configure terminal / commit) do not change
+                # the sub-mode depth the CONFIG lines are counted in.
+                if p.stripped.lower() == mode_exit.lower():
                     current_depth = p.depth
                 continue
 
@@ -453,7 +455,7 @@ class ConfigExecutor:
             if not result.ok():
                 return self._abort(session, record, plan, applied,
                                    f"COMMAND_FAILED:{p.stripped}:{result.error}",
-                                   current_depth)
+                                   current_depth, mode_exit=mode_exit)
             applied.append(p)
             current_depth = p.depth + (1 if p.enters_mode else 0)
 
@@ -464,7 +466,8 @@ class ConfigExecutor:
             verified, causes = self._verify_change(session, record, applied)
             if not verified:
                 record.failure_causes.extend(causes)
-                self._rollback(session, plan, applied, record, current_depth=0)
+                self._rollback(session, plan, applied, record, current_depth=0,
+                               mode_exit=mode_exit)
                 record.finished_at = self._clock()
                 self._record_to_ledger(record)
                 return record
@@ -513,7 +516,8 @@ class ConfigExecutor:
 
     # ------------------------------------------------------------ planning
     def _plan(self, enter: list[str], body: list[str], exit_: list[str],
-              record: Optional[ChangeRecord] = None) -> list[_PlannedLine]:
+              record: Optional[ChangeRecord] = None,
+              mode_exit: str = "exit") -> list[_PlannedLine]:
         """Classify every line and compute the CLI mode depth of each.
 
         The renderer encodes CLI nesting as indentation (one level per
@@ -554,8 +558,8 @@ class ConfigExecutor:
                         f"session at {level}) — the previous line did not open a sub-mode",))
                 level = target
             while level > target:
-                planned.append(_PlannedLine("exit", "exit", "MODE", "MODE_TRANSITION",
-                                            None, level - 1, False))
+                planned.append(_PlannedLine(mode_exit, mode_exit, "MODE",
+                                            "MODE_TRANSITION", None, level - 1, False))
                 level -= 1
             pending_mode_at = None
 
@@ -579,8 +583,8 @@ class ConfigExecutor:
 
         # Leave every mode we are still inside before the exit wrappers run.
         while level > 0:
-            planned.append(_PlannedLine("exit", "exit", "MODE", "MODE_TRANSITION",
-                                        None, level - 1, False))
+            planned.append(_PlannedLine(mode_exit, mode_exit, "MODE",
+                                        "MODE_TRANSITION", None, level - 1, False))
             level -= 1
 
         for raw in exit_:
@@ -659,10 +663,12 @@ class ConfigExecutor:
 
     def _abort(self, session: ExecSession, record: ChangeRecord,
                plan: list[tuple[str, int]], applied: list[_PlannedLine],
-               cause: str, current_depth: int = 0) -> ChangeRecord:
+               cause: str, current_depth: int = 0,
+               mode_exit: str = "exit") -> ChangeRecord:
         """A command failed mid-stream: roll back what we already applied."""
         record.failure_causes.append(cause)
-        self._rollback(session, plan, applied, record, current_depth=current_depth)
+        self._rollback(session, plan, applied, record, current_depth=current_depth,
+                       mode_exit=mode_exit)
         record.finished_at = self._clock()
         self._record_to_ledger(record)
         return record
@@ -675,6 +681,7 @@ class ConfigExecutor:
         applied: Sequence[_PlannedLine],
         record: ChangeRecord,
         current_depth: int = 0,
+        mode_exit: str = "exit",
     ) -> None:
         """Issue the inverse commands to the device, deepest-first.
 
@@ -704,10 +711,11 @@ class ConfigExecutor:
                 continue
             # Unwind to the depth the original command ran at.
             while current_depth > depth:
-                res = self._issue_raw(session, record, "exit", "ROLLBACK", current_depth - 1)
+                res = self._issue_raw(session, record, mode_exit, "ROLLBACK",
+                                      current_depth - 1)
                 current_depth -= 1
                 if not res.ok():
-                    failed.append(f"exit@{current_depth}:{res.error}")
+                    failed.append(f"{mode_exit}@{current_depth}:{res.error}")
                     break
             res = self._issue_raw(session, record, inverse, "ROLLBACK", depth)
             record.rollback_results.append(res)
@@ -716,7 +724,7 @@ class ConfigExecutor:
 
         # Leave any mode we are still inside.
         while current_depth > 0:
-            self._issue_raw(session, record, "exit", "ROLLBACK", current_depth - 1)
+            self._issue_raw(session, record, mode_exit, "ROLLBACK", current_depth - 1)
             current_depth -= 1
 
         record.rollback_hash = _read_running_hash(session)

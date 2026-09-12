@@ -28,6 +28,7 @@ _RENDERER_FILES = {
     "routeros": "routeros.json",
     "junos": "junos.json",
     "arubaos": "arubaos.json",
+    "fortios": "fortios.json",
 }
 
 
@@ -51,6 +52,12 @@ class RenderedConfig:
     #: Junos ``commit``). Empty for platforms that persist as they go.
     #: Shown in the preview so the operator approves the whole operation.
     persist: tuple[str, ...] = ()
+    #: Command that leaves ONE configuration sub-mode. Cisco and ArubaOS use
+    #: `exit`; FortiOS uses `end`. The executor inserts it whenever the
+    #: indentation drops, and again while unwinding a rollback, so it must be
+    #: the vendor's own keyword — sending `exit` to FortiOS leaves the wrong
+    #: scope.
+    mode_exit: str = "exit"
 
     def to_text(self) -> str:
         lines = [f"! {self.label} — device={self.device_ref} vendor_os={self.vendor_os}"]
@@ -124,7 +131,8 @@ def render_ir(device_ref: str, ir: ConfigIR) -> RenderedConfig:
     return RenderedConfig(device_ref=device_ref, vendor_os=os_name,
                           verified_templates=verified, label=label,
                           blocks=tuple(blocks), wrappers=wrappers,
-                          persist=tuple(wrappers_data.get("persist", ())))
+                          persist=tuple(wrappers_data.get("persist", ())),
+                          mode_exit=str(wrappers_data.get("mode_exit", "exit")))
 
 
 def _render_commands(templates: tuple, params: dict) -> tuple:

@@ -1,0 +1,36 @@
+{
+  "$schema_ref": "specs/schemas/renderer.schema.json",
+  "vendor_os": "fortios",
+  "verified": false,
+  "verified_at": null,
+  "note": "NOT lab-verified. Command shapes come from the FortiOS allowlist (specs/data/allowlists/fortios.json), the only FortiOS command evidence this repository holds; `verified` is false and output is labelled PREVIEW_SEED_UNVERIFIED. FortiOS leaves a sub-mode with `end`, not `exit`, so `mode_exit` is `end` — the executor inserts it whenever indentation drops and while unwinding a rollback. It commits on `end`, so `persist` is empty. DELIBERATELY OMITTED: `trunk`, `access` and `dhcp`. FortiOS switch ports are configured through `config switch interface` / hardware-switch profiles and its DHCP server through `config system dhcp server`, none of which is evidenced in this repository. Those nodes render NOT_MODELED and the run reports INCOMPLETE with the gap named rather than guessing (L01, T2).",
+  "wrappers": {
+    "enter_config": [],
+    "exit_config": [],
+    "mode_exit": "end",
+    "persist": []
+  },
+  "features": {
+    "hostname": {
+      "commands": [
+        "config system global",
+        " set hostname {hostname}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "config system interface",
+        " edit {interface}",
+        "  set ip {address_ip} {address_mask}",
+        "  set allowaccess ping https ssh"
+      ]
+    },
+    "vlan": {
+      "commands": [
+        "config system interface",
+        " edit {name}",
+        "  set vlanid {vlan_id}"
+      ]
+    }
+  }
+}

@@ -38,6 +38,7 @@ _ALLOWLIST_FOR = {
     "junos": ("junos.json", "juniper/junos"),
     "routeros": ("routeros.json", "mikrotik/routeros"),
     "arubaos": ("arubaos.json", "aruba/arubaos"),
+    "fortios": ("fortios.json", "fortinet/fortios"),
 }
 
 #: Sample values for every placeholder any renderer template uses. A template
@@ -62,6 +63,18 @@ SAMPLES = {
     "gateway": "10.240.0.1",
     "dns": "1.1.1.1",
     "domain": "corp.example",
+    "unit": "10",
+    "intf": "port1",
+    "ip": "10.240.0.1",
+    "mask": "255.255.255.128",
+    "prefix": "25",
+    "id": "1",
+    "net": "0.0.0.0/0",
+    "gw": "10.240.0.1",
+    "servers": "1.1.1.1",
+    "bridge": "bridge",
+    "ids": "10,20",
+    "text": "uplink",
 }
 
 

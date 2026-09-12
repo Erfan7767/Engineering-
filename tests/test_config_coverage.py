@@ -73,8 +73,8 @@ def test_a_fully_configurable_fabric_is_still_complete():
 
 
 def test_a_managed_device_with_no_configuration_blocks_a_clean_verdict():
-    """`fortios` has no renderer data, so core-sw2 gets nothing at all."""
-    report, design = _run_and_regate("fortinet/fortios")
+    """`unifi` has no renderer data, so core-sw2 gets nothing at all."""
+    report, design = _run_and_regate("ubiquiti/unifi")
     managed = sorted(r.device_ref for r in design.roles
                      if r.role != "UNMANAGED_NEIGHBOR")
     assert "core-sw2" in managed
@@ -89,7 +89,7 @@ def test_a_managed_device_with_no_configuration_blocks_a_clean_verdict():
 
 def test_the_phase_detail_states_the_real_coverage():
     """`staged 2/3` — the denominator is the managed set, not the render dict."""
-    report, _design = _run_and_regate("fortinet/fortios")
+    report, _design = _run_and_regate("ubiquiti/unifi")
     gate = [p for p in report.phases if p.phase.value == "EXECUTION_GATE"]
     assert gate and gate[-1].status == "INCOMPLETE"
     assert "2/3 managed device(s)" in gate[-1].detail
@@ -97,7 +97,7 @@ def test_the_phase_detail_states_the_real_coverage():
 
 def test_the_apply_path_also_refuses_a_clean_verdict():
     """The same hole on the execute=True branch: applied 2 of 3, not success."""
-    report, _design = _run_and_regate("fortinet/fortios", execute=True)
+    report, _design = _run_and_regate("ubiquiti/unifi", execute=True)
     assert report.final == "INCOMPLETE-APPLIED"
     assert report.execution["outcome"] == "INCOMPLETE"
     assert report.execution["unconfigured_devices"] == ["core-sw2"]

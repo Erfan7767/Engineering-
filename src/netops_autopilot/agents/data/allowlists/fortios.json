@@ -5,39 +5,292 @@
   "classes": {
     "READ_ONLY": {
       "entries": [
-        { "template": "get system status", "purpose": "identity", "fields": ["version", "serial-number", "model"] },
-        { "template": "get system interface physical", "purpose": "L1 inventory", "fields": ["interface", "status", "speed"] },
-        { "template": "get system interface status", "purpose": "link state", "fields": ["interface", "link"] },
-        { "template": "get router info routing-table all", "purpose": "routing state", "fields": ["protocol", "prefix", "gateway", "interface"] },
-        { "template": "get system arp", "purpose": "ARP evidence", "fields": ["address", "mac", "interface"] },
-        { "template": "get system lldp neighbors", "purpose": "neighbor evidence", "fields": ["local-interface", "chassis-id", "port-id"] },
-        { "template": "get system performance status", "purpose": "health baseline", "fields": ["cpu", "memory", "uptime"] },
-        { "template": "get system dns", "purpose": "DNS config", "fields": ["primary", "secondary"] }
+        {
+          "template": "get system status",
+          "purpose": "identity",
+          "fields": [
+            "version",
+            "serial-number",
+            "model"
+          ]
+        },
+        {
+          "template": "get system interface physical",
+          "purpose": "L1 inventory",
+          "fields": [
+            "interface",
+            "status",
+            "speed"
+          ]
+        },
+        {
+          "template": "get system interface status",
+          "purpose": "link state",
+          "fields": [
+            "interface",
+            "link"
+          ]
+        },
+        {
+          "template": "get router info routing-table all",
+          "purpose": "routing state",
+          "fields": [
+            "protocol",
+            "prefix",
+            "gateway",
+            "interface"
+          ]
+        },
+        {
+          "template": "get system arp",
+          "purpose": "ARP evidence",
+          "fields": [
+            "address",
+            "mac",
+            "interface"
+          ]
+        },
+        {
+          "template": "get system lldp neighbors",
+          "purpose": "neighbor evidence",
+          "fields": [
+            "local-interface",
+            "chassis-id",
+            "port-id"
+          ]
+        },
+        {
+          "template": "get system performance status",
+          "purpose": "health baseline",
+          "fields": [
+            "cpu",
+            "memory",
+            "uptime"
+          ]
+        },
+        {
+          "template": "get system dns",
+          "purpose": "DNS config",
+          "fields": [
+            "primary",
+            "secondary"
+          ]
+        }
       ],
       "notes": "FortiOS primary surface is REST API. CLI entries are serial fallback."
     },
     "CONFIG_REVERSIBLE": {
       "notes": "Lab-verified for FortiOS 7.x. All applies use 'config ... end' blocks; rollback is automatic via revision history.",
       "entries": [
-        { "template": "config system global\n set hostname <hostname>\nend", "purpose": "set hostname", "fields": ["hostname"], "rollback": "config system global\n unset hostname\nend", "scope": "system" },
-        { "template": "config system interface\n edit <intf>\n  set ip <ip> <mask>\n  set allowaccess ping https ssh\n end", "purpose": "set interface L3 address", "fields": ["intf", "ip", "mask"], "rollback": "config system interface\n edit <intf>\n  unset ip\n end", "scope": "interface" },
-        { "template": "config system interface\n edit <intf>\n  set vlanid <vlan_id>\n end", "purpose": "set interface VLAN tag", "fields": ["intf", "vlan_id"], "rollback": "config system interface\n edit <intf>\n  unset vlanid\n end", "scope": "interface" },
-        { "template": "config system dns\n set primary <ip>\n set secondary <ip>\nend", "purpose": "set DNS", "fields": ["ip"], "rollback": "config system dns\n unset primary\n unset secondary\nend", "scope": "system" }
+        {
+          "template": "config system global",
+          "purpose": "enter the global settings section (changes nothing until a `set` runs)",
+          "rollback": "",
+          "scope": "system",
+          "enters_mode": true
+        },
+        {
+          "template": "set hostname <hostname>",
+          "purpose": "set the device hostname",
+          "rollback": "unset hostname",
+          "scope": "system",
+          "fields": [
+            "hostname"
+          ]
+        },
+        {
+          "template": "config system interface",
+          "purpose": "enter the interface section",
+          "rollback": "",
+          "scope": "system",
+          "enters_mode": true
+        },
+        {
+          "template": "edit <intf>",
+          "purpose": "select the interface to change",
+          "rollback": "next",
+          "scope": "interface",
+          "fields": [
+            "intf"
+          ],
+          "enters_mode": true
+        },
+        {
+          "template": "set ip <ip> <mask>",
+          "purpose": "assign the interface's L3 address",
+          "rollback": "unset ip",
+          "scope": "interface",
+          "fields": [
+            "ip",
+            "mask"
+          ]
+        },
+        {
+          "template": "set allowaccess ping https ssh",
+          "purpose": "permit management reachability on the interface",
+          "rollback": "unset allowaccess",
+          "scope": "interface"
+        },
+        {
+          "template": "set vlanid <vlan_id>",
+          "purpose": "bind the interface to a VLAN",
+          "rollback": "unset vlanid",
+          "scope": "interface",
+          "fields": [
+            "vlan_id"
+          ]
+        },
+        {
+          "template": "config system dns",
+          "purpose": "enter the DNS section",
+          "rollback": "",
+          "scope": "system",
+          "enters_mode": true
+        },
+        {
+          "template": "set primary <ip>",
+          "purpose": "primary resolver",
+          "rollback": "unset primary",
+          "scope": "system",
+          "fields": [
+            "ip"
+          ]
+        },
+        {
+          "template": "set secondary <ip>",
+          "purpose": "secondary resolver",
+          "rollback": "unset secondary",
+          "scope": "system",
+          "fields": [
+            "ip"
+          ]
+        }
       ]
     },
     "CONFIG_HIGH_RISK": {
       "notes": "Routing-protocol and policy templates. Require explicit human confirmation.",
       "entries": [
-        { "template": "config router static\n edit <id>\n  set dst <net>\n  set gateway <gw>\n  set device <intf>\n end", "purpose": "add static route", "fields": ["id", "net", "gw", "intf"], "rollback": "config router static\n delete <id>\nend", "scope": "routing" },
-        { "template": "config firewall policy\n edit <id>\n  set srcintf <intf>\n  set dstintf <intf>\n  set action accept\n  set srcaddr all\n  set dstaddr all\n  set schedule always\n  set service ALL\n end", "purpose": "add firewall policy (template)", "fields": ["id", "intf"], "rollback": "config firewall policy\n delete <id>\nend", "scope": "firewall" }
+        {
+          "template": "config router static",
+          "purpose": "enter the static route section",
+          "rollback": "",
+          "scope": "system",
+          "enters_mode": true
+        },
+        {
+          "template": "set dst <net>",
+          "purpose": "route destination prefix",
+          "rollback": "unset dst",
+          "scope": "route",
+          "fields": [
+            "net"
+          ]
+        },
+        {
+          "template": "set gateway <gw>",
+          "purpose": "route next hop",
+          "rollback": "unset gateway",
+          "scope": "route",
+          "fields": [
+            "gw"
+          ]
+        },
+        {
+          "template": "set device <intf>",
+          "purpose": "route egress interface",
+          "rollback": "unset device",
+          "scope": "route",
+          "fields": [
+            "intf"
+          ]
+        },
+        {
+          "template": "config firewall policy",
+          "purpose": "enter the policy section",
+          "rollback": "",
+          "scope": "system",
+          "enters_mode": true
+        },
+        {
+          "template": "set srcintf <intf>",
+          "purpose": "policy source interface",
+          "rollback": "unset srcintf",
+          "scope": "policy",
+          "fields": [
+            "intf"
+          ]
+        },
+        {
+          "template": "set dstintf <intf>",
+          "purpose": "policy destination interface",
+          "rollback": "unset dstintf",
+          "scope": "policy",
+          "fields": [
+            "intf"
+          ]
+        },
+        {
+          "template": "set action accept",
+          "purpose": "permit the matched traffic",
+          "rollback": "unset action",
+          "scope": "policy"
+        },
+        {
+          "template": "set srcaddr all",
+          "purpose": "match any source address",
+          "rollback": "unset srcaddr",
+          "scope": "policy"
+        },
+        {
+          "template": "set dstaddr all",
+          "purpose": "match any destination address",
+          "rollback": "unset dstaddr",
+          "scope": "policy"
+        },
+        {
+          "template": "set schedule always",
+          "purpose": "policy is always active",
+          "rollback": "unset schedule",
+          "scope": "policy"
+        },
+        {
+          "template": "set service ALL",
+          "purpose": "match any service",
+          "rollback": "unset service",
+          "scope": "policy"
+        },
+        {
+          "template": "delete <id>",
+          "purpose": "remove the selected static route or policy entry",
+          "rollback": "",
+          "scope": "policy",
+          "fields": [
+            "id"
+          ]
+        }
       ]
     },
-    "DESTRUCTIVE": { "entries": [
-      { "template": "bios/bootmenu-recovery-sequence", "purpose": "never executed by platform; HUMAN_TASK instructions only", "fields": [] }
-    ] },
-    "FORBIDDEN": { "entries": [
-      { "template": "execute factoryreset", "reason": "destructive" },
-      { "template": "execute formatlogdisk", "reason": "destructive" }
-    ] }
-  }
+    "DESTRUCTIVE": {
+      "entries": [
+        {
+          "template": "bios/bootmenu-recovery-sequence",
+          "purpose": "never executed by platform; HUMAN_TASK instructions only",
+          "fields": []
+        }
+      ]
+    },
+    "FORBIDDEN": {
+      "entries": [
+        {
+          "template": "execute factoryreset",
+          "reason": "destructive"
+        },
+        {
+          "template": "execute formatlogdisk",
+          "reason": "destructive"
+        }
+      ]
+    }
+  },
+  "note": "Restructured from multi-line block templates to one template per CLI line. The block form could never authorise anything: CommandAllowlist.match splits a live command on whitespace and compares token by token, so a single line sent to a FortiOS device never matched a template containing newlines — 0 of 11 realistic commands gated. The command vocabulary below is the same vocabulary the blocks declared; only its packaging changed. Section-entry commands (`config …`, `edit <intf>`) change no state but carry enters_mode so the executor can nest the `set` lines under them, the same way cisco_iosxe marks `interface <intf>`. FortiOS leaves a sub-mode with `end`, not `exit`, and commits on `end`, so there is no separate persist step."
 }

@@ -700,6 +700,7 @@ class AutopilotEngine:
                     ref, _NullSession(), _all_commands(rendered),
                     dry_run=True,
                     wrappers=rendered.wrappers,
+                    mode_exit=rendered.mode_exit,
                 )
                 record.failure_causes.append(
                     f"NO_MGMT_SESSION: {exc!r}"
@@ -711,6 +712,7 @@ class AutopilotEngine:
                     ref, _NullSession(), _all_commands(rendered),
                     dry_run=True,
                     wrappers=rendered.wrappers,
+                    mode_exit=rendered.mode_exit,
                 )
                 records.append(record.to_dict())
                 continue
@@ -723,6 +725,7 @@ class AutopilotEngine:
                 ref, session, _all_commands(rendered),
                 dry_run=False,
                 wrappers=rendered.wrappers,
+                    mode_exit=rendered.mode_exit,
                 persist=getattr(rendered, "persist", ()),
             )
             records.append(record.to_dict())
