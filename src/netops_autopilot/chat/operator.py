@@ -234,6 +234,12 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
     (IntentVerb.CREATE_VLAN, (
         "أنشئ vlan", "انشئ vlan", "أنشئ شبكة محلية", "إنشاء vlan",
         "أضف vlan", "اضف vlan", "vlan جديد", "vlan جديدة",
+        # Plural too. The matcher applies a word-boundary check to Latin
+        # patterns, so the singular "vlan" does NOT match "vlans" — and
+        # SHOW_VLANS, whose patterns are the bare plurals, used to win. "أنشئ
+        # VLANs المطلوبة" is a request to create, and was answered with a table.
+        "أنشئ vlans", "انشئ vlans", "أضف vlans", "اضف vlans",
+        "إنشاء vlans", "create vlans",
     )),
     (IntentVerb.SHOW_VLANS, (
         "vlans", "الشبكات المحلية", "الفلانات", "vlan", "show vlan",
@@ -881,6 +887,39 @@ def _network_type_vocabulary() -> tuple[str, ...]:
     return tuple(sorted(phrases, key=lambda phrase: (-len(phrase), phrase)))
 
 
+#: Imperative verbs that ask for a CHANGE to the network. ``_normalize`` strips
+#: harakat but does not fold alef/ya/taa-marbuta variants, so both spellings of
+#: each verb are listed rather than assuming a fold that does not happen.
+_WRITE_VERBS = frozenset({
+    "أنشئ", "انشئ", "أنشىء", "انشيء", "أضف", "اضف", "أعد", "اعد",
+    "غيّر", "غير", "احذف", "أزل", "ازل", "اربط", "افصل", "اعزل",
+    "طبّق", "طبق", "فعّل", "فعل", "عطّل", "عطل", "حدّث", "حدث",
+    "configure", "reconfigure", "create", "add", "remove", "delete",
+    "change", "apply", "set", "enable", "disable", "isolate", "connect",
+})
+
+
+def carries_write_verb(text: str) -> Optional[str]:
+    """The change verb the operator used, or ``None``.
+
+    Matching is on whole normalised words, never substrings. A substring scan is
+    exactly what let the bare noun "الأجهزة" registered under SHOW_DEVICES claim
+    "أعد إعداد هذه الأجهزة" — the operator asked to reconfigure the devices and
+    got a device listing back, which reads like an answer rather than the
+    refusal it should have been.
+    """
+    for token in re.split(r"[\s،,.;:!?()\[\]\"']+", _normalize(text)):
+        if token in _WRITE_VERBS:
+            return token
+    return None
+
+
+#: Intents that only ever READ from a device. Answering one of these to a
+#: request that asked for a change would report activity where there was none.
+def _is_read_only(verb: IntentVerb) -> bool:
+    return verb.value.startswith("show_")
+
+
 def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
     """Classify a chat message into a typed verb + extracted arguments.
 
@@ -1028,9 +1067,19 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
                         candidates.append((len(wn), verb))
     if candidates:
         candidates.sort(key=lambda x: -x[0])  # longest first
-        return (candidates[0][1], args)
+    chosen = candidates[0][1] if candidates else IntentVerb.UNKNOWN
 
-    return (IntentVerb.UNKNOWN, args)
+    # A message that asks for a CHANGE must never classify as a read. Falling
+    # through to a device listing or a VLAN table looks like an answer, so the
+    # operator has no way to see that nothing was done. Enforced here rather
+    # than in the chat handler so every caller — CLI, web server, API — gets the
+    # same guarantee instead of whichever one remembered to check.
+    write_verb = carries_write_verb(text)
+    if write_verb is not None and _is_read_only(chosen):
+        args = dict(args)
+        args["write_guard"] = {"verb": write_verb, "fallback": chosen.value}
+        return (IntentVerb.UNKNOWN, args)
+    return (chosen, args)
 
 
 # ---------------------------------------------------------------------------
@@ -1248,6 +1297,29 @@ class ChatOperator:
         lang = self.detect_language(message)
         verb, args = classify_intent(message)
         self._audit(verb, message, lang)
+
+        # classify_intent refused to answer a change request with a read, and
+        # said what it would otherwise have done. Surface that instead of the
+        # generic "unrecognised" reply, because the distinction matters: the
+        # request was understood, and deliberately not executed.
+        guard = args.get("write_guard")
+        if guard:
+            return self._reply(
+                IntentVerb.UNKNOWN, ReplyStatus.BLOCKED,
+                summary=(f"you asked me to {guard['verb']!r} something, and the "
+                         f"only action I could match was read-only "
+                         f"({guard['fallback']}); nothing was changed"
+                         if lang == "en" else
+                         f"طلبت إجراء تغيير ({guard['verb']})، وأقرب إجراء تعرّفت "
+                         f"عليه للقراءة فقط ({guard['fallback']})؛ لم يُغيَّر شيء"),
+                detail=("Say exactly what to change, e.g. 'أنشئ VLAN للموظفين' "
+                        "or 'apply <network type>'. I would rather refuse than "
+                        "answer a different question." if lang == "en" else
+                        "حدّد المطلوب تغييره، مثل 'أنشئ VLAN للموظفين' أو "
+                        "'طبق <نوع الشبكة>'. الرفض الصريح أفضل من الإجابة عن "
+                        "سؤال آخر."),
+                data={"detected_write_verb": guard["verb"],
+                      "fallback_read_only_intent": guard["fallback"]})
 
         if verb is IntentVerb.HELP:
             return self._reply(verb, ReplyStatus.INFO,
