@@ -28,6 +28,7 @@ wire" can never be collapsed into one word.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence
@@ -43,6 +44,12 @@ from ..engines.config_ir import (
     Reversibility,
 )
 from ..engines.config_renderer import render_ir
+from ..engines.design_engine import (
+    DHCP_RESERVED_HOSTS,
+    _dhcp_exclusion,
+    _dhcp_pool_range,
+    _prefix_to_mask,
+)
 from ..ledger.store import LedgerStore
 
 
@@ -214,6 +221,58 @@ def parse_vlan_request(text: str) -> dict[str, object]:
     return out
 
 
+#: Purpose words an operator actually types, mapped to the zone names a design
+#: really uses. Only explicit equivalences — a purpose with no entry is not
+#: matched to the nearest-looking zone, because "the closest zone" is a guess
+#: and a pool on the wrong subnet is worse than a refusal.
+_PURPOSE_TO_ZONE = {
+    "STAFF": ("users", "staff", "employees", "corporate"),
+    "GUESTS": ("guest", "guests"),
+}
+
+
+def resolve_zone(text: str, zone_names: Sequence[str]) -> tuple[Optional[str], tuple[str, ...]]:
+    """Which of ``zone_names`` the request means, or ``(None, matched)``.
+
+    Matching is against the zones the design actually contains, never against a
+    vocabulary of zones that might exist. Returns every zone the text matched so
+    the caller can refuse an ambiguous request instead of picking one — sending
+    a DHCP pool to the wrong zone is a change nobody asked for.
+    """
+    norm = _normalize_for_zone(text)
+    tokens: set[str] = set()
+    for raw in re.split(r"[\s,،;]+", norm):
+        key = raw.strip(" .،,!?\"'")
+        if not key:
+            continue
+        forms = [key, *_affix_forms(key)]
+        tokens.update(forms)
+        # The purpose lookup has to run over the affix-stripped forms too:
+        # Arabic attaches the preposition and the article to the noun, so the
+        # operator writes "للضيوف" where the vocabulary holds "ضيوف". Looking
+        # the raw token up was silently missing every prefixed form.
+        for form in forms:
+            purpose = _PURPOSES.get(form)
+            if purpose:
+                tokens.update(_PURPOSE_TO_ZONE.get(purpose, ()))
+
+    matched = tuple(z for z in zone_names
+                    if z.lower() in tokens or _normalize_for_zone(z) in tokens)
+    return (matched[0] if len(matched) == 1 else None), matched
+
+
+def _normalize_for_zone(text: str) -> str:
+    """Lowercase, collapse whitespace, strip Arabic harakat.
+
+    Mirrors the chat operator's normaliser. Alef/ya/taa-marbuta variants are
+    NOT folded, because the operator does not fold them either — matching here
+    against a fold that happens nowhere else would accept spellings the rest of
+    the platform would not.
+    """
+    t = text.strip().lower()
+    return re.sub(r"\s+", " ", re.sub(r"[\u064B-\u0652\u0670\u0640]", "", t))
+
+
 def read_existing_vlans(text: str) -> dict[int, str]:
     """Parse ``show vlan brief`` into ``{vlan_id: name}``.
 
@@ -341,6 +400,126 @@ def plan_create_vlan(
         # The readback must show the id AND the name. Checking only the id
         # would pass on a VLAN that exists under a different name.
         verify_expect=(str(vlan_id), name),
+        preview=rendered.to_text(),
+    )
+
+
+def plan_add_dhcp(
+    *,
+    change_id: str,
+    request: str,
+    device_ref: str,
+    vendor_os: str,
+    zone: str,
+    subnet: str,
+    gateway: str,
+    dns: str = "",
+) -> ChangePlan:
+    """Render a DHCP pool for one zone and return it without touching a device.
+
+    ``subnet`` and ``gateway`` are **required**, and they come from the design
+    that was actually applied — never from a guess. A pool built on an invented
+    subnet would hand out addresses that are not on the wire, which is a worse
+    failure than refusing: the client gets a lease, then cannot reach anything.
+    The caller resolves them from ``context.last_design`` or refuses and says
+    the subnet is unknown.
+
+    The node is built exactly the way :mod:`engines.design_engine` builds the
+    same node for a site design, and reuses that module's own exclusion and
+    pool-window helpers, so a pool created from the chat and one created by a
+    full run cannot disagree about which addresses are handed out.
+    """
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+    except ValueError as exc:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"SUBNET_UNPARSEABLE: {subnet!r} ({exc})",)) from exc
+    if net.version != 4:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"SUBNET_NOT_IPV4: {subnet!r} — IPv6 zones use SLAAC/RA, and this "
+            f"path models an IPv4 pool only",))
+    try:
+        gw = ipaddress.ip_address(gateway)
+    except ValueError as exc:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"GATEWAY_UNPARSEABLE: {gateway!r} ({exc})",)) from exc
+    if gw not in net:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"GATEWAY_OUTSIDE_SUBNET: {gateway} is not inside {subnet}; a pool "
+            f"whose default-router is off-subnet gives clients a lease they "
+            f"cannot use",))
+
+    exclusion = _dhcp_exclusion(subnet, gateway)
+    mask = _prefix_to_mask(str(net.prefixlen))
+    pool_range = _dhcp_pool_range(subnet, exclusion[1]) if exclusion else None
+    if not (exclusion and mask and pool_range):
+        # Not invented, not silently dropped: the same three-way check the
+        # design engine applies, so an unusable subnet is refused here rather
+        # than rendered into a pool with no assignable addresses.
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"NO_DHCP_POOL: subnet {subnet} has no computable IPv4 exclusion "
+            f"block or assignable window (T2)",))
+
+    params = {
+        "pool": zone,
+        "interface": zone,
+        "network": str(net.network_address),
+        "netmask": mask,
+        "prefix": str(net.prefixlen),
+        "gateway": gateway,
+        "exclude_first": exclusion[0],
+        "exclude_last": exclusion[1],
+        "pool_first": pool_range[0],
+        "pool_last": pool_range[1],
+        "reason": (f"chat targeted change: pool for zone {zone}; first "
+                   f"{DHCP_RESERVED_HOSTS} usable addresses reserved for "
+                   f"gateway/infrastructure"),
+    }
+    if dns:
+        # Same normalisation the design engine applies: IOS `dns-server` takes
+        # a space-separated list even though people write commas.
+        params["dns"] = " ".join(
+            t for t in re.split(r"[,;\s]+", dns.strip()) if t)
+
+    node = IRNode(
+        node_id=f"dhcp-{zone}",
+        target=EntityRef(entity_type="DEVICE", entity_ref=device_ref),
+        operation=Operation.CREATE,
+        feature="dhcp",
+        vendor_os=vendor_os,
+        parameters=params,
+        reversibility=Reversibility.REVERSIBLE_BY_REPLACE,
+        requires=(f"l3:{zone}",),
+        provides=(f"dhcp:{zone}",),
+    )
+    rendered = render_ir(device_ref, ConfigIR(
+        title=f"chat: dhcp pool for {zone}", nodes=(node,)))
+
+    not_modeled = [b for b in rendered.blocks if b.status != "RENDERED"]
+    if not_modeled:
+        raise Failure(cls=FailureClass.BLOCKED, causes=tuple(
+            f"NOT_MODELED node={b.node_id}: {b.reason}" for b in not_modeled))
+    commands = tuple(c for b in rendered.blocks for c in b.commands)
+    if not commands:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            "NO_COMMANDS_RENDERED: the change produced nothing to send",))
+
+    return ChangePlan(
+        change_id=change_id,
+        request=request,
+        understood=(f"DHCP pool {zone} on {device_ref}: {subnet}, gateway "
+                    f"{gateway}, assignable {pool_range[0]}-{pool_range[1]}"),
+        device_ref=device_ref,
+        vendor_os=vendor_os,
+        commands=commands,
+        wrappers=rendered.wrappers,
+        persist=rendered.persist,
+        mode_exit=rendered.mode_exit,
+        # Read the config back rather than trusting the CLI's silence. The pool
+        # name AND the network must both be present: a pool that exists with
+        # the wrong network is a different failure and must not read as success.
+        verify_command="show running-config",
+        verify_expect=(f"pool {zone}", str(net.network_address)),
         preview=rendered.to_text(),
     )
 

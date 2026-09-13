@@ -75,6 +75,7 @@ class IntentVerb(str, Enum):
     SHOW_VERSION = "show_version"       # show version of a device
     SHOW_NEIGHBORS = "show_neighbors"   # show CDP/LLDP neighbors
     SHOW_VLANS = "show_vlans"           # show VLAN table
+    ADD_DHCP = "add_dhcp"               # add a DHCP pool for one zone
     SHOW_ROUTES = "show_routes"         # show routing table
     SHOW_INTERFACES = "show_interfaces" # show interface status
     SHOW_RUN = "show_run"               # show running-config
@@ -240,6 +241,13 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         # VLANs المطلوبة" is a request to create, and was answered with a table.
         "أنشئ vlans", "انشئ vlans", "أضف vlans", "اضف vlans",
         "إنشاء vlans", "create vlans",
+    )),
+    (IntentVerb.ADD_DHCP, (
+        # Longer and more specific than the SHOW_* nouns, and listed before
+        # them: "dhcp" alone would otherwise be claimed by whichever read-only
+        # pattern happened to contain it.
+        "أضف dhcp", "اضف dhcp", "أنشئ dhcp", "انشئ dhcp", "dhcp لل",
+        "add dhcp", "create dhcp", "dhcp pool", "enable dhcp",
     )),
     (IntentVerb.SHOW_VLANS, (
         "vlans", "الشبكات المحلية", "الفلانات", "vlan", "show vlan",
@@ -1351,6 +1359,9 @@ class ChatOperator:
         if verb is IntentVerb.CREATE_VLAN:
             return self._do_create_vlan(args, lang, message)
 
+        if verb is IntentVerb.ADD_DHCP:
+            return self._do_add_dhcp(args, lang, message)
+
         if verb is IntentVerb.CONFIRM_CHANGE:
             return self._do_confirm_change(lang)
 
@@ -1951,6 +1962,82 @@ class ChatOperator:
         if self._ctx.last_discovery is None:
             return None
         return self._pick_diagnostic_source()
+
+    def _do_add_dhcp(self, args: dict[str, str], lang: str,
+                     message: str) -> OperatorReply:
+        """Plan a DHCP pool for one zone, from the design that was applied.
+
+        The subnet and gateway are read out of ``last_design`` — the zones that
+        were actually allocated and configured — and never invented. A pool
+        built on a guessed subnet hands out addresses that are not on the wire:
+        the client gets a lease and then reaches nothing, which is a worse
+        failure than the refusal this returns when the design is not known.
+        """
+        device = self._target_device()
+        if device is None:
+            return self._reply(IntentVerb.ADD_DHCP, ReplyStatus.BLOCKED,
+                summary=("nothing discovered yet" if lang == "en"
+                         else "لم يُكتشف شيء بعد"),
+                detail=("A pool is created on the device that routes the zone, "
+                        "so the network has to be discovered first — run "
+                        "'discover'." if lang == "en" else
+                        "يُنشأ المجمع على الجهاز الذي يوجّه المنطقة، لذا يجب "
+                        "اكتشاف الشبكة أولاً — شغّل 'اكتشف'."))
+        design = self._ctx.last_design
+        zones = tuple(getattr(design, "zones", ()) or ())
+        if not zones:
+            return self._reply(IntentVerb.ADD_DHCP, ReplyStatus.BLOCKED,
+                summary=("no design in context" if lang == "en"
+                         else "لا يوجد تصميم في السياق"),
+                detail=("I will not invent a subnet for a DHCP pool — clients "
+                        "would be handed addresses that are not on the wire. "
+                        "Run the autopilot so zones are allocated, or give me "
+                        "the subnet and gateway explicitly." if lang == "en"
+                        else "لن أخترع شبكة لمجمع DHCP — فسيُمنح العملاء عناوين "
+                        "غير موجودة على السلك. شغّل الطيار الآلي لتُخصَّص "
+                        "المناطق، أو أعطني الشبكة والبوابة صراحةً."))
+
+        names = [z.zone for z in zones]
+        wanted, matched = _tchange.resolve_zone(message, names)
+        if len(matched) > 1:
+            return self._reply(IntentVerb.ADD_DHCP, ReplyStatus.BLOCKED,
+                summary=("ambiguous zone" if lang == "en" else "المنطقة غامضة"),
+                detail=(f"The request matches more than one zone "
+                        f"({', '.join(sorted(matched))}); a pool sent to the "
+                        f"wrong zone is a change nobody asked for. Name one."
+                        if lang == "en" else
+                        f"الطلب يطابق أكثر من منطقة ({', '.join(sorted(matched))})؛ "
+                        f"ومجمع يُرسل للمنطقة الخطأ تغيير لم يطلبه أحد. حدّد واحدة."))
+        if wanted is None:
+            return self._reply(IntentVerb.ADD_DHCP, ReplyStatus.NEEDS_INPUT,
+                summary=("which zone?" if lang == "en" else "أي منطقة؟"),
+                detail=("Zones in the current design: " + ", ".join(sorted(names))
+                        if lang == "en" else
+                        "المناطق في التصميم الحالي: " + ", ".join(sorted(names))))
+
+        zone = next(z for z in zones if z.zone == wanted)
+        target = zone.routed_on or device.device_ref
+        identity = getattr(device, "identity", None)
+        family = getattr(identity, "vendor_family", None) if identity else None
+        vendor_os = family.split("/")[-1] if family else "UNKNOWN"
+        try:
+            plan = _tchange.plan_add_dhcp(
+                change_id=new_id(), request=message, device_ref=target,
+                vendor_os=vendor_os, zone=zone.zone, subnet=zone.subnet,
+                gateway=zone.gateway, dns=args.get("dns", ""))
+        except Failure as exc:
+            return self._reply(IntentVerb.ADD_DHCP, ReplyStatus.BLOCKED,
+                summary=("cannot plan that change" if lang == "en"
+                         else "لا يمكن التخطيط لهذا التغيير"),
+                detail="; ".join(exc.causes))
+        self._ctx.pending_change = plan
+        return self._reply(
+            IntentVerb.ADD_DHCP, ReplyStatus.OK,
+            summary=plan.understood,
+            detail=(plan.preview + "\n\n" + (
+                "Nothing has been sent. Confirm to apply." if lang == "en"
+                else "لم يُرسل شيء. أكّد للتنفيذ.")),
+            data={"plan": plan.to_dict()})
 
     def _do_create_vlan(self, args: dict[str, str], lang: str,
                         message: str) -> OperatorReply:
