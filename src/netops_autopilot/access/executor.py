@@ -77,6 +77,7 @@ from .allowlist import (
     CommandAllowlist,
     CommandMatch,
 )
+from .rejection_markers import load_vocabulary
 
 
 class ExecSession(Protocol):
@@ -793,8 +794,12 @@ class ConfigExecutor:
 
         Returns ``(ok, causes)``. Two independent signals are required:
 
-        1. every command the device answered did not contain a Cisco-style
-           error marker (``% Invalid input``, ``% Incomplete command``);
+        1. every command the device answered is free of a refusal marker
+           for its vendor (``% Invalid input`` on IOS, ``bad command
+           name`` on RouterOS, ``Command fail`` on FortiOS, ...). A CLI
+           does not raise when it refuses a line, so the wording the
+           device prints is the only evidence that it said no; the
+           vocabulary is data in ``specs/data/device_errors/``;
         2. the running-config hash actually changed from the baseline.
 
         Signal 1 catches the common real-world failure where a device
@@ -803,13 +808,11 @@ class ConfigExecutor:
         rather than claiming verification we did not perform.
         """
         causes: list[str] = []
+        vocabulary = load_vocabulary()
         for line, result in zip(applied, [c for c in record.commands if c.phase == "APPLY"]):
-            body = result.response_bytes.decode("utf-8", "replace").lower()
-            for marker in ("% invalid input", "% incomplete command",
-                           "% ambiguous", "syntax error", "unknown command"):
-                if marker in body:
-                    causes.append(f"DEVICE_REJECTED_SYNTAX:{line.stripped}:{marker}")
-                    break
+            marker = vocabulary.matches(result.response_bytes)
+            if marker is not None:
+                causes.append(f"DEVICE_REJECTED_SYNTAX:{line.stripped}:{marker}")
         if causes:
             return (False, causes)
 

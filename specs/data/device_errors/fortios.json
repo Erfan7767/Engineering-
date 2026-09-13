@@ -1,0 +1,13 @@
+{
+  "$schema_ref": "device_errors-v1",
+  "vendor_os": "fortios",
+  "provenance": "FortiOS CLI wording from vendor documentation, not exercised against real hardware in this repository. Asymmetric risk: a marker that never matches costs only diagnosis detail (the state readback still fails the change), while a marker that over-matches costs a false rollback. This list is therefore deliberately narrow and carries no phrase that can appear in a successful response.",
+  "rejection_markers": [
+    "unknown command",
+    "command fail",
+    "missing required option",
+    "command parse error"
+  ],
+  "sample_rejection": "Unknown command 0",
+  "generic_note": "Applied to every vendor in addition to the entries below: a device that prints a syntax error or an unknown command is rejecting the line whatever its brand."
+}

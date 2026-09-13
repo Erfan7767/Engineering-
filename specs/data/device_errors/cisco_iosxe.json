@@ -1,0 +1,15 @@
+{
+  "$schema_ref": "device_errors-v1",
+  "vendor_os": "ios-xe",
+  "also_matches": [
+    "ios"
+  ],
+  "provenance": "Carried over verbatim from the executor's inline list, i.e. the three Cisco markers already in production use in this repository.",
+  "rejection_markers": [
+    "% invalid input",
+    "% incomplete command",
+    "% ambiguous"
+  ],
+  "sample_rejection": "sw01(config)#vlan abc\n                    ^\n% Invalid input detected at '^' marker.",
+  "generic_note": "Applied to every vendor in addition to the entries below: a device that prints a syntax error or an unknown command is rejecting the line whatever its brand."
+}
