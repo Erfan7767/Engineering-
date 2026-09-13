@@ -158,6 +158,11 @@ class ChangeRecord:
     #: rather than left for the operator to guess.
     state_checked: int = 0
     state_absent: int = 0
+    #: Set when the device was already in the requested state, so the change
+    #: was a no-op rather than a modification. Re-applying the same design is
+    #: legitimate; reporting it as a fresh change — or worse, as a failure —
+    #: is not.
+    already_applied: bool = False
     commit_id: Optional[str] = None
     failure_causes: list[str] = field(default_factory=list)
 
@@ -202,6 +207,7 @@ class ChangeRecord:
             "before_hash": self.before_hash,
             "after_hash": self.after_hash,
             "rollback_hash": self.rollback_hash,
+            "already_applied": self.already_applied,
             "state_checked": self.state_checked,
             "state_absent": self.state_absent,
             "commit_id": self.commit_id,
@@ -824,13 +830,32 @@ class ConfigExecutor:
 
         normalized = normalize_running_config(readback)
         record.after_hash = hashlib.sha256(normalized).hexdigest()[:16]
-        if record.before_hash is None:
-            causes.append("VERIFY_BASELINE_UNAVAILABLE: state change not confirmed")
-        elif record.after_hash == record.before_hash:
-            return (False, [f"VERIFY_NO_CHANGE: before==after ({record.after_hash})"])
 
         # Signal 3 (Phase W): the intended state actually exists on the device.
-        causes.extend(self._verify_state_present(normalized, applied, record))
+        # Computed BEFORE the hash verdict, because an unchanged hash has two
+        # opposite meanings and only this can tell them apart.
+        state_causes = self._verify_state_present(normalized, applied, record)
+
+        if record.before_hash is None:
+            causes.append("VERIFY_BASELINE_UNAVAILABLE: state change not confirmed")
+            causes.extend(state_causes)
+            return (not causes, causes)
+        if record.after_hash == record.before_hash:
+            if state_causes:
+                # Nothing changed and the requested state is not there: the
+                # device took the session and ignored the change.
+                return (False, [f"VERIFY_NO_CHANGE: before==after "
+                                f"({record.after_hash})"] + state_causes)
+            # Unchanged because the device was ALREADY in the requested state.
+            # Re-applying an idempotent change is a no-op. Treating it as a
+            # failure sent the rollback plan at a correctly configured device
+            # and then could not restore it — measured: applying the same two
+            # lines twice left the device with `vlan 10` deleted.
+            record.already_applied = True
+            return (True, [f"ALREADY_IN_DESIRED_STATE: every requested line was "
+                           f"already present; nothing was changed or rolled back "
+                           f"({record.after_hash})"])
+        causes.extend(state_causes)
         return (not causes, causes)
 
     def _verify_state_present(

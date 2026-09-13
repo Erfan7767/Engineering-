@@ -5799,9 +5799,16 @@ allow-transfer { any; };
         out = [f"  outcome: {report.execution.get('outcome')}"]
         records = report.execution.get("change_records", [])
         for r in records:
+            # A device that was already in the requested state took no change.
+            # Reporting it exactly like a modification hides the difference
+            # between "I configured this" and "this was already configured".
+            note = ""
+            if r.get("already_applied"):
+                note = (" — already in this state, nothing changed" if lang == "en"
+                        else " — كان في هذه الحالة أصلاً، لم يتغير شيء")
             out.append(
                 f"  • {r['device_ref']}: {r['outcome']} "
-                f"({r['applied_count']}/{r['command_count']} commands)"
+                f"({r['applied_count']}/{r['command_count']} commands){note}"
             )
         return "\n".join(out)
 
