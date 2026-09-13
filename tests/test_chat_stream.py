@@ -226,8 +226,16 @@ def test_real_apply_via_sse_executes_commands(client):
                 break
 
     assert final is not None
-    assert final["status"] == "OK", f"apply failed: {final}"
     assert final["intent"] == "apply_intent"
+    # The configuration really reached the devices; whether the network then
+    # does what was asked is the verification's answer, and the status must
+    # follow it. Asserting OK here used to report an applied network when the
+    # run's own verdict was INCOMPLETE-APPLIED (no dns-server is handed out).
+    assert final["data"]["applied_devices"], f"nothing was applied: {final}"
+    if final["data"]["final"] == "COMPLETE-APPLIED":
+        assert final["status"] == "OK", f"apply failed: {final}"
+    else:
+        assert final["status"] != "OK", f"claimed success: {final['summary']}"
     exec_data = final["data"]["execution"]
     # Real evidence: the engine actually pushed 5 commands to seed-01.
     assert exec_data["outcome"] in ("APPLIED", "STAGED"), \

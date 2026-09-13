@@ -897,8 +897,110 @@ def _network_type_vocabulary() -> tuple[str, ...]:
 
     Longest phrase first, so "small office" is matched before "office".
     """
-    phrases = set(ChatOperator.NETWORK_TYPES_EN) | set(ChatOperator.NETWORK_TYPES_AR)
+    from netops_autopilot.engines.blueprints import BLUEPRINTS
+    # Blueprint ids are phrases too: every action label the operator offers
+    # ("طبق guest_office") has to be understood by the same parser that
+    # emitted it. Without this, "guest_office" was read as the shorter
+    # phrase "office" inside it, the Arabic table had no "office", and the
+    # run died at INTENT_ELICITATION after the chat had offered the command.
+    phrases = (set(ChatOperator.NETWORK_TYPES_EN)
+               | set(ChatOperator.NETWORK_TYPES_AR)
+               | {b.blueprint_id for b in BLUEPRINTS})
     return tuple(sorted(phrases, key=lambda phrase: (-len(phrase), phrase)))
+
+
+#: Verbs that ask for a whole network to be *built*. Deliberately narrower
+#: than :data:`_WRITE_VERBS`: "أريد حالة الشبكة" (I want the network status)
+#: must stay a read. Every entry here changes the network, so a false
+#: positive is expensive and precision is worth more than coverage.
+_DESIGN_VERBS = frozenset({
+    "أنشئ", "انشئ", "أنشىء", "انشاء", "أنشأ", "انشا",
+    "أعد", "اعد", "ابن", "ابني", "أبن",
+    "صمم", "صمّم", "خطط", "خطّط", "جهز", "جهّز", "أقم", "اقم",
+    "create", "build", "design", "provision", "deploy",
+})
+
+#: Nouns that make the request about a network rather than about one object.
+_DESIGN_NOUNS = ("شبكة", "شبكه", "network", "site", "موقع")
+
+#: Zone words an operator uses, mapped to the zone names the blueprints
+#: actually declare (``engines.blueprints.BLUEPRINTS[*].zones``). This is a
+#: vocabulary over real data, not a list of invented zones: a word that
+#: matched nothing would silently promise a zone no blueprint can build.
+_ZONE_WORDS = {
+    "users": ("موظف", "موظفين", "الموظفين", "الموظف", "عامل", "عمال",
+              "staff", "employee", "employees", "مستخدم", "مستخدمين"),
+    "guest": ("ضيف", "ضيوف", "الضيوف", "زائر", "زوار", "ضيافة",
+              "guest", "guests", "visitor", "visitors"),
+    "servers": ("خادم", "خوادم", "الخوادم", "سيرفر", "سيرفرات",
+                "server", "servers", "dmz"),
+    "app": ("تطبيق", "تطبيقات", "application", "applications", "app"),
+    "voice": ("صوت", "صوتيات", "هاتف", "هواتف", "voice", "voip", "telephony"),
+}
+
+
+def _matches_word(needle: str, haystack: str) -> bool:
+    """Word-boundary match for Latin, substring for Arabic.
+
+    Arabic has no word boundaries and attaches its prefixes to the noun, so
+    ``شبكة`` must also be found inside ``الشبكة``.
+    """
+    if not needle:
+        return False
+    if re.search(r"[a-z]", needle):
+        return re.search(r"(?:^|\b)" + re.escape(needle) + r"\b", haystack) is not None
+    return needle in haystack
+
+
+def is_design_request(text: str) -> bool:
+    """True when the message asks for a whole network to be designed.
+
+    ``أنشئ شبكة موظفين وضيوف`` carries its requirement in zone words, not in a
+    blueprint name, so no intent pattern names it. Classifying it as UNKNOWN
+    refused an answerable question; the operator can read the zones and offer
+    the blueprints that contain them.
+    """
+    norm = _normalize(text)
+    if not any(_matches_word(noun, norm) for noun in _DESIGN_NOUNS):
+        return False
+    return any(_matches_word(verb, norm) for verb in _DESIGN_VERBS)
+
+
+def blueprint_ids() -> tuple[str, ...]:
+    """Every blueprint the engine can actually elicit."""
+    from netops_autopilot.engines.blueprints import BLUEPRINTS
+    return tuple(b.blueprint_id for b in BLUEPRINTS)
+
+
+def named_zones(text: str) -> tuple[str, ...]:
+    """The blueprint zone names the operator's words refer to.
+
+    Sorted so the result is deterministic regardless of sentence order.
+    """
+    norm = _normalize(text)
+    found = {
+        zone
+        for zone, words in _ZONE_WORDS.items()
+        if any(_matches_word(word, norm) for word in words)
+    }
+    return tuple(sorted(found))
+
+
+def candidate_blueprints(zones: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Every blueprint that can actually build all of ``zones``.
+
+    Derived from ``BLUEPRINTS`` at call time. With no zones named every
+    blueprint is a candidate; the answer is then "which one do you want"
+    rather than a default picked for the operator.
+    """
+    from netops_autopilot.engines.blueprints import BLUEPRINTS
+    wanted = set(zones)
+    if not wanted:
+        return tuple(b.blueprint_id for b in BLUEPRINTS)
+    return tuple(
+        b.blueprint_id for b in BLUEPRINTS
+        if wanted <= {z.name for z in b.zones}
+    )
 
 
 #: Imperative verbs that ask for a CHANGE to the network. ``_normalize`` strips
@@ -1123,6 +1225,18 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
     if candidates:
         candidates.sort(key=lambda x: -x[0])  # longest first
     chosen = candidates[0][1] if candidates else IntentVerb.UNKNOWN
+
+    # A request to build a whole network is a design request even when no
+    # pattern names a blueprint. Checked before the write guards so that
+    # "أنشئ شبكة" is answered with a question about which network is wanted,
+    # instead of being refused for lack of a recognisable target.
+    if is_design_request(text):
+        args = dict(args)
+        args["design_request"] = {
+            "network_type": args.get("network_type"),
+            "zones": named_zones(text),
+        }
+        return (IntentVerb.DESIGN, args)
 
     # A message that asks for a CHANGE must never classify as a read. Falling
     # through to a device listing or a VLAN table looks like an answer, so the
@@ -1438,6 +1552,8 @@ class ChatOperator:
             return self._do_show_routes(args.get("device"), lang)
 
         if verb is IntentVerb.DESIGN or verb is IntentVerb.STAGE:
+            if "design_request" in args:
+                return self._do_design_request(args["design_request"], lang)
             return self._do_design(args.get("network_type"), lang, apply=False)
 
         if verb is IntentVerb.APPLY_INTENT:
@@ -2568,20 +2684,89 @@ class ChatOperator:
 
     # -- design / apply ----------------------------------------------------
 
+    def _do_design_request(self, request: dict, lang: str) -> OperatorReply:
+        """Answer "build me a network" with a design, or with the one question
+        that is missing.
+
+        When the operator named a network type the existing design path builds
+        from THAT type. When they described the network in zone words instead —
+        "شبكة موظفين وضيوف" — the blueprints that contain those zones are
+        offered and the operator chooses. Nothing is executed here: a design
+        request is never an authorisation to change the network.
+        """
+        net_type = request.get("network_type")
+        if net_type:
+            return self._do_design(net_type, lang, apply=False)
+
+        zones = tuple(request.get("zones") or ())
+        candidates = candidate_blueprints(zones)
+        if zones:
+            if lang == "en":
+                head = (f"You asked for a network with: {', '.join(zones)}. "
+                        f"{len(candidates)} design(s) contain all of them:")
+            else:
+                head = (f"قرأت من طلبك المناطق: {', '.join(zones)}. "
+                        f"{len(candidates)} تصميم يحتويها كلها:")
+        else:
+            if lang == "en":
+                head = (f"No network type was named. "
+                        f"{len(candidates)} designs are available:")
+            else:
+                head = (f"لم يُذكر نوع الشبكة. "
+                        f"{len(candidates)} تصميم متاح:")
+        lines = [head]
+        for blueprint_id in candidates:
+            label = (f"apply {blueprint_id}" if lang == "en"
+                     else f"طبق {blueprint_id}")
+            lines.append(f"  → {label}")
+        if lang == "en":
+            lines.append("Name one and it will be designed, shown, and applied "
+                         "only after you confirm.")
+        else:
+            lines.append("اختر واحداً؛ سيُصمَّم ويُعرض، ولا يُنفَّذ إلا بعد تأكيدك.")
+        return self._reply(
+            IntentVerb.DESIGN, ReplyStatus.NEEDS_INPUT,
+            summary=(f"which network? {len(candidates)} design(s) match"
+                     if lang == "en" else f"أي شبكة؟ {len(candidates)} تصميم مطابق"),
+            detail="\n".join(lines),
+            data={"zones": list(zones), "candidates": list(candidates)},
+            actions=[{"verb": IntentVerb.APPLY_INTENT.value,
+                      "label": f"apply {c}" if lang == "en" else f"طبق {c}"}
+                     for c in candidates],
+        )
+
     def _do_design(self, net_type: Optional[str], lang: str,
                    apply: bool) -> OperatorReply:
+        # Normalize and validate the network type first: an unrecognised type
+        # is unrecognised whether or not discovery has run, and saying so
+        # immediately beats saying it after a full crawl of the network.
+        if net_type:
+            table = self.NETWORK_TYPES_AR if lang == "ar" else self.NETWORK_TYPES_EN
+            net_type = table.get(net_type, net_type)
+            if net_type not in blueprint_ids():
+                # Stop here rather than letting the engine answer a question
+                # nobody asked. Passing an unrecognised type through used to
+                # surface much later as INTENT_UNKNOWN, after a full run.
+                known = blueprint_ids()
+                return self._reply(
+                    IntentVerb.DESIGN, ReplyStatus.NEEDS_INPUT,
+                    summary=(f"no blueprint named {net_type!r}" if lang == "en"
+                             else f"لا مخطط بالاسم {net_type!r}"),
+                    detail="\n".join(
+                        [("Pick one:" if lang == "en" else "اختر واحداً:")]
+                        + [f"  → {('apply ' if lang == 'en' else 'طبق ')}{b}"
+                           for b in known]),
+                    data={"requested": net_type, "candidates": list(known)},
+                    actions=[{"verb": IntentVerb.APPLY_INTENT.value,
+                              "label": f"apply {b}" if lang == "en" else f"طبق {b}"}
+                             for b in known],
+                )
         if self._ctx.last_run is None:
             return self._reply(IntentVerb.DESIGN, ReplyStatus.NEEDS_INPUT,
                 summary=("Run 'discover' first." if lang == "en"
                          else "شغّل الاكتشاف أولاً."),
                 actions=[{"verb": IntentVerb.DISCOVER.value,
                            "label": "discover" if lang == "en" else "اكتشف"}])
-        # Normalize network type.
-        if net_type:
-            if lang == "ar":
-                net_type = self.NETWORK_TYPES_AR.get(net_type, net_type)
-            else:
-                net_type = self.NETWORK_TYPES_EN.get(net_type, net_type)
         if net_type and self._runner is not None:
             # The operator named a network type, so the design must be built
             # from THAT. Reusing the discover-time design silently answered a
@@ -2608,14 +2793,7 @@ class ChatOperator:
                     execute=True, intent=net_type or self._requested_intent,
                     apply_bond=True)
                 self._ctx.last_run = report
-                verdict = report.execution.get("outcome", "UNKNOWN") if report.execution else "UNKNOWN"
-                return self._reply(
-                    IntentVerb.APPLY_INTENT, ReplyStatus.OK,
-                    summary=(f"applied — {verdict}" if lang == "en"
-                             else f"تم التطبيق — {verdict}"),
-                    detail=self._render_apply_report(lang, report),
-                    data={"execution": report.execution, "final": report.final},
-                )
+                return self._apply_verdict_reply(report, lang)
             except Failure as exc:
                 return self._reply(IntentVerb.APPLY_INTENT, ReplyStatus.BLOCKED,
                     summary=("apply failed" if lang == "en" else "فشل التطبيق"),
@@ -2628,6 +2806,82 @@ class ChatOperator:
             actions=[{"verb": IntentVerb.APPLY_INTENT.value,
                        "label": "apply" if lang == "en" else "طبق"}],
         )
+
+    def _apply_verdict_reply(self, report, lang: str) -> OperatorReply:
+        """Report what the run actually did, read from the run itself.
+
+        The chat used to answer ``OK — applied`` from ``execution["outcome"]``
+        alone. A run that stopped at INTENT_ELICITATION still carried an
+        execution dict, so the operator was told the network was configured
+        when nothing had been sent. ``report.final`` is the engine's own
+        verdict and it is what this reads now.
+
+        ``INCOMPLETE-APPLIED`` is its own state and must not be flattened into
+        either neighbour: the orchestrator sets it when the configuration
+        landed on every device but verification did not pass, i.e. the config
+        is on the wire and the requirement is not confirmed met. Reporting
+        that as "not applied" is as wrong as reporting it as "applied".
+        """
+        final = getattr(report, "final", "") or "UNKNOWN"
+        execution = getattr(report, "execution", None) or {}
+        verdict = execution.get("outcome") or "UNKNOWN"
+        records = execution.get("change_records") or []
+        applied = [r for r in records if r.get("outcome") == "APPLIED"]
+        verification = getattr(report, "verification", None) or {}
+        detail = self._render_apply_report(lang, report)
+        if verification:
+            detail = "\n".join((
+                detail,
+                # ``passed``/``failed`` are tuples of test ids, not counts.
+                (f"verify: {len(verification.get('passed') or ())}"
+                 f"/{verification.get('tests_total')} passed, "
+                 f"{len(verification.get('failed') or ())} failed, "
+                 f"{len(verification.get('unrun') or {})} unrun "
+                 f"(verdict {verification.get('verdict')})") if lang == "en"
+                else (f"التحقق: {len(verification.get('passed') or ())}"
+                      f"/{verification.get('tests_total')} ناجح، "
+                      f"{len(verification.get('failed') or ())} فاشل، "
+                      f"{len(verification.get('unrun') or {})} لم يُشغَّل "
+                      f"(الحكم {verification.get('verdict')})"),
+            ))
+        data = {"execution": execution, "final": final, "verdict": verdict,
+                "applied_devices": [r.get("device_ref") for r in applied],
+                "verification": verification}
+
+        if final == "COMPLETE-APPLIED":
+            return self._reply(
+                IntentVerb.APPLY_INTENT, ReplyStatus.OK,
+                summary=(f"applied and verified on {len(applied)} device(s)"
+                         if lang == "en"
+                         else f"تم التطبيق والتحقق على {len(applied)} جهاز"),
+                detail=detail, data=data)
+        if final.startswith("BLOCKED"):
+            return self._reply(
+                IntentVerb.APPLY_INTENT, ReplyStatus.BLOCKED,
+                summary=(f"stopped — {final} ({verdict})" if lang == "en"
+                         else f"توقف — {final} ({verdict})"),
+                detail=detail, data=data)
+        if final == "INCOMPLETE-APPLIED" and verdict == "APPLIED":
+            return self._reply(
+                IntentVerb.APPLY_INTENT, ReplyStatus.FAILURE,
+                summary=(f"config applied to {len(applied)} device(s) but "
+                         f"verification did not pass — the requirement is not "
+                         f"confirmed met" if lang == "en"
+                         else f"وصل الإعداد إلى {len(applied)} جهاز لكن التحقق "
+                              f"لم ينجح — لم يُؤكَّد تحقق المطلوب"),
+                detail=detail, data=data)
+        if final == "COMPLETE-STAGED":
+            return self._reply(
+                IntentVerb.APPLY_INTENT, ReplyStatus.INFO,
+                summary=("staged only — nothing was sent to the devices"
+                         if lang == "en"
+                         else "جاهز فقط — لم يُرسل شيء إلى الأجهزة"),
+                detail=detail, data=data)
+        return self._reply(
+            IntentVerb.APPLY_INTENT, ReplyStatus.FAILURE,
+            summary=(f"not applied — {final} / {verdict}" if lang == "en"
+                     else f"لم يُطبَّق — {final} / {verdict}"),
+            detail=detail, data=data)
 
     def _do_rollback(self, lang: str) -> OperatorReply:
         # 1) If the chat's last run has a real execution with rollback

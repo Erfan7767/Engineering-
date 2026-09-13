@@ -388,9 +388,14 @@ def test_handle_apply_runs_executor():
     op.handle("discover")
     r = op.handle("apply branch")
     assert r.intent is IntentVerb.APPLY_INTENT
-    # Either APPLIED (the stub doesn't fail) or PARTIAL — but never
-    # the old STAGED_BLOCKED_BY_LAW.
-    assert r.status in (ReplyStatus.OK, ReplyStatus.BLOCKED)
+    # The status is derived from the run's own verdict, so a run that staged
+    # without sending anything cannot read as an applied change. This used to
+    # assert OK-or-BLOCKED unconditionally, which was the false success.
+    assert r.data["final"] == op._ctx.last_run.final
+    if r.data["final"] == "COMPLETE-APPLIED":
+        assert r.status is ReplyStatus.OK
+    else:
+        assert r.status is not ReplyStatus.OK
 
 
 def test_handle_apply_arabic():
