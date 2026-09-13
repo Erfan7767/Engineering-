@@ -7,9 +7,9 @@ import pytest
 from netops_autopilot.access.telnet_transport import (
     TelnetConsoleTransport,
     TelnetProfile,
-    FakeTelnetChannel,
-    fake_telnet_factory,
 )
+
+from tests.support.test_doubles import FakeTelnetChannel, fake_telnet_factory
 from netops_autopilot.core.failures import Failure, FailureClass
 
 

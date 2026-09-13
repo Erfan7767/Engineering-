@@ -7,7 +7,6 @@ import json
 import pytest
 
 from netops_autopilot.llm.providers import (
-    EchoProvider,
     LLMRequest,
     LLMResponse,
     LLMUsage,
@@ -18,6 +17,8 @@ from netops_autopilot.llm.providers import (
     redact,
     redact_dict,
 )
+
+from tests.support.test_doubles import EchoProvider
 from netops_autopilot.core.failures import Failure, FailureClass
 
 
@@ -226,8 +227,20 @@ def test_build_provider_empty_is_null():
     assert isinstance(build_provider(""), NullProvider)
 
 
-def test_build_provider_echo():
-    assert isinstance(build_provider("echo"), EchoProvider)
+def test_build_provider_refuses_the_echo_double():
+    """A provider that fabricates an answer must not be selectable.
+
+    ``echo`` used to be a documented setting. It answered every request with a
+    synthetic schema-compliant payload and invented token counts, so a
+    deployment configured with it produced results indistinguishable from a
+    model's — the one thing this platform must never do. The double still
+    exists for tests; it just is not reachable from configuration.
+    """
+    with pytest.raises(ValueError) as exc:
+        build_provider("echo")
+    assert "LLM_PROVIDER_UNKNOWN" in str(exc.value)
+    assert "echo" not in str(exc.value).split("allowed:")[-1], (
+        "the refusal must not advertise a provider it will not build")
 
 
 def test_build_provider_ollama():

@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from netops_autopilot.access.ssh_transport import (
-    SSHConsoleTransport,
-    SSHProfile,
-    FakeSSHChannel,
-    fake_ssh_factory,
-)
+from netops_autopilot.access.ssh_transport import SSHConsoleTransport, SSHProfile
+
+from tests.support.test_doubles import FakeSSHChannel, fake_ssh_factory
 from netops_autopilot.core.failures import Failure, FailureClass
 
 

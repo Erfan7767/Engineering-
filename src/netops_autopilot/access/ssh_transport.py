@@ -196,45 +196,5 @@ class SSHConsoleTransport:
         self.close()
 
 
-# ----------------- in-process mock for tests -----------------
 
 
-@dataclass
-class FakeSSHChannel:
-    """A fully-deterministic in-memory Netmiko replacement for tests."""
-
-    responses: dict[str, str] = field(default_factory=dict)
-    default_response: str = "device# "
-    opened: bool = False
-    closed: bool = False
-    sent: list[str] = field(default_factory=list)
-    connect_fail: Optional[Exception] = None
-    command_fail: Optional[Exception] = None
-    prompt: str = "device# "
-
-    def send_command(self, command: str, read_timeout: float = 30.0) -> str:
-        self.sent.append(command)
-        if self.command_fail is not None:
-            raise self.command_fail
-        return self.responses.get(command, self.default_response)
-
-    def find_prompt(self) -> str:
-        return self.prompt
-
-    def disconnect(self) -> None:
-        self.closed = True
-
-
-def fake_ssh_factory(channel: FakeSSHChannel) -> SSHDriverFactory:
-    """Return a driver factory that always yields the given channel."""
-
-    def _factory(
-        host: str, port: int, username: str, password: str,
-        device_type: str, timeout: float,
-    ) -> SSHChannelLike:
-        if channel.connect_fail is not None:
-            raise channel.connect_fail
-        channel.opened = True
-        return channel
-
-    return _factory

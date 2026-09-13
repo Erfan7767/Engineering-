@@ -167,47 +167,5 @@ class TelnetConsoleTransport:
         self.close()
 
 
-# ----------------- in-process mock for tests -----------------
 
 
-@dataclass
-class FakeTelnetChannel:
-    """A fully-deterministic in-memory telnet replacement for tests."""
-
-    responses: list[bytes] = None  # type: ignore[assignment]
-    opened: bool = False
-    closed: bool = False
-    written: list[bytes] = None  # type: ignore[assignment]
-    connect_fail: Optional[Exception] = None
-    login_prompt_response: bytes = b"login: "
-    password_prompt_response: bytes = b"Password: "
-
-    def __post_init__(self) -> None:
-        if self.responses is None:
-            self.responses = []
-        if self.written is None:
-            self.written = []
-
-    def read_until(self, match: bytes | str, timeout: float | None = None) -> bytes:
-        if isinstance(match, bytes) and match == b"login:":
-            return self.login_prompt_response
-        if isinstance(match, bytes) and match == b"Password:":
-            return self.password_prompt_response
-        if self.responses:
-            return self.responses.pop(0)
-        return b""
-
-    def write(self, data: bytes) -> None:
-        self.written.append(data)
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def fake_telnet_factory(channel: FakeTelnetChannel) -> TelnetDriverFactory:
-    def _factory(host: str, port: int, timeout: float) -> TelnetChannelLike:
-        if channel.connect_fail is not None:
-            raise channel.connect_fail
-        channel.opened = True
-        return channel
-    return _factory

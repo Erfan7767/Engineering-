@@ -166,64 +166,6 @@ class NullProvider:
         )
 
 
-class EchoProvider:
-    """A deterministic test provider that echoes the user prompt.
-
-    Useful for unit tests and CI: it never hits a network and never
-    blocks. The orchestrator can wire it in to verify schema validation
-    paths without spending tokens.
-    """
-
-    name = "echo"
-
-    def is_available(self) -> bool:
-        return True
-
-    def complete(self, request: LLMRequest) -> LLMResponse:
-        started = time.monotonic()
-        # Deterministic, no randomness.
-        text = f"[ECHO] system={len(request.system)}c user={len(request.user)}c"
-        structured: Optional[dict[str, Any]] = None
-        if request.response_schema:
-            # Build a minimal compliant payload from the schema's
-            # `properties` (best-effort, used only in tests).
-            structured = _synthetic_payload(request.response_schema, request.user)
-        prompt_tokens = (len(request.system) + len(request.user)) // 4
-        completion_tokens = 10
-        return LLMResponse(
-            text=text,
-            structured=structured,
-            usage=LLMUsage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
-            ),
-            duration_s=time.monotonic() - started,
-            model="echo",
-        )
-
-
-def _synthetic_payload(schema: dict[str, Any], user: str) -> dict[str, Any]:
-    """Build a minimal JSON object conforming to a JSON-Schema (best-effort)."""
-    out: dict[str, Any] = {}
-    properties = schema.get("properties", {})
-    for key, spec in properties.items():
-        kind = (spec or {}).get("type")
-        if kind == "string":
-            out[key] = ""
-        elif kind == "integer":
-            out[key] = 0
-        elif kind == "boolean":
-            out[key] = False
-        elif kind == "array":
-            out[key] = []
-        elif kind == "object":
-            out[key] = _synthetic_payload(spec, user)
-        else:
-            out[key] = None
-    # Stash the user prompt for tests that want to inspect it.
-    out.setdefault("_echo", user[:120])
-    return out
 
 
 class OllamaProvider:
@@ -331,10 +273,12 @@ def build_provider(name: str, **kwargs: Any) -> LLMProvider:
     name = (name or "").strip().lower()
     if name in ("", "null", "none"):
         return NullProvider()
-    if name == "echo":
-        return EchoProvider()
     if name == "ollama":
         return OllamaProvider(**kwargs)
     # Lazy import for cloud providers; the user opted in by setting the
     # name. We refuse by default (L11 — no implicit egress).
-    raise ValueError(f"LLM_PROVIDER_UNKNOWN:{name!r} (allowed: null, echo, ollama)")
+    # No test double is selectable here. A provider that fabricates an answer
+    # is worse than no provider: NullProvider raises BLOCKED and says why,
+    # while a synthetic completion passes schema validation and enters the
+    # evidence pipeline as though a model had produced it.
+    raise ValueError(f"LLM_PROVIDER_UNKNOWN:{name!r} (allowed: null, ollama)")
