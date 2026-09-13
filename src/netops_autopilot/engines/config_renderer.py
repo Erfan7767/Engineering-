@@ -116,6 +116,14 @@ def render_ir(device_ref: str, ir: ConfigIR) -> RenderedConfig:
         params = {k: v for k, v in node.parameters.items() if k != "reason"}
         if "allowed_vlans" in params and params["allowed_vlans"] is not None:
             params["allowed_vlans_csv"] = ",".join(str(v) for v in params["allowed_vlans"])
+        # The design engine normalises resolvers to a SPACE-separated list
+        # because that is what IOS `dns-server` demands. RouterOS and friends
+        # separate list values with commas, and a space there would make the
+        # device read the second resolver as an unrelated token. Same
+        # resolvers, second notation — the same treatment allowed_vlans_csv
+        # already gets, and lossless because the engine split on whitespace.
+        if params.get("dns"):
+            params["dns_csv"] = ",".join(str(params["dns"]).split())
         try:
             commands = _render_commands(template.get("commands", ()), params)
             prelude: tuple[str, ...] = ()
@@ -129,7 +137,12 @@ def render_ir(device_ref: str, ir: ConfigIR) -> RenderedConfig:
                                         reason=f"template parameter unbound: {exc} (T2)"))
             continue
         blocks.append(RenderedBlock(node_id=node.node_id, status="RENDERED",
-                                    commands=prelude + commands))
+                                commands=prelude + commands,
+                                # A feature whose template is deliberately empty
+                                # is not a silent no-op: the data file states why
+                                # the platform emits nothing for it, and that
+                                # reason travels with the block.
+                                reason=str(template.get("note", ""))))
     wrappers = (tuple(wrappers_data.get("enter_config", ())),
                 tuple(wrappers_data.get("exit_config", ())))
     verified = bool(data.get("verified", False))

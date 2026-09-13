@@ -2,7 +2,7 @@
   "vendor_os": "routeros",
   "verified": false,
   "verified_at": null,
-  "note": "Downgraded to verified=false: no RouterOS configuration fixture exists in this repository (tests/fixtures/golden/routeros holds only `system resource print` and `ip neighbor print`), and three of the six features were emitting commands the allowlist refused — `/interface/bridge/vlan/add` (trunk and access) and `/interface/set ... comment=`, none of which were registered. Those templates are now registered with inverses, but they have never been run against a device here. RouterOS writes to disk as it goes and Safe Mode rolls back on disconnect, so there is no separate persist step. Re-verify on hardware before trusting this renderer (L01, T2).",
+  "note": "Downgraded to verified=false: no RouterOS configuration fixture exists in this repository (tests/fixtures/golden/routeros holds only `system resource print` and `ip neighbor print`), and three of the six features were emitting commands the allowlist refused \u2014 `/interface/bridge/vlan/add` (trunk and access) and `/interface/set ... comment=`, none of which were registered. Those templates are now registered with inverses, but they have never been run against a device here. RouterOS writes to disk as it goes and Safe Mode rolls back on disconnect, so there is no separate persist step. Re-verify on hardware before trusting this renderer (L01, T2). 2026-09: dhcp, wan_dhcp and acl_deny templates were added from the RouterOS command shapes already registered in the allowlist; acl_permit and acl_apply are deliberately empty and say why. Still never run against a device here (L01, T2).",
   "wrappers": {
     "enter_config": [],
     "exit_config": [],
@@ -38,6 +38,32 @@
       "commands": [
         "/interface/set {interface} comment={description}"
       ]
+    },
+    "dhcp": {
+      "commands": [
+        "/ip/pool/add name={pool} ranges={pool_first}-{pool_last}",
+        "/ip/dhcp-server/add name={pool} interface={interface} address-pool={pool}",
+        "/ip/dhcp-server/network/add address={network}/{prefix} gateway={gateway}",
+        "? /ip/dhcp-server/network/set [find address={network}/{prefix}] dns-server={dns_csv}"
+      ]
+    },
+    "wan_dhcp": {
+      "commands": [
+        "/ip/dhcp-client/add interface={interface}"
+      ]
+    },
+    "acl_deny": {
+      "commands": [
+        "/ip/firewall/filter/add chain=forward src-address={src_net}/{src_prefix} dst-address={dst_net}/{dst_prefix} action=drop"
+      ]
+    },
+    "acl_permit": {
+      "commands": [],
+      "note": "RouterOS's default forward policy is accept, so a zone stays reachable without an explicit permit rule; adding one would only shadow that default. The deny rules are what change behaviour, and they are ordered first because RouterOS evaluates the forward chain in rule order."
+    },
+    "acl_apply": {
+      "commands": [],
+      "note": "RouterOS filter rules take effect globally on the forward chain as soon as they are added; there is no per-interface apply step like IOS `ip access-group`. The rule added by acl_deny is already in force, so there is nothing further to emit."
     }
   }
 }

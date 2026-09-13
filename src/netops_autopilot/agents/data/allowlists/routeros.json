@@ -196,6 +196,36 @@
           ],
           "rollback": "/interface/set <intf> comment=\"\"",
           "scope": "interface"
+        },
+        {
+          "template": "/ip/pool/add name=<name> ranges=<range>",
+          "purpose": "define the assignable address window a DHCP pool hands out",
+          "rollback": "/ip/pool/remove [find name=<name>]",
+          "scope": "dhcp"
+        },
+        {
+          "template": "/ip/dhcp-server/add name=<name> interface=<intf> address-pool=<pool>",
+          "purpose": "serve addresses from that pool on one interface",
+          "rollback": "/ip/dhcp-server/remove [find name=<name>]",
+          "scope": "dhcp"
+        },
+        {
+          "template": "/ip/dhcp-server/network/add address=<net>/<prefix> gateway=<gw>",
+          "purpose": "bind the served network to its gateway",
+          "rollback": "/ip/dhcp-server/network/remove [find address=<net>/<prefix>]",
+          "scope": "dhcp"
+        },
+        {
+          "template": "/ip/dhcp-server/network/set [find address=<net>/<prefix>] dns-server=<servers>",
+          "purpose": "hand out resolvers with the lease",
+          "rollback": "/ip/dhcp-server/network/set [find address=<net>/<prefix>] dns-server=\"\"",
+          "scope": "dhcp"
+        },
+        {
+          "template": "/ip/dhcp-client/add interface=<intf>",
+          "purpose": "take an address and default route from the upstream provider on one interface",
+          "rollback": "/ip/dhcp-client/remove [find interface=<intf>]",
+          "scope": "wan"
         }
       ]
     },
@@ -230,6 +260,12 @@
           ],
           "rollback": "/ip/firewall/filter/remove [find src-address=<net>]",
           "scope": "firewall"
+        },
+        {
+          "template": "/ip/firewall/filter/add chain=forward src-address=<net>/<prefix> dst-address=<net>/<prefix> action=drop",
+          "purpose": "block one zone from reaching another; takes effect immediately and in rule order, so it is high risk even though it is cleanly removable",
+          "rollback": "/ip/firewall/filter/remove [find src-address=<net>/<prefix> dst-address=<net>/<prefix>]",
+          "scope": "policy"
         }
       ]
     },

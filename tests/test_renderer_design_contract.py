@@ -46,7 +46,7 @@ NOT_MODELED_FEATURES = {
     "ios-xe": frozenset(),
     "arubaos": frozenset({"dhcp", "wan_dhcp", "acl_deny", "acl_permit", "acl_apply"}),
     "junos": frozenset({"dhcp", "wan_dhcp", "acl_deny", "acl_permit", "acl_apply"}),
-    "routeros": frozenset({"dhcp", "wan_dhcp", "acl_deny", "acl_permit", "acl_apply"}),
+    "routeros": frozenset(),
     "fortios": frozenset({"trunk", "access", "dhcp", "wan_dhcp",
                           "acl_deny", "acl_permit", "acl_apply"}),
 }
@@ -149,3 +149,38 @@ def test_a_vendor_with_a_gap_says_so_instead_of_guessing(matrix):
             assert block.status == "NOT_MODELED"
             assert feature in block.reason and os_name in block.reason, block.reason
             assert not block.commands
+
+
+def test_resolver_lists_use_the_notation_each_vendor_demands():
+    """IOS separates ``dns-server`` values with spaces; RouterOS separates list
+    values with commas. The design engine normalises resolvers to the IOS form,
+    so a comma vendor must not inherit it verbatim — a space there makes the
+    device read the second resolver as an unrelated token.
+
+    This was a live defect: the first RouterOS DHCP template used ``{dns}`` and
+    rendered ``dns-server=1.1.1.1 9.9.9.9``, which RouterOS would not have
+    accepted as two resolvers.
+    """
+    from netops_autopilot.engines.config_ir import (ConfigIR, IRNode, Operation,
+                                                    Reversibility)
+
+    params = {"pool": "users", "interface": "users", "network": "10.240.0.0",
+              "netmask": "255.255.255.128", "prefix": "25",
+              "gateway": "10.240.0.1", "exclude_first": "10.240.0.1",
+              "exclude_last": "10.240.0.10", "pool_first": "10.240.0.11",
+              "pool_last": "10.240.0.126", "dns": "1.1.1.1 9.9.9.9"}
+
+    def dhcp_line(os_name):
+        rc = render_ir("probe", ConfigIR("t", (IRNode(
+            "dhcp-users", "probe", Operation.CREATE, "dhcp", os_name, dict(params),
+            Reversibility.REVERSIBLE_BY_REPLACE, (), ()),)))
+        assert rc.blocks[0].status == "RENDERED", rc.blocks[0].reason
+        hits = [c.strip() for c in rc.blocks[0].commands if "dns" in c.lower()]
+        assert len(hits) == 1, rc.blocks[0].commands
+        return hits[0]
+
+    ios = dhcp_line("ios-xe")
+    assert "dns-server 1.1.1.1 9.9.9.9" in ios, ios      # space-separated
+    ros = dhcp_line("routeros")
+    assert "dns-server=1.1.1.1,9.9.9.9" in ros, ros      # comma-separated
+    assert " " not in ros.split("dns-server=")[1], ros   # no stray second token

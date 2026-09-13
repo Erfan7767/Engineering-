@@ -62,6 +62,7 @@ SAMPLES = {
     "netmask": "255.255.255.128",
     "gateway": "10.240.0.1",
     "dns": "1.1.1.1",
+    "dns_csv": "1.1.1.1,9.9.9.9",
     "domain": "corp.example",
     "unit": "10",
     "intf": "port1",
@@ -80,6 +81,14 @@ SAMPLES = {
     "src_wc": "0.0.0.127",
     "dst_net": "10.240.0.192",
     "dst_wc": "0.0.0.15",
+    # Same two networks in the second notation the CIDR-only vendors need:
+    # 0.0.0.127 is a /25 and 0.0.0.15 is a /28.
+    "src_prefix": "25",
+    "dst_prefix": "28",
+    # The assignable window for 10.240.0.0/25 once .1-.10 are reserved, which is
+    # exactly what _dhcp_pool_range derives for the IOS exclusion above.
+    "pool_first": "10.240.0.11",
+    "pool_last": "10.240.0.126",
 }
 
 

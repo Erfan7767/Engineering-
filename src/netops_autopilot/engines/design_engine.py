@@ -493,6 +493,8 @@ class DesignEngine:
                     operation=Operation.CREATE, feature="wan_dhcp", vendor_os=os_name,
                     parameters={
                         "vlan_id": zone.vlan_id, "zone": zone.zone,
+                        # The interface that takes the provider's lease.
+                        "interface": zone.zone,
                         "reason": (f"WAN handoff declared DHCP "
                                    f"({answers.get('wan_handoff')!r}): the provider assigns "
                                    f"the address and installs the default route, so no static "
@@ -551,6 +553,14 @@ class DesignEngine:
                 if mask and exclusion:
                     dhcp_params = {
                         "pool": zone.zone,
+                        # The interface the pool serves. Same name the vlan and
+                        # svi nodes used, so a vendor whose DHCP server binds to
+                        # an interface (RouterOS, FortiOS, Junos) names the one
+                        # that actually exists instead of guessing.
+                        "interface": zone.zone,
+                        # CIDR form, for vendors whose DHCP syntax takes a prefix
+                        # length rather than a dotted mask.
+                        "prefix": prefix,
                         "network": str(ipaddress.ip_network(zone.subnet, strict=False).network_address),
                         "netmask": mask,
                         "gateway": zone.gateway,
@@ -559,6 +569,14 @@ class DesignEngine:
                         "reason": (f"pool for zone {zone.zone}; first {DHCP_RESERVED_HOSTS} usable "
                                    f"addresses reserved for gateway/infrastructure"),
                     }
+                    pool_range = _dhcp_pool_range(zone.subnet, exclusion[1])
+                    if pool_range:
+                        # RouterOS declares a pool as an explicit assignable
+                        # window rather than a network plus an exclusion, so the
+                        # window is derived here from the SAME subnet and the SAME
+                        # exclusion the IOS form uses. Two vendors can then never
+                        # disagree about which addresses get handed out.
+                        dhcp_params["pool_first"], dhcp_params["pool_last"] = pool_range
                     if dns:
                         dhcp_params["dns"] = dns
                     nodes.append(IRNode(
@@ -626,6 +644,11 @@ class DesignEngine:
                         "src_wc": str(src_net.hostmask),
                         "dst_net": str(dst_net.network_address),
                         "dst_wc": str(dst_net.hostmask),
+                        # Prefix lengths for vendors whose filter syntax is
+                        # CIDR-only. Same two networks, second notation — not a
+                        # second opinion about what the subnet is.
+                        "src_prefix": src_net.prefixlen,
+                        "dst_prefix": dst_net.prefixlen,
                         "reason": (f"policy requires {src}->{dst} DENIED; enforced "
                                    f"inbound on the {src} gateway"),
                     },
@@ -761,6 +784,29 @@ def _dhcp_exclusion(subnet: str, gateway: str) -> Optional[tuple[str, str]]:
     if gw is not None and gw in net and int(gw) > int(last):
         last = gw
     return (str(first), str(last))
+
+
+def _dhcp_pool_range(subnet: str, exclude_last: str) -> Optional[tuple[str, str]]:
+    """(first_assignable, last_assignable) for a pool, or None if uncomputable.
+
+    RouterOS declares a pool as an explicit ``ranges=a-b`` window instead of a
+    network plus an exclusion list, so the renderer needs the window itself. It
+    is derived from the same subnet and the same exclusion block the IOS form
+    uses, which keeps the two vendors in agreement about which addresses are
+    actually handed out. Returns None rather than an invented range when the
+    subnet leaves nothing assignable after the reserved block.
+    """
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+        last_excluded = ipaddress.ip_address(exclude_last)
+    except ValueError:
+        return None
+    if net.version != 4:
+        return None                      # IPv6 uses SLAAC/RA, not this pool model
+    assignable = [h for h in net.hosts() if int(h) > int(last_excluded)]
+    if not assignable:
+        return None
+    return str(assignable[0]), str(assignable[-1])
 
 
 def _prefix_to_mask(prefix: str) -> Optional[str]:
