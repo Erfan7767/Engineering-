@@ -13,6 +13,8 @@ Factory, deterministic replay.
 from datetime import datetime, timezone
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.access.allowlist import AllowlistEntry, CommandAllowlist
@@ -35,7 +37,7 @@ from netops_autopilot.parsers.catalog import default_registry
 from netops_autopilot.twin.twin import DigitalTwin
 from tests.support.loopback import LoopbackSession
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+FIXTURES = simfabric_fixtures_dir()
 NOW = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
 
 READ_ONLY = (

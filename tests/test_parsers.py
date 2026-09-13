@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.ledger.models import ParseStatus
@@ -10,7 +12,7 @@ from netops_autopilot.parsers.cisco_show_version import CiscoIosXeShowVersionPar
 from netops_autopilot.parsers.keyvalue import KeyValueParser, routeros_system_resource
 from netops_autopilot.parsers.registry import ParserRegistry
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+FIXTURES = simfabric_fixtures_dir()
 
 
 def _load_golden(rel_dir: str, name: str):

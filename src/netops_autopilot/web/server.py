@@ -397,12 +397,7 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
                 # management session is opened from the connection
                 # layer (see cli_main).
                 if str(_seed_port_value).upper().startswith("SIM"):
-                    import sys as _sys, os as _os
-                    _root = _os.path.dirname(_os.path.dirname(
-                        _os.path.dirname(_os.path.dirname(__file__))))
-                    if _root not in _sys.path:
-                        _sys.path.insert(0, _root)
-                    from tests.support.simfabric import SimFabricFactory
+                    from ..simfabric import SimFabricFactory
                     fabric = SimFabricFactory()
                     return fabric.device_session(device_ref)
                 # Real hardware: open a management session via the
@@ -703,11 +698,9 @@ def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = Fal
 
         if sim:
             # Use the SimFabric — deterministic, no hardware needed.
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "tests"))
             try:
-                from tests.support.simfabric import SimFabricFactory
-            except Exception:  # pragma: no cover - tests dir may not be on path
+                from ..simfabric import SimFabricFactory
+            except Exception:  # pragma: no cover - defensive
                 # Fall back to a typed refusal so we never silently mis-run.
                 def _refused_probe(p):
                     raise Failure(

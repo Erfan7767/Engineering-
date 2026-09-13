@@ -5650,12 +5650,7 @@ allow-transfer { any; };
             return self._factories
         port = self._seed_port
         if port and (port.startswith("SIM") or port.upper() == "SIM0"):
-            import sys as _sys, os as _os
-            _root = _os.path.dirname(_os.path.dirname(
-                _os.path.dirname(_os.path.dirname(__file__))))
-            if _root not in _sys.path:
-                _sys.path.insert(0, _root)
-            from tests.support.simfabric import SimFabricFactory
+            from ..simfabric import SimFabricFactory
             fabric = SimFabricFactory(include_access=True, access_behavior="allow")
             self._factories = (fabric.probe, fabric)
         else:

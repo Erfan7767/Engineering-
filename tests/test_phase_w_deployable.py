@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.access.allowlist import CommandAllowlist
@@ -34,7 +36,7 @@ from netops_autopilot.engines.design_engine import (
 from netops_autopilot.parsers.interface_inventory import CiscoIosXeInterfacesStatusParser
 from netops_autopilot.specs_data import specs_data_dir
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+FIXTURES = simfabric_fixtures_dir()
 
 # Declining the access retry keeps access-sw1 excluded, so these tests exercise
 # the honest-gap path. ``answer_script`` is the single source of truth for the

@@ -148,7 +148,7 @@ def default_scenarios() -> dict[str, ScenarioFn]:
     """The v1 known-answer scenario catalog (all deterministic, sim-tier)."""
 
     def _scenario_crawl():
-        from tests.support.simfabric import SimFabricFactory, make_ledger_stack
+        from ..simfabric import SimFabricFactory, make_ledger_stack
         from netops_autopilot.access.allowlist import AllowlistEntry, CommandAllowlist
         from netops_autopilot.access.collector import Collector, SessionLockManager
         from netops_autopilot.core.budgets import CommandBudget
@@ -203,7 +203,7 @@ def default_scenarios() -> dict[str, ScenarioFn]:
         from netops_autopilot.autopilot.answer_script import answer_script
         from netops_autopilot.autopilot.orchestrator import AutopilotEngine
         from netops_autopilot.cli import ScriptedIO
-        from tests.support.simfabric import SimFabricFactory, make_ledger_stack
+        from ..simfabric import SimFabricFactory, make_ledger_stack
 
         store, key_id, counters, time_auth = make_ledger_stack()
         fabric = SimFabricFactory(include_access=True, access_behavior="allow")
@@ -222,7 +222,7 @@ def default_scenarios() -> dict[str, ScenarioFn]:
 
     def _scenario_fi_forged_event():
         """FI-11: a forged/replayed event must be caught by chain verification."""
-        from tests.support.simfabric import make_ledger_stack
+        from ..simfabric import make_ledger_stack
 
         store, key_id, counters, time_auth = make_ledger_stack()
         from datetime import datetime, timezone

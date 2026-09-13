@@ -9,11 +9,13 @@ semantics) is vendor-shape and survives fixture replacement.
 import json
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 from netops_autopilot.ledger.models import ParseStatus
 from netops_autopilot.parsers.catalog import default_registry
 from netops_autopilot.parsers.neighbor_parsers import ENTRY_KEYS, NEIGHBOR_CATALOG_BUILDERS
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+FIXTURES = simfabric_fixtures_dir()
 
 CASES = (
     ("cisco_iosxe", "show_lldp_neighbors_detail"),

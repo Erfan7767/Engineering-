@@ -165,7 +165,7 @@ def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
 
 def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
              execute: bool = False) -> int:
-    from tests.support.simfabric import SimFabricFactory, make_ledger_stack
+    from .simfabric import SimFabricFactory, make_ledger_stack
     from .cli.scenarios import make_scenario_io
     store, key_id, _counters, time_auth = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
@@ -315,7 +315,7 @@ def run_chat(port: Optional[str] = None, message: Optional[str] = None,
 
     seed_port = port or os.environ.get("NETOPS_SEED_PORT", "SIM0")
     if simulate or str(seed_port).upper().startswith("SIM"):
-        from tests.support.simfabric import SimFabricFactory
+        from .simfabric import SimFabricFactory
         fabric = SimFabricFactory(include_access=True, access_behavior="allow")
         session_factory = fabric.device_session
 

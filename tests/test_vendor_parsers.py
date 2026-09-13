@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.ledger.models import ParseStatus
@@ -14,7 +16,7 @@ from netops_autopilot.parsers.vendor_parsers import (
     junos_show_version,
 )
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+FIXTURES = simfabric_fixtures_dir()
 
 CASES = (
     ("junos", "show_version", junos_show_version, "show_version.txt"),

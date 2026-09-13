@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.autopilot.answer_script import answer_script
@@ -34,7 +36,7 @@ from netops_autopilot.parsers.l2l3_inventory import (
 )
 from tests.support.simfabric import SimFabricFactory, make_ledger_stack
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden" / "cisco_iosxe"
+FIXTURES = simfabric_fixtures_dir() / "cisco_iosxe"
 
 
 # =================================================== 1. the parsers themselves

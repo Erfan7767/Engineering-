@@ -7,6 +7,8 @@ and a valid signature/hash chain — the §8 chain head realized in code.
 from datetime import datetime, timezone
 from pathlib import Path
 
+from netops_autopilot.simfabric import fixtures_dir as simfabric_fixtures_dir
+
 import pytest
 
 from netops_autopilot.access.allowlist import AllowlistEntry, CommandAllowlist
@@ -18,7 +20,7 @@ from netops_autopilot.ledger.store import LedgerStore
 from netops_autopilot.parsers.cisco_show_version import CiscoIosXeShowVersionParser
 from tests.support.loopback import LoopbackSession
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "golden" / "cisco_iosxe" / "show_version.txt"
+FIXTURE = simfabric_fixtures_dir() / "cisco_iosxe" / "show_version.txt"
 NOW = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
 
 

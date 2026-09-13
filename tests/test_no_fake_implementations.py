@@ -146,3 +146,81 @@ def test_an_unusable_transport_refuses_rather_than_pretending():
             telnet_transport._stdlib_telnet_factory("203.0.113.1", 23, 5.0)
         assert "TELNET_DRIVER_UNAVAILABLE" in exc.value.causes[0]
         assert "PEP 594" in exc.value.causes[0]
+
+
+# ---------------------------------------------------------------------------
+# The package must not depend on the test suite
+# ---------------------------------------------------------------------------
+
+
+def test_no_shipped_module_imports_the_test_suite():
+    """``tests/`` is not part of the distribution, so importing it is a crash.
+
+    ``pyproject.toml`` sets ``[tool.setuptools.packages.find] where = ["src"]``,
+    which means an installed ``netops-autopilot`` has no ``tests`` package at
+    all. Eight modules used to import ``tests.support.simfabric`` anyway, so
+    ``chat --simulate`` died with ``ModuleNotFoundError`` and ``web/server.py``
+    grew a ``sys.path.append`` of the repository root to hide it.
+    """
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                if name == "tests" or name.startswith("tests."):
+                    offenders.append(f"{path.relative_to(SRC)}:{node.lineno}: {name}")
+    assert offenders == [], (
+        "shipped modules importing the test suite: " + ", ".join(offenders))
+
+
+def test_the_simulated_fabric_ships_inside_the_package():
+    """The simulation is a product feature, so it must live where the product does.
+
+    Both the code and the golden device answers it serves are checked: a module
+    that ships without its data would import cleanly and then fail at the first
+    ``show version``.
+    """
+    import netops_autopilot.simfabric as sim
+
+    package_dir = pathlib.Path(sim.__file__).resolve().parent
+    assert SRC / "netops_autopilot" / "simfabric" == package_dir, (
+        "the simulated fabric must sit under src/netops_autopilot/ so that "
+        "packages.find(where=['src']) includes it in the distribution")
+
+    fixtures = sim.fixtures_dir()
+    assert fixtures.is_dir(), fixtures
+    samples = sorted(p.name for p in fixtures.rglob("*.txt"))
+    assert samples, "the fabric has no device answers to serve"
+    # The seed device's identity comes from this file; without it discovery
+    # cannot even name the family.
+    assert "show_version.txt" in samples
+
+
+def test_the_shipped_package_needs_nothing_outside_itself_to_simulate():
+    """The regression that hid this: a ``sys.path`` hack pointing at the repo root.
+
+    Parsed rather than grepped — prose in a docstring explaining the hack is not
+    the hack, and a guard that fires on prose teaches people to delete the
+    explanation instead of the defect.
+    """
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.Expr, ast.AugAssign)):
+                continue
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Attribute) and sub.attr == "path"
+                        and isinstance(sub.value, ast.Name)
+                        and sub.value.id in {"sys", "_sys"}):
+                    offenders.append(f"{path.relative_to(SRC)}:{node.lineno}")
+                    break
+    assert offenders == [], (
+        "shipped modules manipulating sys.path (the package must resolve its own "
+        "modules and data): " + ", ".join(sorted(set(offenders))))
