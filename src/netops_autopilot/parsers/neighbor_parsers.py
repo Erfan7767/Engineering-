@@ -67,6 +67,35 @@ def _emit(parser: Parser, raw_id: str, table: Optional[list[dict]], proto: str) 
 _KV = re.compile(r"^\s*(?P<k>[A-Za-z][A-Za-z0-9 _\-.]*?)\s*:\s*(?P<v>.*?)\s*$")
 
 
+_KEY_LINE = re.compile(r"^\S[^:]{0,40}:\s")
+
+
+def _system_description(block: str) -> Optional[str]:
+    """The platform string a neighbour advertised about itself.
+
+    In ``show lldp neighbors detail`` the value of ``System Description:`` sits
+    on the FOLLOWING line, which a line-based key/value scan drops. That string
+    is the only vendor evidence LLDP carries: with CDP disabled — a routine
+    hardening step, ``no cdp run`` — it is the difference between a neighbour
+    the platform can crawl and one it silently gives up on.
+    """
+    m = re.search(r"(?im)^System Description:[ \t]*(.*)$", block)
+    if not m:
+        return None
+    inline = m.group(1).strip()
+    if inline:
+        return inline
+    for line in block[m.end():].splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # An empty description must not swallow the next record's key line.
+        if _KEY_LINE.match(stripped):
+            return None
+        return stripped
+    return None
+
+
 def _kv_pairs(text: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for line in text.splitlines():
@@ -119,6 +148,7 @@ class CiscoIosXeLldpNeighborsDetailParser(Parser):
                 neighbor_intf=kvs.get("port id", [None])[0] or None,
                 chassis_id=kvs.get("chassis id", [None])[0] or None,
                 mgmt_address=mgmt,
+                platform=_system_description(block),
             ))
         return _emit(self, raw_id, table, "LLDP")
 

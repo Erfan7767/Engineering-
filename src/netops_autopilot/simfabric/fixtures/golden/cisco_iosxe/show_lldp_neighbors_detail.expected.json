@@ -20,7 +20,7 @@
           "neighbor_intf": "Gi0/1",
           "chassis_id": "0011.2233.4455",
           "mgmt_address": "10.99.0.2",
-          "platform": null,
+          "platform": "Cisco IOS Software [Cupertino], Catalyst L3 Switch Software (CAT9K_IOSXE), Version 17.09.04a",
           "protocol": "LLDP"
         },
         {
@@ -29,7 +29,7 @@
           "neighbor_intf": "Gi1/0/24",
           "chassis_id": "aabb.ccdd.eeff",
           "mgmt_address": "10.99.0.3",
-          "platform": null,
+          "platform": "Cisco IOS Software, C9200L Software (PPC_LINUX_IOSD-UNIVERSALK9-M), Version 17.12.03",
           "protocol": "LLDP"
         }
       ]

@@ -157,6 +157,18 @@ class TopologyMapEngine:
             if dev.status is DeviceStatus.UNREACHABLE:
                 cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
                 out.append(f"DEVICE_UNREACHABLE {dev.device_ref}: {cause}")
+            if dev.status is DeviceStatus.NO_PLAN:
+                # The device answered a session but nothing could be asked of
+                # it, so it appears in the map with an unknown identity. Without
+                # this the only gap was IDENTITY_INCOMPLETE, which states the
+                # symptom and not the reason — the operator could not tell a
+                # device that refused to talk from one the platform had no
+                # command plan for.
+                cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
+                out.append(f"DEVICE_NOT_CRAWLABLE {dev.device_ref}: {cause}")
+            if dev.status is DeviceStatus.BLOCKED:
+                cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
+                out.append(f"DEVICE_BLOCKED {dev.device_ref}: {cause}")
             if dev.status is DeviceStatus.NOT_PROBED:
                 cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
                 out.append(f"DISCOVERY_TRUNCATED {dev.device_ref}: {cause}")
