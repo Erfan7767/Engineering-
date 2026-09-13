@@ -93,14 +93,21 @@ def test_get_run_returns_status(client):
     # Create a run
     cr = client.post("/runs", json={"port": "SIM0"})
     run_id = cr.json()["run_id"]
-    # Poll for it to complete (engine is fast on SIM)
+    # Poll for it to complete. The run executes on a background thread, so the
+    # budget is a wall-clock deadline rather than a fixed number of polls: a
+    # short one made this test flake under full-suite load (observed once), and
+    # waiting longer does not weaken anything — the terminal-status assertion
+    # below is unchanged.
     import time
-    for _ in range(50):
-        r = client.get(f"/runs/{run_id}")
+
+    deadline = time.monotonic() + 30.0
+    r = client.get(f"/runs/{run_id}")
+    while time.monotonic() < deadline:
         if r.status_code == 200 and r.json()["status"] in ("COMPLETE", "BLOCKED", "ERROR"):
             break
         time.sleep(0.05)
-    assert r.status_code == 200
+        r = client.get(f"/runs/{run_id}")
+    assert r.status_code == 200, f"GET /runs/{run_id} -> {r.status_code}"
     j = r.json()
     assert j["run_id"] == run_id
     assert j["status"] in ("COMPLETE", "BLOCKED", "ERROR")

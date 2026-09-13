@@ -157,12 +157,28 @@ class TopologyMapEngine:
             if dev.status is DeviceStatus.UNREACHABLE:
                 cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
                 out.append(f"DEVICE_UNREACHABLE {dev.device_ref}: {cause}")
+            if dev.status is DeviceStatus.NOT_PROBED:
+                cause = dev.rejection_reasons[0] if dev.rejection_reasons else "cause UNKNOWN"
+                out.append(f"DISCOVERY_TRUNCATED {dev.device_ref}: {cause}")
             if dev.status is DeviceStatus.PARTIAL:
                 collected, planned = dev.counts()
                 missing_cmds = sorted(c.command for c in dev.commands
                                       if c.status.value != "COLLECTED")
                 out.append(f"DISCOVERY_PARTIAL {dev.device_ref}: {collected}/{planned} "
                            f"commands; failed: {', '.join(missing_cmds)}")
+        # An L3 endpoint the probe budget refused is recorded on the crawl
+        # report but was invisible here, so a network with more routed
+        # neighbours than the budget allows produced a map that looked
+        # complete. The MAC was learned on a real port; that is evidence the
+        # device exists, and the map owes the operator that much.
+        for endpoint in getattr(report, "l3_endpoints", ()):
+            if endpoint.probed or not endpoint.reason:
+                continue
+            where = endpoint.learned_on_device or "?"
+            if endpoint.learned_on_port:
+                where = f"{where}:{endpoint.learned_on_port}"
+            out.append(f"DISCOVERY_TRUNCATED l3-{endpoint.ip}: {endpoint.reason} "
+                       f"(MAC {endpoint.mac} learned on {where})")
         for link in report.links:
             if link.fsm4_state in (lf.ONE_SIDED, lf.INFERRED, lf.INTERMEDIATE_SUSPECTED,
                                    lf.CONFLICTING, lf.STALE, lf.UNKNOWN):

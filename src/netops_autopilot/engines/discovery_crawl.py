@@ -65,6 +65,11 @@ class DeviceStatus(str, Enum):
     UNREACHABLE = "UNREACHABLE"  # session factory refused (typed cause kept)
     NO_PLAN = "NO_PLAN"          # no usable command plan for the family
     BLOCKED = "BLOCKED"          # collector refused before execution
+    #: Named by a neighbor but never crawled, because a discovery budget was
+    #: reached first. Distinct from UNREACHABLE: nothing was attempted, so
+    #: nothing is known about the device — and the map must say so rather
+    #: than present a truncated crawl as a complete one.
+    NOT_PROBED = "NOT_PROBED"
 
 
 @dataclass(frozen=True)
@@ -262,10 +267,17 @@ class DiscoveryCrawlEngine:
             (seed_ref, seed_family, (), DeviceClass.SEED)
         ]
 
+        unprobed: list[tuple[str, str, tuple[str, ...], DeviceClass]] = []
         while frontier and len(visited) < max_devices:
             wave: list[tuple[str, str, tuple[str, ...], DeviceClass]] = []
             for device_ref, family, hints, classification in sorted(frontier):
-                if device_ref in visited or len(visited) >= max_devices:
+                if device_ref in visited:
+                    continue
+                if len(visited) >= max_devices:
+                    # Kept, not dropped: the L2/L3 pass already records what
+                    # its budget refuses, and a frontier device is the same
+                    # kind of fact — a neighbor named it.
+                    unprobed.append((device_ref, family, hints, classification))
                     continue
                 result = self._crawl_device(
                     device_ref=device_ref, family=family, hints=hints,
@@ -300,6 +312,21 @@ class DiscoveryCrawlEngine:
                         wave.append((neighbor, platform_family_hint(entry), mgmt_hints, classification_next))
                 known_names.update(ref for ref, *_ in wave)
             frontier = wave
+        # Whatever was still queued when the budget closed the loop.
+        unprobed.extend(frontier)
+
+        seen_unprobed: set[str] = set()
+        for device_ref, family, hints, classification in sorted(unprobed):
+            if device_ref in visited or device_ref in seen_unprobed:
+                continue
+            seen_unprobed.add(device_ref)
+            visited[device_ref] = DeviceResult(
+                device_ref=device_ref, classification=classification,
+                status=DeviceStatus.NOT_PROBED, mgmt_addresses=hints,
+                rejection_reasons=[
+                    f"NOT_PROBED: device budget {max_devices} reached — a "
+                    f"neighbor named this device and it was never crawled, so "
+                    f"nothing about it is known"])
 
         links = self._link_report(tables)
         # Phase X: CDP/LLDP exhausted. Now look for what never advertised
