@@ -119,12 +119,61 @@ class LoopbackSession:
     def close(self) -> None:
         self.closed = True
 
+    def _applied_access_membership(self) -> dict[int, list[str]]:
+        """Access-port membership derived from the applied configuration.
+
+        A real ``show vlan brief`` lists access ports only — a trunk port never
+        appears in the VLAN table — so trunk configuration is deliberately not
+        folded in here. Moving a port to another VLAN removes it from the one
+        it was in, which is what the device does.
+
+        ``written_config`` is stored unindented, so sub-mode membership cannot
+        be read from leading whitespace. A ``switchport`` line belongs to the
+        most recent ``interface``; anything else (``vlan``, ``name``,
+        ``ip address``, ``exit``, ``end``) leaves interface sub-mode.
+        """
+        members: dict[int, list[str]] = {}
+        current_port: Optional[str] = None
+
+        def _drop(port: str) -> None:
+            for ports in members.values():
+                if port in ports:
+                    ports.remove(port)
+
+        for cmd in self.written_config:
+            text = cmd.strip()
+            head = re.match(r"^interface (\S+)$", text, re.IGNORECASE)
+            if head:
+                current_port = head.group(1)
+                continue
+            default = re.match(r"^default interface (\S+)$", text, re.IGNORECASE)
+            if default:
+                current_port = None
+                _drop(default.group(1))
+                continue
+            lowered = text.lower()
+            if not lowered.startswith(("switchport", "no switchport")):
+                current_port = None
+                continue
+            if current_port is None:
+                continue
+            access = re.match(r"^switchport access vlan (\d+)$", text, re.IGNORECASE)
+            if access:
+                _drop(current_port)
+                members.setdefault(int(access.group(1)), []).append(current_port)
+                continue
+            if lowered.startswith("no switchport access vlan"):
+                _drop(current_port)
+        return members
+
     def vlan_table(self) -> str:
         """``show vlan brief`` derived from what was actually applied.
 
         The canned table is the baseline — the state the device was discovered
         in. Every ``vlan <id>`` / ``name <n>`` pair in the applied config is
-        merged into it, in the device's own column layout.
+        merged into it, in the device's own column layout, together with the
+        access-port membership the applied ``switchport access vlan`` lines
+        produced.
 
         This has to be derived. A static table means a VLAN the platform really
         created never appears in the device's readback, so post-apply
@@ -132,6 +181,12 @@ class LoopbackSession:
         grades the fixture instead of the change. Same defect class as the
         routing table that once omitted the subnets it had just configured,
         which made ten connectivity tests pass for lack of a path.
+
+        Membership was the last part still static: a VLAN the design created
+        was listed with no ports even after the platform had put ports in it,
+        so its SVI read protocol-down and the zone was graded unreachable. On
+        the sample device that only showed up for a fifth zone, because the
+        baseline happened to populate the first four.
         """
         base = self.outputs.get("show vlan brief", b"").decode("utf-8", "replace")
         created: dict[int, str] = {}
@@ -152,27 +207,46 @@ class LoopbackSession:
             # `name` belongs to something else and must not be adopted.
             if not cmd.startswith(" ") and current is not None:
                 current = None
-        if not created:
+        applied_members = self._applied_access_membership()
+        if not created and not applied_members:
             return base
 
         head_lines: list[str] = []
-        rows: dict[int, str] = {}
+        names: dict[int, str] = {}
+        states: dict[int, str] = {}
+        ports: dict[int, list[str]] = {}
         for line in base.splitlines():
             parts = line.split()
             if parts and parts[0].isdigit():
-                rows[int(parts[0])] = line
+                vid = int(parts[0])
+                names[vid] = parts[1] if len(parts) > 1 else f"VLAN{vid:04d}"
+                states[vid] = parts[2] if len(parts) > 2 else "active"
+                ports[vid] = [p for p in ",".join(parts[3:]).split(",") if p]
             else:
                 head_lines.append(line)
+        # A port the platform moved belongs to its new VLAN only.
+        moved = {p for members in applied_members.values() for p in members}
+        for vid in ports:
+            ports[vid] = [p for p in ports[vid] if p not in moved]
         for vid, name in created.items():
-            if vid in rows:
-                # A rename is expressed by replacing the row, keeping the
-                # device's column widths rather than inventing a layout.
-                old = rows[vid].split()
-                ports = "    ".join(old[3:]) if len(old) > 3 else ""
-                rows[vid] = f"{vid:<5}{name:<33}{'active':<10}{ports}".rstrip()
-            else:
-                rows[vid] = f"{vid:<5}{name:<33}{'active':<10}".rstrip()
-        body = [rows[k] for k in sorted(rows)]
+            # A rename replaces the row's name rather than keeping the one the
+            # device was discovered with.
+            names[vid] = name
+            states.setdefault(vid, "active")
+            ports.setdefault(vid, [])
+        for vid, members in applied_members.items():
+            names.setdefault(vid, f"VLAN{vid:04d}")
+            states.setdefault(vid, "active")
+            ports.setdefault(vid, [])
+            for port in members:
+                if port not in ports[vid]:
+                    ports[vid].append(port)
+        body = []
+        for vid in sorted(names):
+            row = f"{vid:<5}{names[vid]:<33}{states.get(vid, 'active'):<10}"
+            if ports.get(vid):
+                row += ",".join(ports[vid])
+            body.append(row.rstrip())
         return "\n".join(head_lines + body) + "\n"
 
     def vlan_members(self) -> dict[int, list[str]]:

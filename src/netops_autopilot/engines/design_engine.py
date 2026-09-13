@@ -431,6 +431,32 @@ class DesignEngine:
                     if p not in used.get(ref, set()) and p not in infrastructure.get(ref, set())]
             if not free:
                 continue  # honest silence: nothing harvested beyond uplinks
+            # A routed zone whose VLAN has no member port has a
+            # protocol-down SVI: the address is configured and the zone cannot
+            # forward a packet. The weighted distribution below serves only
+            # INTERNAL/GUEST/DMZ, so MGMT and WAN were left with an SVI and no
+            # port at all. That was invisible on the sample device only because
+            # its baseline already had those VLANs populated; on any device
+            # where the VLAN is new the WAN came up empty and there was no
+            # internet. Reserve one harvested port per such zone, taken from
+            # the high end so end-user ports are unaffected, and name the port
+            # the operator has to cable.
+            for zone_assign in zones:
+                if zone_assign.kind in ("INTERNAL", "GUEST", "DMZ"):
+                    continue                    # served by the distribution
+                if zone_assign.routed_on != ref or not free:
+                    continue
+                port = free.pop()               # highest harvested port
+                what = ("provider handoff" if zone_assign.kind == "WAN"
+                        else "out-of-band management")
+                assignments.append(AccessAssignment(
+                    device_ref=ref, port=port, zone=zone_assign.zone,
+                    vlan_id=zone_assign.vlan_id,
+                    reason=(f"designated {what} port {port}: an SVI on a VLAN "
+                            f"with no member port is protocol-down, so zone "
+                            f"'{zone_assign.zone}' could not forward. Cable the "
+                            f"{what} into {port}.")))
+                used.setdefault(ref, set()).add(port)
             # Phase W: spread the free ports across the zones in proportion to
             # their planned host counts. The previous `zip(enduser, free)`
             # gave every zone exactly ONE port regardless of size, so a
