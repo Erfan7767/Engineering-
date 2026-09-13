@@ -76,6 +76,7 @@ class IntentVerb(str, Enum):
     SHOW_NEIGHBORS = "show_neighbors"   # show CDP/LLDP neighbors
     SHOW_VLANS = "show_vlans"           # show VLAN table
     ADD_DHCP = "add_dhcp"               # add a DHCP pool for one zone
+    ISOLATE = "isolate"                 # deny one zone reaching another
     SHOW_ROUTES = "show_routes"         # show routing table
     SHOW_INTERFACES = "show_interfaces" # show interface status
     SHOW_RUN = "show_run"               # show running-config
@@ -241,6 +242,11 @@ _AR_PATTERNS: tuple[tuple[IntentVerb, tuple[str, ...]], ...] = (
         # VLANs المطلوبة" is a request to create, and was answered with a table.
         "أنشئ vlans", "انشئ vlans", "أضف vlans", "اضف vlans",
         "إنشاء vlans", "create vlans",
+    )),
+    (IntentVerb.ISOLATE, (
+        # Before the SHOW_* nouns, and longer than any of their triggers.
+        "اعزل", "عزل", "افصل الشبكة", "منع الوصول",
+        "isolate", "block access", "prevent access", "deny access",
     )),
     (IntentVerb.ADD_DHCP, (
         # Longer and more specific than the SHOW_* nouns, and listed before
@@ -925,7 +931,48 @@ def carries_write_verb(text: str) -> Optional[str]:
 #: Intents that only ever READ from a device. Answering one of these to a
 #: request that asked for a change would report activity where there was none.
 def _is_read_only(verb: IntentVerb) -> bool:
-    return verb.value.startswith("show_")
+    return verb.value.startswith("show_") or verb in _INFORMATIONAL
+
+#: Intents that report on something rather than change it, and are not named
+#: ``show_*``. "اعزل المستخدمين عن الواي فاي" used to classify as WIRELESS
+#: because the noun "الواي فاي" is longer than the verb "اعزل" and the matcher
+#: ranks candidates by pattern length — so an isolation request came back with
+#: an access-point count.
+_INFORMATIONAL = frozenset({
+    IntentVerb.WIRELESS, IntentVerb.HEALTH, IntentVerb.CAPABILITY,
+    IntentVerb.INVENTORY, IntentVerb.ACL_HITS, IntentVerb.MAC_TABLE,
+    IntentVerb.CABLE_DIAG, IntentVerb.ROUTING, IntentVerb.COMPLIANCE,
+})
+
+#: Intents that actually change something, or set a change up. A message that
+#: OPENS with a change verb is a request to change, and must not be answered by
+#: anything outside this set.
+_CHANGE_INTENTS = frozenset({
+    IntentVerb.CREATE_VLAN, IntentVerb.ADD_DHCP, IntentVerb.ISOLATE,
+    IntentVerb.APPLY_INTENT, IntentVerb.STAGE, IntentVerb.DESIGN,
+    IntentVerb.ROLLBACK, IntentVerb.CONFIRM_CHANGE, IntentVerb.MAINTENANCE,
+    IntentVerb.SNAPSHOT,
+    # BOND is the operator's own identity-binding decision. "اربط الجهاز
+    # بالكمبيوتر" opens with a change verb and legitimately lands there — it is
+    # a human confirmation that advances the run, not a device change, and
+    # blocking it would have broken a gate the platform depends on.
+    IntentVerb.BOND,
+})
+
+
+def starts_with_write_verb(text: str) -> Optional[str]:
+    """The leading change verb, or ``None``.
+
+    Narrower than :func:`carries_write_verb` on purpose. "show the change"
+    mentions a change but asks to read, so scanning anywhere in the message
+    would refuse it; a request that *opens* with the imperative is asking to
+    change, whatever noun comes after it.
+    """
+    for token in re.split(r"[\s،,.;:!?()\[\]\"']+", _normalize(text)):
+        if not token:
+            continue
+        return token if token in _WRITE_VERBS else None
+    return None
 
 
 def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
@@ -1086,6 +1133,13 @@ def classify_intent(text: str) -> tuple[IntentVerb, dict[str, str]]:
     if write_verb is not None and _is_read_only(chosen):
         args = dict(args)
         args["write_guard"] = {"verb": write_verb, "fallback": chosen.value}
+        return (IntentVerb.UNKNOWN, args)
+    # A request that opens with the imperative is a change request even when a
+    # longer noun later in the sentence matches some other intent.
+    leading = starts_with_write_verb(text)
+    if leading is not None and chosen not in _CHANGE_INTENTS:
+        args = dict(args)
+        args["write_guard"] = {"verb": leading, "fallback": chosen.value}
         return (IntentVerb.UNKNOWN, args)
     return (chosen, args)
 
@@ -1361,6 +1415,9 @@ class ChatOperator:
 
         if verb is IntentVerb.ADD_DHCP:
             return self._do_add_dhcp(args, lang, message)
+
+        if verb is IntentVerb.ISOLATE:
+            return self._do_isolate(args, lang, message)
 
         if verb is IntentVerb.CONFIRM_CHANGE:
             return self._do_confirm_change(lang)
@@ -1962,6 +2019,114 @@ class ChatOperator:
         if self._ctx.last_discovery is None:
             return None
         return self._pick_diagnostic_source()
+
+    def _do_isolate(self, args: dict[str, str], lang: str,
+                    message: str) -> OperatorReply:
+        """Plan a one-way isolation between two zones of the applied design.
+
+        Both subnets come from ``last_design`` — the zones that were really
+        allocated — and the device's current ACL is read first, so a rule that
+        is already in force is reported as a no-op instead of being sent again.
+        """
+        device = self._target_device()
+        if device is None:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                summary=("nothing discovered yet" if lang == "en"
+                         else "لم يُكتشف شيء بعد"),
+                detail=("Isolation is enforced on the gateway of a real zone, "
+                        "so the network has to be discovered first — run "
+                        "'discover'." if lang == "en" else
+                        "يُنفَّذ العزل على بوابة منطقة حقيقية، لذا يجب اكتشاف "
+                        "الشبكة أولاً — شغّل 'اكتشف'."))
+        if self._device_runner is None:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                summary=("no device connection" if lang == "en"
+                         else "لا يوجد اتصال بالأجهزة"),
+                detail=("The current ACL cannot be read, so the change cannot "
+                        "be planned against reality." if lang == "en" else
+                        "لا يمكن قراءة قائمة الوصول الحالية، لذا لا يمكن "
+                        "التخطيط للتغيير على الواقع."))
+        design = self._ctx.last_design
+        zones = tuple(getattr(design, "zones", ()) or ())
+        if not zones:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                summary=("no design in context" if lang == "en"
+                         else "لا يوجد تصميم في السياق"),
+                detail=("I will not invent subnets for a filter — a deny naming "
+                        "a network that is not on the wire matches nothing and "
+                        "reads as protection while protecting nothing."
+                        if lang == "en" else
+                        "لن أخترع شبكات لقاعدة منع — فقاعدة تسمّي شبكة غير "
+                        "موجودة على السلك لا تطابق شيئاً وتبدو حمايةً وهي لا "
+                        "تحمي شيئاً."))
+
+        names = [z.zone for z in zones]
+        (src, dst), matched = _tchange.resolve_zone_pair(message, names)
+        if src is None:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.NEEDS_INPUT,
+                summary=("which two zones?" if lang == "en"
+                         else "أي منطقتين؟"),
+                detail=(f"Say it as '<zone> from <zone>'. Zones in the current "
+                        f"design: {', '.join(sorted(names))}"
+                        + (f" (matched: {', '.join(matched)})" if matched else "")
+                        if lang == "en" else
+                        f"قلها بصيغة '<منطقة> عن <منطقة>'. المناطق في التصميم "
+                        f"الحالي: {', '.join(sorted(names))}"
+                        + (f" (المطابق: {', '.join(matched)})" if matched else "")))
+
+        # A pair the design already declared unenforceable is refused here for
+        # the same reason it was refused there: a deny naming a subnet that is
+        # not on the wire matches nothing, so it reads as protection while
+        # protecting nothing. The reason is the design's own, not a new one.
+        for pair_src, pair_dst, why in tuple(
+                getattr(design, "unenforceable_isolation", ()) or ()):
+            if {pair_src, pair_dst} == {src, dst}:
+                return self._reply(
+                    IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                    summary=("cannot be enforced as an ACL" if lang == "en"
+                             else "لا يمكن تنفيذها كقائمة وصول"),
+                    detail=why)
+
+        src_zone = next(z for z in zones if z.zone == src)
+        dst_zone = next(z for z in zones if z.zone == dst)
+        identity = getattr(device, "identity", None)
+        family = getattr(identity, "vendor_family", None) if identity else None
+        vendor_os = family.split("/")[-1] if family else "UNKNOWN"
+        target = src_zone.routed_on or device.device_ref
+
+        # Whether the rule is already in force is a fact about the device, not
+        # an assumption from the design.
+        try:
+            table = self._device_runner.run_show(target, "show ip access-lists")
+        except Failure as exc:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                summary=("cannot read the device" if lang == "en"
+                         else "لا يمكن قراءة الجهاز"),
+                detail="; ".join(exc.causes))
+        existing = (_tchange.read_acl_denies(table.output_text)
+                    if table.success else {})
+        try:
+            plan = _tchange.plan_isolate_zones(
+                change_id=new_id(), request=message, device_ref=target,
+                vendor_os=vendor_os, src_zone=src_zone.zone,
+                dst_zone=dst_zone.zone, src_subnet=src_zone.subnet,
+                dst_subnet=dst_zone.subnet, vlan_id=src_zone.vlan_id,
+                existing=existing)
+        except Failure as exc:
+            return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
+                summary=("already in force" if "ALREADY_ISOLATED" in "".join(exc.causes)
+                         else "cannot plan that change" if lang == "en"
+                         else "مُنفَّذ مسبقاً" if "ALREADY_ISOLATED" in "".join(exc.causes)
+                         else "لا يمكن التخطيط لهذا التغيير"),
+                detail="; ".join(exc.causes))
+        self._ctx.pending_change = plan
+        return self._reply(
+            IntentVerb.ISOLATE, ReplyStatus.OK,
+            summary=plan.understood,
+            detail=(plan.preview + "\n\n" + (
+                "Nothing has been sent. Confirm to apply." if lang == "en"
+                else "لم يُرسل شيء. أكّد للتنفيذ.")),
+            data={"plan": plan.to_dict()})
 
     def _do_add_dhcp(self, args: dict[str, str], lang: str,
                      message: str) -> OperatorReply:

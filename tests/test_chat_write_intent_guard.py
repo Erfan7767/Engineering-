@@ -64,9 +64,12 @@ def test_a_change_request_is_refused_not_answered_with_a_read(op, message):
     assert not reply.intent.value.startswith("show_"), (
         f"{message!r} was answered by the read-only intent {reply.intent.value}")
     if reply.data.get("detected_write_verb"):
-        # The request matched a read-only action, and the operator is told which
-        # one was declined — understood, and deliberately not executed.
-        assert reply.data["fallback_read_only_intent"].startswith("show_")
+        # The request matched some other action, and the operator is told which
+        # one was declined — understood, and deliberately not executed. The
+        # declined intent must not be one that performs the change.
+        from netops_autopilot.chat.operator import _CHANGE_INTENTS
+        declined = reply.data["fallback_read_only_intent"]
+        assert declined not in {v.value for v in _CHANGE_INTENTS}
         assert ("لم يُغيَّر شيء" in reply.summary
                 or "nothing was changed" in reply.summary)
     else:

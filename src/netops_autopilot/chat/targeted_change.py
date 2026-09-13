@@ -148,6 +148,7 @@ _NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 #: it instead of asking them to know the naming scheme.
 _PURPOSES = {
     "موظفين": "STAFF", "الموظفين": "STAFF", "staff": "STAFF", "employees": "STAFF",
+    "مستخدمين": "USERS", "المستخدمين": "USERS", "users": "USERS", "user": "USERS",
     "ضيوف": "GUESTS", "الضيوف": "GUESTS", "guests": "GUESTS", "guest": "GUESTS",
     "صوت": "VOICE", "الصوت": "VOICE", "voice": "VOICE", "هواتف": "VOICE",
     "إدارة": "MGMT", "ادارة": "MGMT", "mgmt": "MGMT", "management": "MGMT",
@@ -227,7 +228,13 @@ def parse_vlan_request(text: str) -> dict[str, object]:
 #: and a pool on the wrong subnet is worse than a refusal.
 _PURPOSE_TO_ZONE = {
     "STAFF": ("users", "staff", "employees", "corporate"),
+    "USERS": ("users",),
     "GUESTS": ("guest", "guests"),
+    "MGMT": ("mgmt", "management", "admin"),
+    "VOICE": ("voice", "voip", "phones"),
+    "CCTV": ("cctv", "cameras"),
+    "LAB": ("lab",),
+    "SERVERS": ("servers", "datacenter"),
 }
 
 
@@ -259,6 +266,38 @@ def resolve_zone(text: str, zone_names: Sequence[str]) -> tuple[Optional[str], t
     matched = tuple(z for z in zone_names
                     if z.lower() in tokens or _normalize_for_zone(z) in tokens)
     return (matched[0] if len(matched) == 1 else None), matched
+
+
+#: "اعزل X عن Y" / "isolate X from Y". X is the zone being denied and Y the zone
+#: it may not reach — the order is the whole meaning of the request, so the
+#: split is on the separator and each side is resolved separately rather than
+#: taking the two matches in whatever order the text happened to name them.
+_PAIR_SPLIT = (re.compile(r"\s+عن\s+"), re.compile(r"\s+from\s+"))
+
+
+def resolve_zone_pair(text: str, zone_names: Sequence[str]):
+    """``((src, dst), matched)`` for an isolation request.
+
+    ``src`` is the zone that loses access. Returns ``(None, None)`` when either
+    side is unresolved or both sides resolve to the same zone — a zone cannot be
+    isolated from itself, and picking a side to make the request work would be
+    guessing at which direction the operator meant.
+    """
+    norm = _normalize_for_zone(text)
+    parts = None
+    for rx in _PAIR_SPLIT:
+        split = rx.split(norm)
+        if len(split) == 2:
+            parts = split
+            break
+    if parts is None:
+        return (None, None), ()
+    src, src_matched = resolve_zone(parts[0], zone_names)
+    dst, dst_matched = resolve_zone(parts[1], zone_names)
+    matched = tuple(dict.fromkeys((*src_matched, *dst_matched)))
+    if not (src and dst) or src == dst:
+        return (None, None), matched
+    return (src, dst), matched
 
 
 def _normalize_for_zone(text: str) -> str:
@@ -520,6 +559,156 @@ def plan_add_dhcp(
         # the wrong network is a different failure and must not read as success.
         verify_command="show running-config",
         verify_expect=(f"pool {zone}", str(net.network_address)),
+        preview=rendered.to_text(),
+    )
+
+
+_ACL_DENY_RE = re.compile(
+    r"^\s*(?:\d+\s+)?deny\s+ip\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)")
+
+
+def read_acl_denies(text: str) -> dict[str, set[tuple[str, str]]]:
+    """``{acl_name: {(src_network, dst_network), ...}}`` from ``show ip access-lists``.
+
+    Only lines that actually parse as a ``deny ip`` with four operands are
+    recorded. A parser that guessed here would either miss an isolation that is
+    already in force — and send a duplicate — or invent one and refuse a change
+    the operator still needs.
+    """
+    out: dict[str, set[tuple[str, str]]] = {}
+    current: Optional[str] = None
+    for line in text.splitlines():
+        head = line.strip()
+        if head.startswith("ip access-list"):
+            parts = head.split()
+            # "ip access-list extended NAME" / "ip access-list standard NAME"
+            current = parts[-1] if len(parts) >= 4 else None
+            if current:
+                out.setdefault(current, set())
+            continue
+        if current is None:
+            continue
+        m = _ACL_DENY_RE.match(line)
+        if m:
+            out[current].add((m.group(1), m.group(3)))
+    return out
+
+
+def plan_isolate_zones(
+    *,
+    change_id: str,
+    request: str,
+    device_ref: str,
+    vendor_os: str,
+    src_zone: str,
+    dst_zone: str,
+    src_subnet: str,
+    dst_subnet: str,
+    vlan_id: int,
+    existing: Optional[Mapping[str, set]] = None,
+) -> ChangePlan:
+    """Render a one-way isolation (``src`` may not reach ``dst``) and send nothing.
+
+    Three nodes, in the order that makes them safe: the deny, then the
+    ``permit ip any any`` that keeps everything else reachable, then the apply.
+    Emitting the deny without the permit is how a zone gets black-holed — an
+    extended ACL with no permit at the end denies everything it does not name.
+
+    ``existing`` is the device's current ``show ip access-lists``. When the
+    deny is already in force the change is refused as a no-op rather than sent
+    again: on IOS re-entering a named ACL appends, so a second identical deny
+    is harmless but a duplicate rule is a lie about what changed.
+    """
+    try:
+        src_net = ipaddress.ip_network(src_subnet, strict=False)
+        dst_net = ipaddress.ip_network(dst_subnet, strict=False)
+    except ValueError as exc:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"SUBNET_UNPARSEABLE: {src_subnet!r}/{dst_subnet!r} ({exc})",)) from exc
+    for net, label in ((src_net, "source"), (dst_net, "destination")):
+        if net.version != 4:
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                f"SUBNET_NOT_IPV4: the {label} zone is {net}; this path models "
+                f"an IPv4 filter only",))
+    if src_net == dst_net:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"SAME_ZONE: {src_subnet} is both ends of the rule; a zone cannot "
+            f"be isolated from itself",))
+
+    acl_name = f"ACL_{src_zone.upper()}_IN"
+    already = (existing or {}).get(acl_name, set())
+    key = (str(src_net.network_address), str(dst_net.network_address))
+    if key in already:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            f"ALREADY_ISOLATED: {acl_name} on {device_ref} already denies "
+            f"{key[0]} -> {key[1]}; nothing to change",))
+
+    def _ref(node_id: str) -> EntityRef:
+        return EntityRef(entity_type="DEVICE", entity_ref=device_ref)
+
+    common = dict(target=_ref(device_ref), vendor_os=vendor_os,
+                  reversibility=Reversibility.REVERSIBLE_BY_REPLACE)
+    deny = IRNode(
+        node_id=f"acl-deny-{src_zone}-{dst_zone}", operation=Operation.CREATE,
+        feature="acl_deny",
+        parameters={
+            "acl_name": acl_name,
+            "src_net": str(src_net.network_address),
+            "src_wc": str(src_net.hostmask),
+            "dst_net": str(dst_net.network_address),
+            "dst_wc": str(dst_net.hostmask),
+            "src_prefix": src_net.prefixlen,
+            "dst_prefix": dst_net.prefixlen,
+            "reason": (f"chat targeted change: {src_zone} -> {dst_zone} DENIED, "
+                       f"enforced inbound on the {src_zone} gateway"),
+        },
+        requires=(f"l3:{src_zone}",), provides=(), **common)
+    permit = IRNode(
+        node_id=f"acl-permit-{src_zone}", operation=Operation.CREATE,
+        feature="acl_permit",
+        parameters={"acl_name": acl_name,
+                    "reason": ("everything not denied above stays reachable from "
+                               f"{src_zone}; without it the ACL black-holes the zone")},
+        requires=(f"l3:{src_zone}",), provides=(), **common)
+    apply = IRNode(
+        node_id=f"acl-apply-{src_zone}", operation=Operation.UPDATE,
+        feature="acl_apply",
+        parameters={"acl_name": acl_name, "vlan_id": vlan_id,
+                    "reason": f"{acl_name} applied inbound on Vlan{vlan_id}"},
+        requires=(f"l3:{src_zone}",), provides=(), **common)
+
+    rendered = render_ir(device_ref, ConfigIR(
+        title=f"chat: isolate {src_zone} from {dst_zone}",
+        nodes=(deny, permit, apply)))
+
+    not_modeled = [b for b in rendered.blocks if b.status != "RENDERED"]
+    if not_modeled:
+        raise Failure(cls=FailureClass.BLOCKED, causes=tuple(
+            f"NOT_MODELED node={b.node_id}: {b.reason}" for b in not_modeled))
+    commands = tuple(c for b in rendered.blocks for c in b.commands)
+    if not commands:
+        # Not an error: on RouterOS a filter rule is in force the moment it is
+        # added and the default forward policy is accept, so acl_permit and
+        # acl_apply legitimately render nothing. The deny is what must be there.
+        raise Failure(cls=FailureClass.BLOCKED, causes=(
+            "NO_COMMANDS_RENDERED: the change produced nothing to send",))
+
+    return ChangePlan(
+        change_id=change_id,
+        request=request,
+        understood=(f"deny {src_zone} ({src_subnet}) -> {dst_zone} "
+                    f"({dst_subnet}) via {acl_name} inbound on Vlan{vlan_id}"),
+        device_ref=device_ref,
+        vendor_os=vendor_os,
+        commands=commands,
+        wrappers=rendered.wrappers,
+        persist=rendered.persist,
+        mode_exit=rendered.mode_exit,
+        # Read the ACL back from the device. The name alone is not enough: an
+        # ACL can exist with the wrong statement in it and still "be there".
+        verify_command="show ip access-lists",
+        verify_expect=(acl_name, str(src_net.network_address),
+                       str(dst_net.network_address)),
         preview=rendered.to_text(),
     )
 
