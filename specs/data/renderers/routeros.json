@@ -11,7 +11,7 @@
   "features": {
     "vlan": {
       "commands": [
-        "/interface/vlan/add name={name} vlan-id={vlan_id} interface={parent}"
+        "/interface/vlan/add name={name} vlan-id={vlan_id} interface=bridge"
       ]
     },
     "svi": {

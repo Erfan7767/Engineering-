@@ -3,14 +3,94 @@
   "vendor_os": "ios-xe",
   "verified": true,
   "verified_at": "2026-09-11",
-  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist.",
-  "wrappers": { "enter_config": ["enable", "configure terminal"], "exit_config": ["end"] },
+  "note": "Lab-verified for IOS-XE 16.x+ and 17.x. Templates emit Cisco IOS syntax that the parser/renderer shares with the allowlist. Phase V: svi renders `ip address <ip> <dotted-mask>`; IOS/IOS-XE rejects the CIDR form. Phase W: `write memory` persists to startup-config; without it every applied change is lost on the next reload. Phase W: a template line prefixed with '? ' (marker + one space) is OPTIONAL — skipped when a placeholder is unbound instead of failing the whole block, so a DHCP pool with no declared DNS server still renders. Only the marker and one space are stripped, so the line's indentation — which encodes CLI nesting — is preserved.",
+  "wrappers": {
+    "enter_config": [
+      "enable",
+      "configure terminal"
+    ],
+    "exit_config": [
+      "end"
+    ],
+    "persist": [
+      "write memory"
+    ]
+  },
   "features": {
-    "vlan": { "commands": ["vlan {vlan_id}", " name {name}"] },
-    "svi": { "commands": ["interface Vlan{vlan_id}", " ip address {address}"], "prelude": ["ip routing"] },
-    "trunk": { "commands": ["interface {interface}", " switchport trunk encapsulation dot1q", " switchport mode trunk", " switchport trunk allowed vlan {allowed_vlans_csv}"] },
-    "access": { "commands": ["interface {interface}", " switchport mode access", " switchport access vlan {vlan_id}"] },
-    "hostname": { "commands": ["hostname {hostname}"] },
-    "interface": { "commands": ["interface {interface}", " description {description}"] }
+    "vlan": {
+      "commands": [
+        "vlan {vlan_id}",
+        " name {name}"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "interface Vlan{vlan_id}",
+        " ip address {address_ip} {address_mask}"
+      ],
+      "prelude": [
+        "ip routing"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "interface {interface}",
+        " switchport trunk encapsulation dot1q",
+        " switchport mode trunk",
+        " switchport trunk allowed vlan {allowed_vlans_csv}"
+      ]
+    },
+    "access": {
+      "commands": [
+        "interface {interface}",
+        " switchport mode access",
+        " switchport access vlan {vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "hostname {hostname}"
+      ]
+    },
+    "interface": {
+      "commands": [
+        "interface {interface}",
+        " description {description}"
+      ]
+    },
+    "dhcp": {
+      "commands": [
+        "ip dhcp excluded-address {exclude_first} {exclude_last}",
+        "ip dhcp pool {pool}",
+        " network {network} {netmask}",
+        " default-router {gateway}",
+        "?  dns-server {dns}",
+        "?  domain-name {domain}"
+      ]
+    },
+    "wan_dhcp": {
+      "commands": [
+        "interface Vlan{vlan_id}",
+        " ip address dhcp"
+      ]
+    },
+    "acl_deny": {
+      "commands": [
+        "ip access-list extended {acl_name}",
+        " deny ip {src_net} {src_wc} {dst_net} {dst_wc}"
+      ]
+    },
+    "acl_permit": {
+      "commands": [
+        "ip access-list extended {acl_name}",
+        " permit ip any any"
+      ]
+    },
+    "acl_apply": {
+      "commands": [
+        "interface Vlan{vlan_id}",
+        " ip access-group {acl_name} in"
+      ]
+    }
   }
 }

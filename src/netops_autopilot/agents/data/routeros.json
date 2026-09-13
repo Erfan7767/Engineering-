@@ -1,15 +1,43 @@
 {
   "vendor_os": "routeros",
-  "verified": true,
-  "verified_at": "2026-09-11",
-  "note": "Lab-verified for RouterOS 7.x. Safe Mode rolls back automatically on disconnect.",
-  "wrappers": { "enter_config": [], "exit_config": [] },
+  "verified": false,
+  "verified_at": null,
+  "note": "Downgraded to verified=false: no RouterOS configuration fixture exists in this repository (tests/fixtures/golden/routeros holds only `system resource print` and `ip neighbor print`), and three of the six features were emitting commands the allowlist refused — `/interface/bridge/vlan/add` (trunk and access) and `/interface/set ... comment=`, none of which were registered. Those templates are now registered with inverses, but they have never been run against a device here. RouterOS writes to disk as it goes and Safe Mode rolls back on disconnect, so there is no separate persist step. Re-verify on hardware before trusting this renderer (L01, T2).",
+  "wrappers": {
+    "enter_config": [],
+    "exit_config": [],
+    "persist": []
+  },
   "features": {
-    "vlan": { "commands": ["/interface/vlan/add name={name} vlan-id={vlan_id} interface={parent}"] },
-    "svi": { "commands": ["/ip/address/add address={address} interface={name}"] },
-    "trunk": { "commands": ["/interface/bridge/vlan/add bridge=bridge tagged={interface} vlan-ids={allowed_vlans_csv}"] },
-    "access": { "commands": ["/interface/bridge/vlan/add bridge=bridge untagged={interface} vlan-ids={vlan_id}"] },
-    "hostname": { "commands": ["/system/identity/set name={hostname}"] },
-    "interface": { "commands": ["/interface/set {interface} comment={description}"] }
+    "vlan": {
+      "commands": [
+        "/interface/vlan/add name={name} vlan-id={vlan_id} interface=bridge"
+      ]
+    },
+    "svi": {
+      "commands": [
+        "/ip/address/add address={address} interface={name}"
+      ]
+    },
+    "trunk": {
+      "commands": [
+        "/interface/bridge/vlan/add bridge=bridge tagged={interface} vlan-ids={allowed_vlans_csv}"
+      ]
+    },
+    "access": {
+      "commands": [
+        "/interface/bridge/vlan/add bridge=bridge untagged={interface} vlan-ids={vlan_id}"
+      ]
+    },
+    "hostname": {
+      "commands": [
+        "/system/identity/set name={hostname}"
+      ]
+    },
+    "interface": {
+      "commands": [
+        "/interface/set {interface} comment={description}"
+      ]
+    }
   }
 }

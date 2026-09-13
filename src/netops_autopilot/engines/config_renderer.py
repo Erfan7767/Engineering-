@@ -8,8 +8,14 @@ files (``specs/data/renderers/*.json``). Honesty contract:
 * templates flagged ``verified: false`` produce output labeled PREVIEW —
   the law still blocks application (CONFIG allowlist classes are empty
   seeds, T3) and labels keep that truth attached to every document;
-* unknown parameters raise ``BLOCKED`` at render input validation —
-  the renderer never fabricates a command shape.
+* a REQUIRED placeholder with no matching parameter makes that block
+  ``NOT_MODELED`` — the renderer never fabricates a command shape and never
+  guesses at a value. (Note the direction of this check: a parameter the
+  node carries but no template uses is simply ignored. There is no
+  "unknown parameter" rejection, so a template that renames or invents a
+  placeholder fails loudly as NOT_MODELED rather than quietly — which is
+  the safe direction, and why ``tests/test_renderer_design_contract.py``
+  asserts unbound parameters are zero across every renderer.)
 """
 
 from __future__ import annotations

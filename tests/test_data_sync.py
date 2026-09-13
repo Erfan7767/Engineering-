@@ -20,6 +20,16 @@ PAIRS = (
     ("specs/data/allowlists/fortios.json", "src/netops_autopilot/agents/data/allowlists/fortios.json"),
     ("specs/data/allowlists/arubaos.json", "src/netops_autopilot/agents/data/allowlists/arubaos.json"),
     ("specs/data/allowlists/unifi.json", "src/netops_autopilot/agents/data/allowlists/unifi.json"),
+    # Renderers were NOT in this list, and the three embedded copies had drifted
+    # far enough to assert verified=true for Junos and RouterOS while the source
+    # of truth says, in so many words, that no configuration fixture exists in
+    # this repository to verify against. A stale copy claiming lab-verification
+    # is worse than a missing one, so every renderer is covered now.
+    ("specs/data/renderers/cisco_iosxe.json", "src/netops_autopilot/agents/data/cisco_iosxe.json"),
+    ("specs/data/renderers/routeros.json", "src/netops_autopilot/agents/data/routeros.json"),
+    ("specs/data/renderers/junos.json", "src/netops_autopilot/agents/data/junos.json"),
+    ("specs/data/renderers/arubaos.json", "src/netops_autopilot/agents/data/arubaos.json"),
+    ("specs/data/renderers/fortios.json", "src/netops_autopilot/agents/data/fortios.json"),
 )
 
 

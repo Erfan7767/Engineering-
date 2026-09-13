@@ -505,6 +505,14 @@ class DesignEngine:
                 continue
             svi_params = {
                 "vlan_id": zone.vlan_id,
+                # The name of the L3 interface this address belongs to. It is
+                # the SAME value the vlan node above used for its `name`, so
+                # the address is bound to the interface that node created
+                # rather than to a name each renderer has to guess. Vendor
+                # templates for RouterOS/Junos/FortiOS all address the SVI by
+                # interface name; without this they could only report
+                # NOT_MODELED for the one node a design cannot work without.
+                "name": zone.zone,
                 # CIDR form — the syntax Junos/RouterOS renderers require.
                 "address": f"{zone.gateway}/{zone.subnet.split('/')[1]}",
                 # Split form — IOS/IOS-XE `ip address <ip> <dotted-mask>`
