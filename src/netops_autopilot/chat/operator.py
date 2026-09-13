@@ -5671,24 +5671,58 @@ allow-transfer { any; };
           its own ``io``.
 
         The ``_EngineRunner`` protocol in this file declared only the first and
-        was simply wrong about the second. The factory call is tried first
-        because that is the shape the live web server uses; the ``answers=``
-        call is the fallback for the CLI runner. Either way the requested
-        network type is published on the operator first, so a prompt-aware IO
-        can honour it instead of always answering the same blueprint.
+        was simply wrong about the second.
+
+        The shape is read from the runner's signature. It used to be probed by
+        catching ``TypeError``, which meant any ``TypeError`` raised *inside* a
+        run was misread as "wrong shape" and the whole change was executed a
+        second time — against real devices that is a second configuration pass
+        over hardware that had already been changed.
+
+        For the engine-direct shape the answers are installed on the engine's
+        own ``io`` before the run, because that is where the engine reads them.
+        Not doing so is how the web surface silently applied the default
+        blueprint instead of the network the operator had named.
         """
         self._requested_intent = intent
         self._factories = None                 # fresh fabric for this run
         answers = self._autopilot_answers(intent=intent, apply_bond=apply_bond)
         port = self._seed_port
         probe_factory, mgmt_factory = self._session_factories()
+        if self._runner_takes_answers():
+            return self._runner.run(port=port, execute=execute, answers=answers)
+        scripted = ScriptedIO(list(answers))
+        current_io = getattr(self._runner, "io", None)
+        if hasattr(current_io, "set_inner"):
+            # A wrapping io (the web stream mirrors every question and phase
+            # onto SSE). Installing inside it keeps the stream alive; replacing
+            # it would end the stream mid-run.
+            previous = current_io.set_inner(scripted)
+            undo = lambda: current_io.set_inner(previous)  # noqa: E731
+        else:
+            previous = current_io
+            self._runner.io = scripted
+            undo = lambda: setattr(self._runner, "io", previous)  # noqa: E731
         try:
             return self._runner.run(
                 probe_port_session_factory=probe_factory,
                 mgmt_session_factory=mgmt_factory,
                 port=port, execute=execute)
-        except TypeError:
-            return self._runner.run(port=port, execute=execute, answers=answers)
+        finally:
+            undo()
+
+    def _runner_takes_answers(self) -> bool:
+        """True when the injected runner accepts an ``answers`` list.
+
+        Read from the signature rather than by trying a call and catching the
+        error, so a failure inside a run is never mistaken for the wrong shape.
+        """
+        import inspect
+        try:
+            params = inspect.signature(self._runner.run).parameters
+        except (TypeError, ValueError):  # pragma: no cover - exotic callables
+            return False
+        return "answers" in params
 
     def _find_device(self, ref: str):
         if self._ctx.last_discovery is None:

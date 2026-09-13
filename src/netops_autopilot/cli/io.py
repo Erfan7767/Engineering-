@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..core.failures import Failure, FailureClass
+
 
 class ConsoleIO:
     """stdin/stdout operator channel."""
@@ -56,3 +58,27 @@ class ScriptedIO:
 
     def show(self, text: str) -> None:
         print(text)
+
+
+class RefusingIO:
+    """An operator channel with nobody behind it.
+
+    The engine must never guess an operator's answer. A server constructs the
+    engine before any request has supplied answers, so it installs this: a run
+    that reaches a question without answers installed stops with a typed
+    failure instead of inventing a network type, a WAN handoff or a BOND
+    confirmation. ``show`` is still served — output is not a decision.
+    """
+
+    _CAUSE = ("NO_ANSWER_SOURCE: the engine asked a question and no operator "
+              "channel was installed for this run; supply the operator's "
+              "answers (ScriptedIO) rather than letting the engine guess")
+
+    def ask(self, question: str) -> str:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(self._CAUSE,))
+
+    def confirm(self, question: str) -> bool:
+        raise Failure(cls=FailureClass.BLOCKED, causes=(self._CAUSE,))
+
+    def show(self, text: str) -> None:
+        return None

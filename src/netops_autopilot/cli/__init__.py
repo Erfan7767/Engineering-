@@ -16,7 +16,7 @@ from .pretty import (
     progress,
     render_run_summary,
 )
-from .io import ScriptedIO, ConsoleIO
+from .io import ScriptedIO, ConsoleIO, RefusingIO
 
 __all__ = [
     "Panel",
@@ -28,5 +28,6 @@ __all__ = [
     "progress",
     "render_run_summary",
     "ScriptedIO",
+    "RefusingIO",
     "ConsoleIO",
 ]

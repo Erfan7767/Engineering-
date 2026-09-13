@@ -328,59 +328,15 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         try:
             from netops_autopilot.chat import ChatOperator
             from netops_autopilot.autopilot import AutopilotEngine, OperatorIO
+            from netops_autopilot.cli import RefusingIO
             from netops_autopilot.ledger.store import LedgerStore
             import os, tempfile
-
-            class _NullIO(OperatorIO):
-                """Prompt-aware IO for the chat-driven autopilot.
-
-                Looks at the prompt text and returns the
-                contextually-correct answer. Always confirms BOND.
-                Designed so a chat user can run ``discover`` and then
-                ``apply branch`` back-to-back and the second run gets
-                a fresh cycle of answers.
-                """
-
-                def ask(self, prompt: str) -> str:
-                    p = prompt.lower()
-                    # "What kind of network" → menu index 2 (branch).
-                    if "what kind of network" in p or "blueprint" in p:
-                        return "2"
-                    # "Ambiguous ... which one" → just say "branch".
-                    if "ambiguous" in p or "which one" in p:
-                        return "branch"
-                    # Router device.
-                    if "router" in p or "which device" in p:
-                        return "seed-01"
-                    # WAN handoff.
-                    if "wan" in p or "handoff" in p:
-                        return "ISP fiber DHCP handoff"
-                    # Availability.
-                    if "availability" in p:
-                        return "STANDARD"
-                    # Growth.
-                    if "growth" in p:
-                        return "+25% in 12 months"
-                    # Vendor family.
-                    if "vendor family" in p or "which family" in p:
-                        return "cisco/ios-xe"
-                    # BOND gate at execution.
-                    if "bond" in p:
-                        return "BOND"
-                    return ""
-
-                def confirm(self, prompt: str) -> bool:
-                    # Always accept the BOND confirmation.
-                    return True
-
-                def show(self, text: str) -> None:
-                    return None
 
             db_path = os.environ.get("NETOPS_LEDGER_DB") or os.path.join(
                 tempfile.gettempdir(), "netops_webui_ledger.sqlite")
             store = LedgerStore(db_path)
             key_id = store.keys.create_key("webui-chat")
-            runner = AutopilotEngine(store=store, key_id=key_id, io=_NullIO())
+            runner = AutopilotEngine(store=store, key_id=key_id, io=RefusingIO())
             # Build a DeviceCommandRunner so chat commands like
             # ``ping``, ``traceroute``, ``show ip route`` actually
             # execute on the seed device. We use the SimFabric in
@@ -492,8 +448,20 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         done = _threading.Event()
 
         class _StreamIO:
+            """Forwards to an inner OperatorIO and mirrors it onto the stream.
+
+            ``set_inner`` exists because the chat installs the operator's
+            answers for a run by replacing the engine's io. Replacing this
+            wrapper outright would silently stop the phase stream mid-run, so
+            the answers are installed *inside* it instead.
+            """
+
             def __init__(self, inner):
                 self._inner = inner
+
+            def set_inner(self, inner):
+                previous, self._inner = self._inner, inner
+                return previous
 
             def ask(self, prompt: str) -> str:
                 events.put({"type": "ask", "prompt": prompt[:200]})
