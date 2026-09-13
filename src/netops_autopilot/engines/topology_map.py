@@ -179,6 +179,25 @@ class TopologyMapEngine:
                 where = f"{where}:{endpoint.learned_on_port}"
             out.append(f"DISCOVERY_TRUNCATED l3-{endpoint.ip}: {endpoint.reason} "
                        f"(MAC {endpoint.mac} learned on {where})")
+        totals = report.totals or {}
+        # One reporting device saw two chassis ids behind one hostname, on two
+        # of its own ports: provably two devices. They are kept apart, and the
+        # operator is told why the refs are not plain names.
+        for name, chassis_ids in sorted(totals.get("identity_collisions", {}).items()):
+            out.append(
+                f"IDENTITY_COLLISION {name}: one reporting device advertised "
+                f"{len(chassis_ids)} distinct chassis ids for this hostname "
+                f"({', '.join(chassis_ids)}) — carried as {len(chassis_ids)} "
+                f"separate devices, because a hostname is not an identity")
+        # Different reporters disagreeing about a third device's chassis id.
+        # Not enough to split devices on, and not something to hide either.
+        for name, by_observer in sorted(totals.get("identity_conflicts", {}).items()):
+            detail = ", ".join(
+                f"{obs} reports {'/'.join(chs)}" for obs, chs in sorted(by_observer.items()))
+            out.append(
+                f"IDENTITY_CONFLICT {name}: reporters disagree on the chassis id "
+                f"({detail}) — kept as one device, because second-hand "
+                f"disagreement is not evidence of two")
         for link in report.links:
             if link.fsm4_state in (lf.ONE_SIDED, lf.INFERRED, lf.INTERMEDIATE_SUSPECTED,
                                    lf.CONFLICTING, lf.STALE, lf.UNKNOWN):

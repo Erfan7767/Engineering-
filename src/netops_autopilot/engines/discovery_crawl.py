@@ -201,6 +201,24 @@ def _norm_name(text: Optional[str]) -> Optional[str]:
     return text.split(".")[0].strip().lower() or None
 
 
+#: Separator between a hostname and the chassis id that disambiguates it. A
+#: hostname cannot contain it, so a ref containing it is reversible.
+CHASSIS_REF_SEP = "~"
+
+
+def _chassis_norm(chassis_id: Optional[str]) -> Optional[str]:
+    """Canonical form of an advertised chassis id, or None if there is none."""
+    if not chassis_id:
+        return None
+    norm = "".join(ch for ch in str(chassis_id) if ch.isalnum()).lower()
+    return norm or None
+
+
+def _base_name(device_ref: str) -> str:
+    """The advertised hostname part of a (possibly disambiguated) ref."""
+    return device_ref.split(CHASSIS_REF_SEP, 1)[0]
+
+
 class DiscoveryCrawlEngine:
     """E31 in the registry: multi-device discovery over passive evidence."""
 
@@ -223,6 +241,116 @@ class DiscoveryCrawlEngine:
         self._links = link_engine
         self._claims = claim_factory
         self._families: dict[str, str] = {}
+        # A hostname is not an identity, but neither is a chassis id reported
+        # at second hand. Two switches both called ACCESS-SW, seen by the SAME
+        # reporting device on two of its own ports with two different chassis
+        # ids, are provably two devices — and merging them produced a map
+        # claiming one device was cabled to two seed ports on the same remote
+        # port, which is physically impossible, while the second device was
+        # never crawled at all. Two DIFFERENT reporters disagreeing about a
+        # third device's chassis id proves nothing (LLDP carries a MAC, CDP a
+        # different form), so that is recorded as conflicting evidence and the
+        # devices are not split on it.
+        self._refs_by_name: dict[str, list[str]] = {}
+        self._ref_by_chassis: dict[tuple[str, str], str] = {}
+        self._all_refs: set[str] = set()
+        self._seen_chassis: dict[str, dict[str, list[str]]] = {}
+        self._chassis_by_observer: dict[str, dict[str, list[str]]] = {}
+        #: (observer, name, chassis) -> ref, fixed the first time it is asked.
+        #: Without this the same row resolves differently depending on when it
+        #: is read: `_record_links` sees a name's first chassis id before any
+        #: second one exists, while `_link_report` runs after every table is
+        #: in and would then call that same first sighting a split. One row of
+        #: evidence must always name the same device.
+        self._resolution: dict[tuple[str, str, Optional[str]], Optional[str]] = {}
+
+    # ------------------------------------------------------- device identity
+    def _resolve_neighbor(self, observer: str, entry: dict) -> Optional[str]:
+        """device_ref for one neighbour-table row, derived from evidence only.
+
+        `observer` is the device whose table the row came from, and it is what
+        makes the split safe: only first-hand evidence separates two devices.
+        """
+        name = _norm_name(entry.get("neighbor_id"))
+        if not name:
+            return None
+        chassis = _chassis_norm(entry.get("chassis_id"))
+        key = (observer, name, chassis)
+        if key in self._resolution:
+            return self._resolution[key]
+        ref = self._register_identity(
+            name, chassis if self._is_first_hand_split(observer, name, chassis) else None)
+        self._resolution[key] = ref
+        return ref
+
+    def _is_first_hand_split(self, observer: str, name: str,
+                             chassis: Optional[str]) -> bool:
+        """True iff THIS reporting device sees >1 chassis id behind one name."""
+        if chassis is None:
+            return False
+        seen = self._seen_chassis.setdefault(observer, {}).setdefault(name, [])
+        if chassis not in seen:
+            seen.append(chassis)
+            self._note_chassis(observer, name, chassis)
+        return len(seen) > 1
+
+    def _note_chassis(self, observer: str, name: str, chassis: str) -> None:
+        """Record every chassis id each observer advertised for a name.
+
+        Kept whether or not it causes a split: disagreement between observers
+        is a finding an engineer wants, not something to average away.
+        """
+        seen = self._chassis_by_observer.setdefault(name, {}).setdefault(observer, [])
+        if chassis not in seen:
+            seen.append(chassis)
+
+    def _register_identity(self, name: str, chassis: Optional[str]) -> str:
+        known = self._refs_by_name.setdefault(name, [])
+        if chassis is None:
+            # Nothing separates this sighting from the device already known
+            # under that name, so it resolves there. Absent evidence is never
+            # turned into an extra device.
+            return known[0] if known else self._assign_ref(name, chassis)
+        existing = self._ref_by_chassis.get((name, chassis))
+        if existing is not None:
+            return existing
+        return self._assign_ref(name, chassis)
+
+    def _assign_ref(self, name: str, chassis: Optional[str]) -> str:
+        known = self._refs_by_name.setdefault(name, [])
+        if not known:
+            ref = name
+        else:
+            ref = f"{name}{CHASSIS_REF_SEP}{chassis}"
+            # Deterministic and collision-free: a fabricated ref must never
+            # shadow a name some other device already holds.
+            attempt = 2
+            while ref in self._all_refs:
+                ref = f"{name}{CHASSIS_REF_SEP}{chassis}{CHASSIS_REF_SEP}{attempt}"
+                attempt += 1
+        known.append(ref)
+        self._all_refs.add(ref)
+        if chassis is not None:
+            self._ref_by_chassis[(name, chassis)] = ref
+        return ref
+
+    def _identity_findings(self) -> dict:
+        """What the hostname/chassis evidence turned up, for the map's gaps.
+
+        Counts come from the refs actually issued, so the gap can never report
+        fewer devices than the crawl is carrying.
+        """
+        collisions: dict[str, list[str]] = {}
+        conflicting: dict[str, dict[str, list[str]]] = {}
+        for name, refs in self._refs_by_name.items():
+            by_observer = self._chassis_by_observer.get(name, {})
+            all_ids = sorted({c for ids in by_observer.values() for c in ids})
+            if len(refs) > 1:
+                collisions[name] = all_ids
+            elif len(all_ids) > 1:
+                conflicting[name] = {o: list(ids) for o, ids in sorted(by_observer.items())}
+        return {"collisions": dict(sorted(collisions.items())),
+                "conflicting": dict(sorted(conflicting.items()))}
 
     # ------------------------------------------------------------ crawl plan
     def plan_for(self, vendor_family: str, allowlist: CommandAllowlist) -> tuple[tuple[str, Parser], ...]:
@@ -263,6 +391,10 @@ class DiscoveryCrawlEngine:
         """Breadth-first, deterministic: frontier is a sorted set each wave."""
         visited: dict[str, DeviceResult] = {}
         tables: dict[str, list[dict]] = {}
+        # The seed's ref is authoritative; register it as the primary ref for
+        # its own name so a neighbour advertising that name with a *different*
+        # chassis id is recognised as the distinct device it is.
+        self._register_identity(_norm_name(seed_ref) or seed_ref, None)
         frontier: list[tuple[str, str, tuple[str, ...], DeviceClass]] = [
             (seed_ref, seed_family, (), DeviceClass.SEED)
         ]
@@ -294,9 +426,8 @@ class DiscoveryCrawlEngine:
                 # Enqueue unseen neighbors with consistent naming.
                 known_names = set(visited.keys()) | set(tables.keys())
                 if table:
-                    for entry in sorted(table, key=lambda e: (_norm_name(e["neighbor_id"]) or "",
-                                                              e["local_intf"] or "")):
-                        neighbor = _norm_name(entry["neighbor_id"])
+                    for entry in table:
+                        neighbor = self._resolve_neighbor(device_ref, entry)
                         if not neighbor or neighbor in visited:
                             continue
                         if neighbor in {ref for ref, *_ in wave}:
@@ -339,6 +470,10 @@ class DiscoveryCrawlEngine:
             existing = {l.link_id for l in links}
             links.extend(l for l in l3_links if l.link_id not in existing)
         totals = self._totals(visited)
+        findings = self._identity_findings()
+        totals["identity_collisions"] = {
+            name: list(chassis) for name, chassis in sorted(findings["collisions"].items())}
+        totals["identity_conflicts"] = findings["conflicting"]
         exhausted = not frontier
         return CrawlReport(
             devices=tuple(visited[d] for d in sorted(visited)),
@@ -701,7 +836,7 @@ class DiscoveryCrawlEngine:
     # ------------------------------------------------------------- link wiring
     def _record_links(self, device_ref: str, table: list[dict]) -> None:
         for entry in table:
-            neighbor = _norm_name(entry["neighbor_id"])
+            neighbor = self._resolve_neighbor(device_ref, entry)
             a = EndpointRef(device_ref, entry["local_intf"])
             b = EndpointRef(neighbor or "UNKNOWN", entry["neighbor_intf"])
             link_id = _link_id(a, b)
@@ -726,7 +861,7 @@ class DiscoveryCrawlEngine:
         back_table = self._merged_table(neighbor_norm)
         if not back_table:
             return False
-        back_name = _norm_name(device_ref)
+        back_name = _norm_name(_base_name(device_ref))
         neighbor_family = self._families.get(neighbor_norm, "")
         for back in back_table:
             if _norm_name(back.get("neighbor_id")) != back_name:
@@ -755,9 +890,9 @@ class DiscoveryCrawlEngine:
 
     def _link_report(self, tables: dict[str, list[dict]]) -> list[CrawlLink]:
         seen: dict[str, dict] = {}
-        for device_ref, table in tables.items():
+        for device_ref, table in sorted(tables.items()):
             for entry in table:
-                neighbor = _norm_name(entry["neighbor_id"])
+                neighbor = self._resolve_neighbor(device_ref, entry)
                 a = EndpointRef(device_ref, entry["local_intf"])
                 b = EndpointRef(neighbor or "UNKNOWN", entry["neighbor_intf"])
                 link_id = _link_id(a, b)
