@@ -42,6 +42,7 @@ from .registry import Parser, ParserInfo, obs_missing, obs_ok
 ARP_ROW_KEYS: tuple[str, ...] = ("protocol", "address", "age_minutes",
                                  "hardware_addr", "type", "interface")
 MAC_ROW_KEYS: tuple[str, ...] = ("vlan", "mac_address", "type", "ports")
+VLAN_ROW_KEYS: tuple[str, ...] = ("vlan_id", "name", "status", "ports")
 
 _ARP_HEADER = re.compile(
     r"^(?P<protocol>Protocol)\s+(?P<address>Address)\s+"
@@ -51,6 +52,18 @@ _ARP_HEADER = re.compile(
 _MAC_HEADER = re.compile(
     r"^(?P<vlan>Vlan)\s+(?P<mac_address>Mac\s*Address)\s+"
     r"(?P<type>Type)\s+(?P<ports>Ports)\s*$", re.I)
+
+_VLAN_HEADER = re.compile(
+    r"^(?P<vlan_id>VLAN)\s+(?P<name>Name)\s+(?P<status>Status)\s+(?P<ports>Ports)\s*$",
+    re.I)
+
+#: A VLAN id is 1-4094. Anything else in that column is prose, and accepting it
+#: would invent a VLAN the device does not have.
+_VLAN_ID = re.compile(r"^\d{1,4}$")
+
+_VLAN_NOISE = (
+    re.compile(r"^[\s\-]*$"),
+)
 
 #: Lines that are furniture, not data.
 _MAC_NOISE = (
@@ -132,6 +145,30 @@ def _parse_table(text: str, header: re.Pattern, keys: tuple[str, ...],
             continue                           # prose in the columns, not a row
         table.append({k: (v if v else None) for k, v in row.items()})
     return table
+
+
+class CiscoIosXeShowVlanBriefParser(Parser):
+    """``show vlan brief`` → ``vlan_table`` + ``vlan_count``.
+
+    The VLAN model the device actually has. The cisco/ios-xe allowlist has
+    always declared this command with fields ``vlan_id, name, status, ports``,
+    but nothing parsed it, so the platform designed VLAN assignments without
+    ever reading the VLANs already on the switch — and could hand a zone a VLAN
+    id the device was already using under a different name.
+    """
+
+    info = ParserInfo(
+        parser_id="regex/cisco_iosxe_show_vlan_brief",
+        version="1.0.0",
+        vendor_family="cisco/ios-xe",
+        command_ref="show vlan brief",
+    )
+
+    def parse(self, raw: bytes, raw_id: str) -> list[Observation]:
+        table = _parse_table(raw.decode("utf-8", errors="replace"),
+                             _VLAN_HEADER, VLAN_ROW_KEYS, "vlan_id", _VLAN_ID,
+                             noise=_VLAN_NOISE)
+        return _emit(self, raw_id, "vlan_table", "vlan_count", table)
 
 
 class CiscoIosXeArpParser(Parser):

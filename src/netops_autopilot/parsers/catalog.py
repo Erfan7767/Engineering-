@@ -11,6 +11,7 @@ from .interface_inventory import CiscoIosXeInterfacesStatusParser
 from .l2l3_inventory import (
     CiscoIosXeArpParser,
     CiscoIosXeMacAddressTableParser,
+    CiscoIosXeShowVlanBriefParser,
 )
 from .keyvalue import routeros_system_resource
 from .neighbor_parsers import NEIGHBOR_CATALOG_BUILDERS
@@ -29,6 +30,7 @@ CATALOG_BUILDERS = (
     CiscoIosXeInterfacesStatusParser,
     CiscoIosXeArpParser,
     CiscoIosXeMacAddressTableParser,
+    CiscoIosXeShowVlanBriefParser,
     junos_show_version,
     fortios_get_system_status,
     arubaos_show_version,

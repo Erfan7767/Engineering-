@@ -54,6 +54,29 @@ def _run_with_apply_failure(device: str, command: str):
     return store, fabric, report, session
 
 
+def _a_late_svi_command() -> str:
+    """An SVI line the branch design actually renders.
+
+    These tests used to hardcode ``interface Vlan20``. VLAN ids are chosen
+    from the VLANs the devices already have, so a hardcoded id silently stops
+    being rendered, the injected failure never fires, and the test measures a
+    successful apply while asserting a rollback. Read the target from the
+    render instead.
+    """
+    store, key_id, _counters, ta = make_ledger_stack()
+    fabric = SimFabricFactory(include_access=True, access_behavior="allow")
+    io = make_scenario_io("branch")
+    io.append_answers(["BOND"])
+    report = AutopilotEngine(store=store, key_id=key_id, io=io,
+                             time_authority=ta).run(
+        probe_port_session_factory=lambda p: fabric.probe(p),
+        mgmt_session_factory=fabric, port="SIM0", execute=False)
+    commands = [c for block in report.renders["seed-01"].blocks
+                for c in block.commands]
+    svis = [c for c in commands if c.startswith("interface Vlan")]
+    assert svis, commands
+    return svis[-1]
+
 # ---------------------------------------------------------------------------
 # the decision is the orchestrator's, and it is recorded
 # ---------------------------------------------------------------------------
@@ -117,7 +140,7 @@ def test_the_device_is_left_rolled_back_not_half_configured():
     repair and calling it the rollback.
     """
     _store, _fabric, report, _session = _run_with_apply_failure(
-        "seed-01", "interface Vlan20")
+        "seed-01", _a_late_svi_command())
     record = next(r for r in report.execution["change_records"]
                   if r["device_ref"] == "seed-01")
     assert record["outcome"] == "ROLLED_BACK"
@@ -212,7 +235,7 @@ def test_a_rollback_that_does_not_restore_the_device_is_not_called_clean():
     store, key_id, _c, ta = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     session = fabric.open("seed-01", ())
-    session.fail_times["interface Vlan20"] = 1   # the apply fails here
+    session.fail_times[_a_late_svi_command()] = 1   # the apply fails here
     session.fail_times["no vlan 10"] = 1         # and one undo line is dropped
     io = make_scenario_io("branch")
     io.append_answers(["BOND"])

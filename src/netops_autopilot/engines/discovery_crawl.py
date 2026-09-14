@@ -115,6 +115,12 @@ class DeviceResult:
     #: Empty means the device never answered — NOT that nothing is connected.
     arp_table: tuple[dict, ...] = ()
     mac_table: tuple[dict, ...] = ()
+    #: The device's own VLAN model (``show vlan brief``): vlan_id, name,
+    #: status, ports. Empty means the device never answered — NOT that it has
+    #: no VLANs. Design must be able to tell the two apart, because allocating
+    #: a VLAN id the device already uses under another name repurposes a live
+    #: segment.
+    vlan_table: tuple[dict, ...] = ()
     event_count: int = 0
     observation_count: int = 0
     claim_admitted: int = 0
@@ -723,6 +729,7 @@ class DiscoveryCrawlEngine:
             result.interface_table = self._table_of(observations_all, "interface_table")
             result.arp_table = self._table_of(observations_all, "arp_table")
             result.mac_table = self._table_of(observations_all, "mac_table")
+            result.vlan_table = self._table_of(observations_all, "vlan_table")
             collected, planned = result.counts()
             result.status = (DeviceStatus.COMPLETE if collected == planned
                              else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)

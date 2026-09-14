@@ -51,6 +51,54 @@ _GRADE_RANK = (
 
 #: VLAN pool and addressing parents (site defaults — operator-overridable).
 DEFAULT_VLAN_START = 10
+VLAN_POOL_STEP = 10
+
+
+def discovered_vlans(report, reachable) -> dict[int, set[str]]:
+    """vlan_id -> the name(s) reachable devices actually gave it.
+
+    Evidence from ``show vlan brief``, which the cisco/ios-xe allowlist always
+    declared and nothing used to read. A VLAN the device already has is not a
+    free id: assigning a zone to it renames a live segment, so the design has
+    to see it before it picks.
+    """
+    out: dict[int, set[str]] = {}
+    for device in report.devices:
+        if device.device_ref not in reachable:
+            continue
+        for row in device.vlan_table:
+            raw_id = row.get("vlan_id")
+            if raw_id is None or not str(raw_id).strip().isdigit():
+                continue                     # not a row we can trust; never guess
+            name = (row.get("name") or "").strip().lower()
+            out.setdefault(int(str(raw_id).strip()), set()).add(name)
+    return out
+
+
+def _vlan_basis(existing: dict[int, set[str]], vlan: int, zone_name: str) -> str:
+    """Why this VLAN id, in the words the evidence supports."""
+    if vlan in existing:
+        return (f"(reuses the VLAN the device already has, already named "
+                f"{zone_name!r} — no live segment renamed)")
+    return f"(pool step {VLAN_POOL_STEP}; not present on any discovered device)"
+
+def pick_vlan_id(existing: dict[int, set[str]], taken: set[int], zone_name: str) -> int:
+    """The VLAN id for a zone, chosen from what the devices actually have.
+
+    Reuse the device's own VLAN when it already carries exactly this zone's
+    name - zero churn, and the operator's naming survives. Otherwise take the
+    lowest pool id that is neither already on a device nor already assigned by
+    this design. Never a VLAN the device is using under another name.
+    """
+    want = zone_name.strip().lower()
+    for vid in sorted(existing):
+        if vid not in taken and existing[vid] == {want}:
+            return vid
+    vid = DEFAULT_VLAN_START
+    while vid in existing or vid in taken:
+        vid += VLAN_POOL_STEP
+    return vid
+
 DEFAULT_SITE_BLOCK_V4 = "10.240.0.0/16"
 DEFAULT_MGMT_OFFSET_INDEX = 0
 
@@ -265,7 +313,8 @@ class DesignEngine:
         cursor = int(parent.network_address)
         parent_end = int(parent.broadcast_address)
         zone_assigns: list[ZoneAssignment] = []
-        next_vlan = DEFAULT_VLAN_START
+        existing_vlans = discovered_vlans(report, reachable)
+        taken_vlans: set[int] = set()
         mgmt_subnet: Optional[str] = None
         for zone in sorted(intent.zones, key=_zone_sort_key):
             hosts = blueprint.default_host_sizes.get(zone.name)
@@ -284,14 +333,15 @@ class DesignEngine:
                                                     f"{zone.name!r} does not fit in {site_block_v4}",))
             subnet = str(ipaddress.ip_network((cursor, prefix)))
             cursor += block_size
-            vlan = next_vlan
-            next_vlan += 10
+            vlan = pick_vlan_id(existing_vlans, taken_vlans, zone.name)
+            taken_vlans.add(vlan)
             gateway = gateway_address(subnet, 1)
             zone_assigns.append(ZoneAssignment(
                 zone=zone.name, kind=zone.kind.value, vlan_id=vlan, subnet=subnet,
                 gateway=gateway, routed_on=router_ref,
                 reason=(f"IPAM first-fit: site={site_block_v4} hosts={hosts} ⇒ /{prefix}; "
-                        f"vlan={vlan} (pool step 10); gw=first usable")))
+                        f"vlan={vlan} " + _vlan_basis(existing_vlans, vlan, zone.name)
+                        + "; gw=first usable")))
             if zone.kind.value == "MGMT":
                 mgmt_subnet = subnet
 
