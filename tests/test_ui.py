@@ -14,10 +14,11 @@ import re
 from pathlib import Path
 
 import pytest
+from netops_autopilot.webui import WEBUI_DIR
 
 ROOT = Path(__file__).resolve().parent.parent
-V3 = ROOT / "webui" / "v3" / "index.html"
-V2 = ROOT / "webui" / "v2" / "index.html"
+V3 = WEBUI_DIR / "v3" / "index.html"
+V2 = WEBUI_DIR / "v2" / "index.html"
 
 
 # ------------------- file presence -------------------

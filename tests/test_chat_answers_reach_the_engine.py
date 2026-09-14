@@ -33,13 +33,14 @@ from netops_autopilot.core.failures import Failure, FailureClass
 from netops_autopilot.engines.blueprints import BLUEPRINTS
 from netops_autopilot.engines.verification_executor import CLIENT_ZONE_KINDS
 from netops_autopilot.web.server import create_app
+from netops_autopilot.webui import WEBUI_DIR
 from tests.support.simfabric import make_ledger_stack
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 def _client() -> TestClient:
-    return TestClient(create_app(static_dir=REPO / "webui"))
+    return TestClient(create_app(static_dir=WEBUI_DIR))
 
 
 def _turn(client: TestClient, message: str) -> dict:

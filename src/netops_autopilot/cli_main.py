@@ -167,8 +167,13 @@ def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
              execute: bool = False) -> int:
     from .simfabric import SimFabricFactory, make_ledger_stack
     from .cli.scenarios import make_scenario_io
+    from .core.failures import Failure
     store, key_id, _counters, time_auth = make_ledger_stack()
-    fabric = SimFabricFactory(include_access=True, access_behavior="allow")
+    try:
+        fabric = SimFabricFactory(include_access=True, access_behavior="allow")
+    except Failure as exc:
+        print(f"Demo cannot start: {exc}", file=sys.stderr)
+        return 2
     io = make_scenario_io(scenario)
     if execute:
         # The apply gate demands a typed BOND; the demo answers it so the

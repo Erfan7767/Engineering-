@@ -9,8 +9,25 @@ dependencies = [
     "jsonschema>=4.20",
 ]
 
+# The program's job is to talk to real gear, so the drivers it needs are named
+# and installable rather than left to whoever happens to have them. Each one
+# still degrades to a typed BLOCKED Failure when absent — declaring them here
+# means "pip install netops-autopilot[hardware]" is a working program, and a
+# bare install tells the operator exactly which package is missing.
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Direct-connect console (ADR-0004 canonical hardware path) and SSH.
+hardware = ["pyserial>=3.5", "netmiko>=4.3"]
+# The FastAPI control surface (`netops-autopilot webui`).
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+# Everything a field engineer installs on the laptop they carry to the rack.
+all = ["pyserial>=3.5", "netmiko>=4.3", "fastapi>=0.110", "uvicorn[standard]>=0.29"]
+
+# `pip install netops-autopilot` must leave a command behind. Without this the
+# package installed cleanly and then could only be reached as
+# `python -m netops_autopilot` — which the help text never mentioned.
+[project.scripts]
+netops-autopilot = "netops_autopilot.cli_main:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -18,6 +35,35 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Data that ships with the code that reads it. The simulated fabric's device
+# answers and the web interface both used to live outside the package, so a
+# wheel shipped 195 .py files and nothing else: `demo` died with a raw
+# FileNotFoundError and the web app served 404 for "/" after a clean startup.
+[tool.setuptools.package-data]
+"netops_autopilot.simfabric" = ["fixtures/**"]
+"netops_autopilot.webui" = ["static/**"]
+"netops_autopilot.agents" = ["data/**"]
+"netops_autopilot.engines" = ["data/**"]
+"netops_autopilot.reconcile" = ["data/**"]
+"netops_autopilot.policy" = ["data/**"]
+
+# The vendor knowledge base (allowlists, banner markers, capability matrix,
+# renderers) is a data pack that lives at the repository root. `specs_data_dir`
+# already probes `sysconfig['data']/netops_autopilot_specs` as its
+# installed-location candidate — but nothing ever put the files there, so a
+# freshly installed package resolved every vendor fact to a typed BLOCKED and
+# could not plan a single crawl command. Shipping the pack into exactly the
+# directory the locator already looks in closes that gap with no second copy to
+# drift; NETOPS_SPECS_DATA still overrides it, and a checkout still wins.
+[tool.setuptools.data-files]
+"netops_autopilot_specs" = ["specs/data/*.json"]
+"netops_autopilot_specs/allowlists" = ["specs/data/allowlists/*.json"]
+"netops_autopilot_specs/defaults_db" = ["specs/data/defaults_db/*.json"]
+"netops_autopilot_specs/capability" = ["specs/data/capability/*.json"]
+"netops_autopilot_specs/renderers" = ["specs/data/renderers/*.json"]
+"netops_autopilot_specs/access_profiles" = ["specs/data/access_profiles/*.json"]
+"netops_autopilot_specs/device_errors" = ["specs/data/device_errors/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

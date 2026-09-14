@@ -13,6 +13,8 @@ hardware lab gate (OI-0005) stays open and untouched by construction.
 
 from __future__ import annotations
 
+import os
+
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,7 +27,10 @@ from netops_autopilot.fsm.link_fsm import build_link_fsm
 from netops_autopilot.ledger.store import LedgerStore
 from .loopback import LoopbackSession
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+#: Canned device answers. Ships as package data; ``NETOPS_SIM_FABRIC_FIXTURES``
+#: overrides it so a site can point at its own captured output instead.
+FIXTURES = Path(os.environ.get("NETOPS_SIM_FABRIC_FIXTURES")
+                or (Path(__file__).resolve().parent / "fixtures" / "golden"))
 NOW = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
 
 BACK_TABLE = b"""Capability codes:
@@ -112,7 +117,27 @@ SEED_BANNER = b"\r\nCisco IOS Software, Catalyst L3 Switch\r\nseed-01 con0 is no
 
 
 def _fx(name: str) -> bytes:
-    return (FIXTURES / "cisco_iosxe" / f"{name}.txt").read_bytes()
+    """Read one canned device answer from the shipped fixture pack.
+
+    A missing fixture is a packaging fault, not a programming error, and the
+    operator deserves a sentence rather than a traceback: an installed wheel
+    that did not carry the data used to die here with
+    ``FileNotFoundError: .../fixtures/golden/cisco_iosxe/show_version.txt``,
+    which named a path inside site-packages and told nobody what to do.
+    """
+    path = FIXTURES / "cisco_iosxe" / f"{name}.txt"
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise Failure(
+            FailureClass.BLOCKED,
+            causes=(
+                f"SIM_FABRIC_DATA_MISSING: {path} is not readable ({exc}). The "
+                f"simulated device answers ship as package data under "
+                f"netops_autopilot/simfabric/fixtures — reinstall the package, "
+                f"or point NETOPS_SIM_FABRIC_FIXTURES at a copy of that tree.",
+            ),
+        ) from exc
 
 
 def seed_session() -> LoopbackSession:

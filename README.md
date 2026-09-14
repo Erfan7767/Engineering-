@@ -248,7 +248,7 @@ the engine moves on. The live event log below the timeline streams every
 | **Scenarios** | 4 canned demo scenarios (branch / leaf-spine / hotel / retail) | `src/netops_autopilot/cli/scenarios.py` |
 | **Transports** | Serial (pySerial), SSH (Netmiko), Telnet (stdlib) + auto-select factory | `src/netops_autopilot/access/` |
 | **Reporting** | Self-contained HTML + structured JSON per-run reports | `src/netops_autopilot/reporting/` |
-| **Web UI** | FastAPI REST + WebSocket + single-page static UI | `src/netops_autopilot/web/` + `webui/` |
+| **Web UI** | FastAPI REST + WebSocket + single-page static UI | `src/netops_autopilot/web/` + `src/netops_autopilot/webui/static/` |
 | **Config** | YAML / JSON / TOML loader + env-var overrides | `src/netops_autopilot/config/` |
 | **Observability** | JSON-to-stdout logger (L11 redaction) + Prometheus metrics | `src/netops_autopilot/observability/` |
 | **Docs** | User / Developer / Operator / API guides | `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/OPERATOR_RUNBOOK.md`, `docs/API_REFERENCE.md` |

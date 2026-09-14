@@ -45,7 +45,7 @@ src/netops_autopilot/
 └── webui/                   # path resolver to the static web UI
 ```
 
-The single-page web UI lives in `webui/index.html` (root of the repo).
+The single-page web UI lives in `src/netops_autopilot/webui/static/index.html` — inside the package, so a wheel carries it.
 It is intentionally framework-free so it works in any browser with no
 build step.
 

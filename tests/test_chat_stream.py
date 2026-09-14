@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
+from netops_autopilot.webui import WEBUI_DIR
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
@@ -24,7 +25,7 @@ def client():
     from fastapi.testclient import TestClient
     from netops_autopilot.web.server import create_app
 
-    app = create_app(static_dir=REPO / "webui")
+    app = create_app(static_dir=WEBUI_DIR)
     return TestClient(app)
 
 

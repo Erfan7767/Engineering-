@@ -87,13 +87,13 @@ def _ensure_fastapi():
 
 def create_app(*, static_dir: Optional[Path] = None) -> Any:
     if static_dir is None:
-        # Auto-discover the webui directory relative to the package.
-        # __file__ is .../netops_autopilot/web/server.py, so we go up
-        # 4 levels to reach the repo root, where webui/ lives.
-        _pkg_root = Path(__file__).resolve().parent.parent.parent.parent
-        _candidate = _pkg_root / "webui"
-        if _candidate.exists():
-            static_dir = _candidate
+        # The assets ship inside the package (netops_autopilot/webui/static).
+        # Walking parents to the repository root instead — the previous
+        # behaviour — resolved to nothing in an installed wheel, and the app
+        # then served 404 for "/" while reporting a clean startup.
+        from ..webui import WEBUI_DIR
+        if WEBUI_DIR.exists():
+            static_dir = WEBUI_DIR
     """Construct the FastAPI app. Caller is responsible for ``uvicorn.run(app)``."""
     _ensure_fastapi()
     from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header as _Header
