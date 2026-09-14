@@ -138,13 +138,15 @@ def _real_mgmt_factory(method: str = "ssh", username: Optional[str] = None,
 def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
                   mgmt_method: str = "ssh", mgmt_user: Optional[str] = None,
                   allow_unverified_identity: bool = False,
-                  max_devices: int = 256, max_l3_probes: int = 32) -> int:
+                  max_devices: int = 256, max_l3_probes: int = 32,
+                  discovery_workers: int = 1) -> int:
     # A budget of zero would discover nothing and report an empty topology as
     # though the network were empty — the one answer discovery must never give.
-    if max_devices < 1 or max_l3_probes < 1:
-        print(f"Refusing: --max-devices must be >= 1 (got {max_devices}) and "
-              f"--max-l3-probes must be >= 1 (got {max_l3_probes}). A budget of "
-              f"zero would report an empty network that is not empty.",
+    if max_devices < 1 or max_l3_probes < 1 or discovery_workers < 1:
+        print(f"Refusing: --max-devices must be >= 1 (got {max_devices}), "
+              f"--max-l3-probes must be >= 1 (got {max_l3_probes}) and "
+              f"--discovery-workers must be >= 1 (got {discovery_workers}). A "
+              f"budget of zero would report an empty network that is not empty.",
               file=sys.stderr)
         return 2
     store = LedgerStore("netops-ledger.sqlite3")
@@ -152,7 +154,8 @@ def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
     engine = AutopilotEngine(
         store=store, key_id=key_id, io=ConsoleIO(),
         time_authority=TimeAuthority(clock=lambda: datetime.now(timezone.utc)),
-        max_devices=max_devices, max_l3_probes=max_l3_probes)
+        max_devices=max_devices, max_l3_probes=max_l3_probes,
+        discovery_workers=discovery_workers)
     report = engine.run(
         probe_port_session_factory=_real_session_factory,
         mgmt_session_factory=_real_mgmt_factory(
@@ -432,6 +435,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--max-l3-probes", type=int, default=32, metavar="N",
                     help="how many L3 endpoints discovery may probe for devices "
                          "that never advertised themselves (default 32)")
+    ap.add_argument("--discovery-workers", type=int, default=1, metavar="N",
+                    help="management sessions to hold open at once during "
+                         "discovery (default 1 = serial). Overlaps only the "
+                         "wait on devices; evidence is still recorded in sorted "
+                         "device order, so the run is unchanged. A large campus "
+                         "at ~3 s/device is ~14 min serially; 16 workers cuts "
+                         "that to under a minute. Keep it within the VTY limit "
+                         "of the gear.")
 
     demo = sub.add_parser("demo", help="deterministic simulated fabric, full flow, no hardware")
     demo.add_argument("--scenario", default="branch",
@@ -471,7 +482,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                              mgmt_method=args.mgmt_method, mgmt_user=args.mgmt_user,
                              allow_unverified_identity=args.allow_unverified_identity,
                              max_devices=args.max_devices,
-                             max_l3_probes=args.max_l3_probes)
+                             max_l3_probes=args.max_l3_probes,
+                             discovery_workers=args.discovery_workers)
     if args.command == "demo":
         return run_demo(scenario=args.scenario, report_dir=args.report_dir,
                         execute=args.execute)

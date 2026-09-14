@@ -393,8 +393,24 @@ class DiscoveryCrawlEngine:
         allowlist_of: Callable[[str], CommandAllowlist],
         max_devices: int = 256,
         max_l3_probes: int = 32,
+        workers: int = 1,
     ) -> CrawlReport:
-        """Breadth-first, deterministic: frontier is a sorted set each wave."""
+        """Breadth-first, deterministic: frontier is a sorted set each wave.
+
+        ``workers`` overlaps the part of discovery that waits on a device. It
+        changes only how long a wave takes, never what it records: each wave's
+        devices are *collected* concurrently and then *admitted* — every ledger
+        append, claim and twin transition — one at a time in sorted
+        ``device_ref`` order. Two runs over the same fabric record the same
+        evidence in the same sequence at workers=1 and workers=16.
+
+        On the simulated transport there is nothing to wait for, so this is a
+        correctness lever there; against real gear it is the difference between
+        a serial console crawl and one that finishes inside a maintenance
+        window. A 273-device campus at ~3 s per device is ~14 minutes serially.
+        """
+        if workers < 1:
+            raise ValueError(f"workers must be >= 1, got {workers}")
         visited: dict[str, DeviceResult] = {}
         tables: dict[str, list[dict]] = {}
         # The seed's ref is authoritative; register it as the primary ref for
@@ -408,20 +424,30 @@ class DiscoveryCrawlEngine:
         unprobed: list[tuple[str, str, tuple[str, ...], DeviceClass]] = []
         while frontier and len(visited) < max_devices:
             wave: list[tuple[str, str, tuple[str, ...], DeviceClass]] = []
-            for device_ref, family, hints, classification in sorted(frontier):
-                if device_ref in visited:
+            # Select this wave up front, in sorted order, so the batch is the
+            # same set whichever way it is collected. Deduplicated here rather
+            # than by ``visited``, because with a parallel batch nothing has
+            # been recorded yet.
+            batch: list[tuple[str, str, tuple[str, ...], DeviceClass]] = []
+            selected: set[str] = set()
+            for entry in sorted(frontier):
+                device_ref = entry[0]
+                if device_ref in visited or device_ref in selected:
                     continue
-                if len(visited) >= max_devices:
+                if len(visited) + len(batch) >= max_devices:
                     # Kept, not dropped: the L2/L3 pass already records what
                     # its budget refuses, and a frontier device is the same
                     # kind of fact — a neighbor named it.
-                    unprobed.append((device_ref, family, hints, classification))
+                    unprobed.append(entry)
                     continue
-                result = self._crawl_device(
-                    device_ref=device_ref, family=family, hints=hints,
-                    classification=classification, session_factory=session_factory,
-                    allowlist_of=allowlist_of,
-                )
+                selected.add(device_ref)
+                batch.append(entry)
+            collected = self._collect_wave(
+                batch, session_factory=session_factory,
+                allowlist_of=allowlist_of, workers=workers)
+            for device_ref, family, hints, classification in batch:
+                result, observations, plan = collected[device_ref]
+                self._admit_device(device_ref, result, observations, plan)
                 visited[device_ref] = result
                 self._families[device_ref] = (result.identity.vendor_family
                                               if result.identity else family)
@@ -642,6 +668,48 @@ class DiscoveryCrawlEngine:
         return endpoints, links
 
     # ------------------------------------------------------------- one device
+    def _collect_wave(self, batch, *, session_factory, allowlist_of,
+                      workers: int) -> dict:
+        """Collect one BFS wave. Parallel I/O, deterministic by construction.
+
+        ``_collect_device`` writes no shared state, so it is safe to overlap;
+        the returned mapping is keyed by device_ref and consumed by the caller
+        in sorted order, which is what makes the recorded evidence identical to
+        a serial crawl. A worker that raises loses only its own device — it is
+        recorded as UNREACHABLE with the exception as its reason, exactly as a
+        refused session is, and the rest of the wave still lands.
+        """
+        if workers <= 1 or len(batch) <= 1:
+            return {entry[0]: self._collect_device(
+                device_ref=entry[0], family=entry[1], hints=entry[2],
+                classification=entry[3], session_factory=session_factory,
+                allowlist_of=allowlist_of) for entry in batch}
+        from concurrent.futures import ThreadPoolExecutor
+        out: dict[str, tuple] = {}
+        with ThreadPoolExecutor(max_workers=min(workers, len(batch)),
+                                thread_name_prefix="crawl") as pool:
+            futures = {
+                pool.submit(self._collect_device, device_ref=entry[0],
+                            family=entry[1], hints=entry[2],
+                            classification=entry[3],
+                            session_factory=session_factory,
+                            allowlist_of=allowlist_of): entry
+                for entry in batch}
+            for future, entry in futures.items():
+                try:
+                    out[entry[0]] = future.result()
+                except Exception as exc:   # noqa: BLE001 — one device, one reason
+                    result = DeviceResult(
+                        device_ref=entry[0], classification=entry[3],
+                        status=DeviceStatus.UNREACHABLE,
+                        mgmt_addresses=tuple(entry[2]),
+                        rejection_reasons=[
+                            f"COLLECT_FAILED: {type(exc).__name__}: {exc} — the "
+                            f"worker collecting this device raised, so nothing "
+                            f"about it is known"])
+                    out[entry[0]] = (result, [], [])
+        return out
+
     def _crawl_device(
         self,
         *,
@@ -652,8 +720,43 @@ class DiscoveryCrawlEngine:
         session_factory: SessionFactory,
         allowlist_of: Callable[[str], CommandAllowlist],
     ) -> DeviceResult:
+        """Collect one device and admit its evidence — the serial behaviour.
+
+        Split into ``_collect_device`` (pure I/O, safe to run concurrently) and
+        ``_admit_device`` (every ledger and twin write, run in sorted order) so
+        ``crawl`` can overlap the slow half without changing the order anything
+        is recorded in. Calling both here keeps this method's contract exactly
+        as it was.
+        """
+        result, observations, plan = self._collect_device(
+            device_ref=device_ref, family=family, hints=hints,
+            classification=classification, session_factory=session_factory,
+            allowlist_of=allowlist_of)
+        self._admit_device(device_ref, result, observations, plan)
+        return result
+
+    def _collect_device(
+        self,
+        *,
+        device_ref: str,
+        family: str,
+        hints: tuple[str, ...],
+        classification: DeviceClass,
+        session_factory: SessionFactory,
+        allowlist_of: Callable[[str], CommandAllowlist],
+    ) -> tuple[DeviceResult, list[Observation], list]:
+        """Talk to one device and parse what it said. NO shared-state writes.
+
+        This is the only part of discovery that waits on a device, so it is the
+        only part worth overlapping. It touches nothing but its own result:
+        no ``append_observation``, no claim, no twin transition — those happen
+        in ``_admit_device``, in sorted order, so a parallel crawl records
+        evidence in exactly the sequence a serial one did.
+        """
         result = DeviceResult(device_ref=device_ref, classification=classification,
                               status=DeviceStatus.BLOCKED)
+        observations_all: list[Observation] = []
+        plan: list = []
         try:
             session = session_factory.open(device_ref, hints)
         except Failure as exc:
@@ -665,7 +768,7 @@ class DiscoveryCrawlEngine:
             # ``ping <neighbor>`` from the chat and reach it later
             # once credentials are fixed.
             result.mgmt_addresses = tuple(hints)
-            return result
+            return result, observations_all, plan
 
         try:
             allowlist = allowlist_of(family)
@@ -675,9 +778,8 @@ class DiscoveryCrawlEngine:
                 result.status = DeviceStatus.NO_PLAN
                 result.rejection_reasons.append(
                     f"NO_CRAWL_PLAN: family={family!r} has no catalog parser with a READ_ONLY allowlisted command")
-                return result
+                return result, observations_all, plan
 
-            observations_all: list[Observation] = []
             for command, parser in plan:
                 try:
                     outcome = self._collector.collect(
@@ -695,8 +797,9 @@ class DiscoveryCrawlEngine:
                     continue
 
                 observations = parser.parse(outcome.output, raw_id=outcome.artifact.raw_id)
-                for obs in observations:
-                    self._store.append_observation(obs)
+                # Buffered, not written: the ledger append belongs to the
+                # serial admission pass so ordering never depends on which
+                # worker finished first.
                 observations_all.extend(observations)
                 result.event_count += 1
                 result.observation_count += len(observations)
@@ -707,46 +810,72 @@ class DiscoveryCrawlEngine:
                     ok_field_count=sum(1 for o in observations if o.parse_status is ParseStatus.OK)))
 
 
-            # Claims (T1-strict) → Twin admission.
-            issues = self._claims.issue_for_device(device_ref, observations_all)
-            from ..twin.twin import Admission
-            for issue in issues:
-                if issue.admitted:
-                    apply_result = self._twin.apply_claim(
-                        issue.claim,
-                        collected_at=self._collector_now(),
-                    )
-                    if apply_result.admission is Admission.APPLIED:
-                        result.claim_admitted += 1
-                    else:
-                        result.claim_rejected += 1
-                        result.rejection_reasons.append(apply_result.reason)
-                else:
-                    result.claim_rejected += 1
-                    result.rejection_reasons.extend(issue.reasons)
-
-            result.identity = self._identity_of(device_ref, plan, observations_all)
-            result.interface_table = self._table_of(observations_all, "interface_table")
-            result.arp_table = self._table_of(observations_all, "arp_table")
-            result.mac_table = self._table_of(observations_all, "mac_table")
-            result.vlan_table = self._table_of(observations_all, "vlan_table")
             collected, planned = result.counts()
             result.status = (DeviceStatus.COMPLETE if collected == planned
                              else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)
-            return result
+            return result, observations_all, plan
         finally:
-            # A session to a real device is a scarce resource: VTY lines are
-            # limited, and one left open here is one fewer the operator has
-            # later. Closing has to happen on every exit path, including a
-            # failure raised mid-crawl — a ledger or twin error used to leave
-            # the transport open. And a transport that refuses to close must
-            # not replace the failure already in flight.
-            try:
-                session.close()
-            except Exception as exc:
-                result.rejection_reasons.append(
-                    f"SESSION_CLOSE_FAILED: {type(exc).__name__}: {exc} — the "
-                    f"management session may still be held on the device")
+            self._close_session(session, result)
+
+    def _close_session(self, session, result: DeviceResult) -> None:
+        """Release the transport on every exit path.
+
+        A session to a real device is a scarce resource: VTY lines are limited,
+        and one left open here is one fewer the operator has later. A transport
+        that refuses to close must not replace the failure already in flight.
+        """
+        try:
+            session.close()
+        except Exception as exc:
+            result.rejection_reasons.append(
+                f"SESSION_CLOSE_FAILED: {type(exc).__name__}: {exc} — the "
+                f"management session may still be held on the device")
+
+    def _admit_device(self, device_ref: str, result: DeviceResult,
+                      observations_all: list[Observation], plan) -> None:
+        """Every shared-state write for one device, in the caller's order.
+
+        Ledger appends, claim issue and twin admission all live here and only
+        here, so the sequence of recorded evidence is a function of the sorted
+        device order — never of thread scheduling.
+
+        ``plan`` is the crawl plan the device was collected against. It is not
+        cosmetic: ``_identity_of`` takes the vendor family from the first
+        parser in the plan, so admitting without it would record an identity
+        with no family for every device on the network.
+        """
+        if not plan:
+            # The device was never collected against a plan — refused
+            # management (UNREACHABLE) or no READ_ONLY command exists for its
+            # family (NO_PLAN). The serial path recorded nothing at all for
+            # such a device, not even an empty identity, and a parallel crawl
+            # must record exactly the same nothing.
+            return
+        for obs in observations_all:
+            self._store.append_observation(obs)
+        # Claims (T1-strict) → Twin admission.
+        issues = self._claims.issue_for_device(device_ref, observations_all)
+        from ..twin.twin import Admission
+        for issue in issues:
+            if issue.admitted:
+                apply_result = self._twin.apply_claim(
+                    issue.claim,
+                    collected_at=self._collector_now(),
+                )
+                if apply_result.admission is Admission.APPLIED:
+                    result.claim_admitted += 1
+                else:
+                    result.claim_rejected += 1
+                    result.rejection_reasons.append(apply_result.reason)
+            else:
+                result.claim_rejected += 1
+                result.rejection_reasons.extend(issue.reasons)
+
+        result.identity = self._identity_of(device_ref, plan, observations_all)
+        result.interface_table = self._table_of(observations_all, "interface_table")
+        result.arp_table = self._table_of(observations_all, "arp_table")
+        result.mac_table = self._table_of(observations_all, "mac_table")
+        result.vlan_table = self._table_of(observations_all, "vlan_table")
 
     # --------------------------------------------------------------- helpers
     def _collector_now(self):

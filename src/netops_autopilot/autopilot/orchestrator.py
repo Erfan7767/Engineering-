@@ -112,17 +112,19 @@ class AutopilotEngine:
         time_authority: Optional[TimeAuthority] = None,
         max_devices: int = 256,
         max_l3_probes: int = 32,
+        discovery_workers: int = 1,
     ) -> None:
         # The discovery budget was a default buried in `crawl()` that nothing
         # above it could change. A campus larger than the constant stopped at
         # 256 devices, recorded the rest as NOT_PROBED — honestly, but with no
         # way for the operator to lift the ceiling short of editing source.
-        if max_devices < 1 or max_l3_probes < 1:
+        if max_devices < 1 or max_l3_probes < 1 or discovery_workers < 1:
             raise ValueError(
                 f"discovery budget must be positive (max_devices={max_devices}, "
-                f"max_l3_probes={max_l3_probes})")
+                f"max_l3_probes={max_l3_probes}, discovery_workers={discovery_workers})")
         self.max_devices = max_devices
         self.max_l3_probes = max_l3_probes
+        self.discovery_workers = discovery_workers
         self.store = store
         #: Per-device ConfigIR from the render phase, kept for the failure
         #: policy (node reversibility is not in the rendered text).
@@ -752,7 +754,8 @@ class AutopilotEngine:
             seed_ref="seed-01", seed_family=family,
             session_factory=_Factory(),
             allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())),
-            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes)
+            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes,
+            workers=self.discovery_workers)
         self.report.crawl = report
         totals = report.totals
         self._transition(Phase.BOOT_PROBE.value, Phase.DISCOVERY_A.value, "CRAWL",
@@ -843,7 +846,8 @@ class AutopilotEngine:
                 seed_ref="seed-01", seed_family=family,
                 session_factory=_Factory(),
                 allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())),
-            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes)
+            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes,
+            workers=self.discovery_workers)
             before, after = set(self._access_limited_refs()), set()
             self.report.crawl = report
             after = set(self._access_limited_refs())
