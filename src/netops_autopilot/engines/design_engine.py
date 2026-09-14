@@ -350,7 +350,7 @@ class DesignEngine:
 
         # --- access ---------------------------------------------------------
         access = self._access_ports(report, reachable, family_of, uplinks,
-                                    zone_assigns, blueprint)
+                                    zone_assigns, blueprint, reasons)
 
         blocked = bool(questions)
         return SiteDesign(
@@ -454,7 +454,8 @@ class DesignEngine:
 
     def _access_ports(self, report: CrawlReport, reachable: dict[str, DeviceResult],
                       family_of: dict[str, str], uplinks: list[UplinkAssignment],
-                      zones: list[ZoneAssignment], blueprint: Blueprint) -> list[AccessAssignment]:
+                      zones: list[ZoneAssignment], blueprint: Blueprint,
+                      reasons: list[str]) -> list[AccessAssignment]:
         used: dict[str, set[str]] = {}
         for up in uplinks:
             used.setdefault(up.device_ref, set()).add(up.local_port)
@@ -470,6 +471,24 @@ class DesignEngine:
                     if ep.device_ref == ref and ep.interface:
                         infra_ports.add(normalize_port(family_of.get(ref, ""), ep.interface)[0] or ep.interface)
             infrastructure[ref] = infra_ports
+        # Ports discovery shows as carrying a device, and in which VLAN. A
+        # connected port in a real VLAN is NOT unused: reassigning it moves
+        # whatever is plugged in. On the sample device that meant handing the
+        # out-of-band management port (connected, VLAN 30) to the guest zone,
+        # while describing it as an "unused harvested port".
+        occupied: dict[str, dict[str, tuple[str, str]]] = {}
+        for ref in reachable:
+            per_port: dict[str, tuple[str, str]] = {}
+            for row in reachable[ref].interface_table:
+                raw_port = row.get("port")
+                if not raw_port:
+                    continue
+                port = normalize_port(family_of.get(ref, ""), raw_port)[0] or raw_port
+                status = (row.get("status") or "").strip().lower()
+                vlan = (row.get("vlan") or "").strip()
+                if status == "connected" and vlan.isdigit() and vlan != "1":
+                    per_port[port] = (vlan, status)
+            occupied[ref] = per_port
         enduser = [a for a in zones if a.kind in ("INTERNAL", "GUEST", "DMZ")]
         # Serve the largest internal-ish zone first (shortage is visible).
         enduser.sort(key=lambda a: -blueprint.default_host_sizes.get(a.zone, 0))
@@ -477,10 +496,34 @@ class DesignEngine:
         assignments: list[AccessAssignment] = []
         for ref in sorted(reachable):
             family = family_of.get(ref, "")
-            free = [p for p in harvested.get(ref, ())
-                    if p not in used.get(ref, set()) and p not in infrastructure.get(ref, set())]
-            if not free:
+            harvested_here = [p for p in harvested.get(ref, ())
+                              if p not in used.get(ref, set())
+                              and p not in infrastructure.get(ref, set())]
+            if not harvested_here:
                 continue  # honest silence: nothing harvested beyond uplinks
+            occupied_here = {port: state for port, state in occupied.get(ref, {}).items()
+                             if port in harvested_here}
+            free = [p for p in harvested_here if p not in occupied_here]
+            # FIRST: a port already carrying one of this design's VLANs, with
+            # something connected, stays exactly as it is — for every zone,
+            # not just the end-user ones. Skipping MGMT and WAN here made
+            # their real ports look stranded, so the reservation below burned
+            # two spare sockets on zones that already had members and the
+            # smaller zones ran out of ports. Restating the membership is a
+            # no-op on the device and keeps the design a complete statement
+            # of intent.
+            held_by_zone: dict[int, list[str]] = {}
+            for port, (vlan, _status) in sorted(occupied_here.items()):
+                held_by_zone.setdefault(int(vlan), []).append(port)
+            for zone_assign in zones:
+                for port in held_by_zone.get(zone_assign.vlan_id, []):
+                    assignments.append(AccessAssignment(
+                        device_ref=ref, port=port, zone=zone_assign.zone,
+                        vlan_id=zone_assign.vlan_id,
+                        reason=(f"discovery shows {port} connected and already in "
+                                f"VLAN {zone_assign.vlan_id} ({zone_assign.zone}) — "
+                                f"left as configured, nothing plugged in is moved")))
+                    used.setdefault(ref, set()).add(port)
             # A routed zone whose VLAN has no member port has a
             # protocol-down SVI: the address is configured and the zone cannot
             # forward a packet. The weighted distribution below serves only
@@ -491,11 +534,14 @@ class DesignEngine:
             # internet. Reserve one harvested port per such zone, taken from
             # the high end so end-user ports are unaffected, and name the port
             # the operator has to cable.
+            already = {a.zone for a in assignments if a.device_ref == ref}
             for zone_assign in zones:
                 if zone_assign.kind in ("INTERNAL", "GUEST", "DMZ"):
                     continue                    # served by the distribution
                 if zone_assign.routed_on != ref or not free:
                     continue
+                if zone_assign.zone in already:
+                    continue                    # discovery already gave it a port
                 port = free.pop()               # highest harvested port
                 what = ("provider handoff" if zone_assign.kind == "WAN"
                         else "out-of-band management")
@@ -513,15 +559,65 @@ class DesignEngine:
             # 96-host users zone and an 8-host mgmt zone both got a single
             # socket. Deterministic weighted round-robin: same inputs, same
             # assignment, replay-identical.
+            # A port holding a device in some OTHER VLAN is not silently
+            # reassigned: that would move a live machine into a different
+            # segment. It is reported instead, and left out of the pool.
+            stranded = sorted(
+                port for vlan_ports in held_by_zone.values() for port in vlan_ports
+                if port not in used.get(ref, set()))
+            if stranded:
+                detail = ", ".join(
+                    f"{port} (VLAN {occupied_here[port][0]})" for port in stranded)
+                reasons.append(
+                    f"PORTS_LEFT_ALONE {ref}: {detail} — connected and carrying a "
+                    f"VLAN this design does not claim; reassigning them would move "
+                    f"a live device, so the operator decides")
+            free = [p for p in free if p not in used.get(ref, set())]
             for port, zone_assign in zip(free, _weighted_cycle(enduser, weights)):
+                condition = "no device connected"
                 assignments.append(AccessAssignment(
                     device_ref=ref, port=port, zone=zone_assign.zone,
                     vlan_id=zone_assign.vlan_id,
                     reason=(f"unused harvested port in deterministic order "
-                            f"(infrastructure ports with ANY neighbor evidence excluded); "
-                            f"distributed in proportion to planned host count "
-                            f"(weight {weights[zone_assign.zone]})")))
+                            f"(discovery: {condition}; infrastructure ports with ANY "
+                            f"neighbor evidence excluded); distributed in proportion "
+                            f"to planned host count (weight {weights[zone_assign.zone]})")))
             used.setdefault(ref, set()).update(free)
+
+            # A routed zone whose VLAN has no member port has a protocol-down
+            # SVI: configured, and unable to forward. Weighted distribution can
+            # leave a small zone with nothing, and the way this used to be
+            # satisfied was by handing it a port discovery showed as carrying a
+            # live device in another VLAN. Reserve from what is genuinely free
+            # instead — and when nothing is free, report the shortage rather
+            # than take a port something is plugged into.
+            members: dict[str, int] = {}
+            for a in assignments:
+                if a.device_ref == ref:
+                    members[a.zone] = members.get(a.zone, 0) + 1
+            for zone_assign in zones:
+                if zone_assign.routed_on != ref or members.get(zone_assign.zone):
+                    continue
+                pool = [p for p in harvested.get(ref, ())
+                        if p not in used.get(ref, set())
+                        and p not in infrastructure.get(ref, set())
+                        and p not in occupied.get(ref, {})]
+                if not pool:
+                    reasons.append(
+                        f"NO_MEMBER_PORT {ref}: zone '{zone_assign.zone}' has an SVI "
+                        f"on VLAN {zone_assign.vlan_id} but every remaining port is "
+                        f"infrastructure or connected in another VLAN — the zone "
+                        f"cannot forward until a port is freed or cabled")
+                    continue
+                port = sorted(pool)[-1]
+                assignments.append(AccessAssignment(
+                    device_ref=ref, port=port, zone=zone_assign.zone,
+                    vlan_id=zone_assign.vlan_id,
+                    reason=(f"reserved member port {port} for zone "
+                            f"'{zone_assign.zone}': an SVI on a VLAN with no member "
+                            f"port is protocol-down, so the zone could not forward. "
+                            f"Discovery shows {port} with no device connected.")))
+                used.setdefault(ref, set()).add(port)
         return assignments
 
     # ------------------------------------------------------------------ IR
