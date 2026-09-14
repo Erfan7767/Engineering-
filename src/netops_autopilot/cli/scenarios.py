@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from ..cli import ScriptedIO
-from ..autopilot.answer_script import ANSWER_SLOTS, answer_script
+from ..autopilot.answer_script import QUESTION_KEYS, answers_keyed
 from ..autopilot.orchestrator import OperatorIO
 
 
@@ -22,20 +22,25 @@ class Scenario:
 
     name: str
     description: str
-    answers: tuple[str, ...]      # full script, in ANSWER_SLOTS order
-    blueprint_hint: str           # the ``intent`` slot of ``answers``
+    answers: dict[str, str]       # every answer, keyed by the question it answers
+    blueprint_hint: str           # the ``intent`` answer
     expected_outcome: str         # "COMPLETE-STAGED" | "BLOCKED-*" — for harness
 
 
 def _scenario(name: str, description: str, blueprint_hint: str, **kwargs) -> Scenario:
     """Build a Scenario whose answer list cannot drift out of question order.
 
-    ``answer_script`` is the only place the sequence is assembled, so a question
-    added to the orchestrator changes ``ANSWER_SLOTS`` and every scenario here
+    ``answers_keyed`` is the only place the answers are assembled, so a question
+    added to the orchestrator changes ``QUESTION_KEYS`` and every scenario here
     at once — instead of leaving four hand-written lists one slot out of step.
+
+    Keyed rather than ordered, because no ordering can be right for every run:
+    the access-retry prompt is asked only when discovery found an unreachable
+    device, so the number of questions is a property of the network, not of
+    this file.
     """
-    answers = answer_script(access_retry="y", intent=blueprint_hint, **kwargs)
-    return Scenario(name=name, description=description, answers=tuple(answers),
+    answers = answers_keyed(access_retry="y", intent=blueprint_hint, **kwargs)
+    return Scenario(name=name, description=description, answers=dict(answers),
                     blueprint_hint=blueprint_hint, expected_outcome="COMPLETE-STAGED")
 
 
@@ -78,17 +83,16 @@ SCENARIOS: dict[str, Scenario] = {
 def make_scenario_io(scenario_id: str) -> ScriptedIO:
     """Return a ScriptedIO bound to the given scenario.
 
-    The scenario's ``answers`` tuple is already in the order the orchestrator
-    asks (see ``ANSWER_SLOTS``), so it is handed over verbatim — nothing is
-    spliced in any more. Splicing used to place the free-form blueprint hint
-    between two positional answers, and a question added before it silently
-    shifted every later answer one slot.
+    The scenario's ``answers`` are keyed by question, so they are handed over
+    verbatim and cannot be spliced into the wrong place. Splicing used to
+    place the free-form blueprint hint between two positional answers, and a
+    question added before it silently shifted every later answer one slot.
     """
     sc = SCENARIOS.get(scenario_id)
     if sc is None:
         raise KeyError(
             f"unknown scenario: {scenario_id!r}. Available: {sorted(SCENARIOS)}")
-    return ScriptedIO(list(sc.answers))
+    return ScriptedIO(dict(sc.answers))
 
 
 def list_scenarios() -> list[tuple[str, str]]:

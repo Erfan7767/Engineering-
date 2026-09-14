@@ -5592,24 +5592,31 @@ allow-transfer { any; };
     DEFAULT_INTENT = "2"
 
     def _autopilot_answers(self, intent: Optional[str] = None,
-                           apply_bond: bool = False) -> list[str]:
-        """Answers in the order the orchestrator asks them.
+                           apply_bond: bool = False) -> dict[str, str]:
+        """The operator's answers, addressed by the question each one belongs to.
 
-        Built by :func:`answer_script`, the single source of truth. This used to
-        be a sixth hand-written list, and when the access-retry prompt was added
-        it landed one slot late: the retry question consumed the blueprint
-        answer and the *intent* question was answered with the router device, so
-        every chat-initiated run blocked at INTENT_ELICITATION. It also hard
-        coded blueprint "2" no matter what network the operator had asked for.
+        Built by :func:`answers_keyed`. This used to be a hand-written list,
+        and when the access-retry prompt was added it landed one slot late: the
+        retry question consumed the blueprint answer and the *intent* question
+        was answered with the router device, so every chat-initiated run
+        blocked at INTENT_ELICITATION. It also hard coded blueprint "2" no
+        matter what network the operator had asked for.
+
+        Ordering it by hand a second time was still wrong, in a quieter way:
+        the apply confirmation was appended to the end of the list to
+        compensate for ``ANSWER_SLOTS`` declaring it first. Keying the answers
+        removes the ordering question entirely, so a question added anywhere
+        in the orchestrator can no longer move an answer onto the wrong
+        question. A positional list also cannot be right for every run at all:
+        the access-retry prompt is asked only when a device was unreachable,
+        so the number of questions depends on what discovery found.
         """
-        from netops_autopilot.autopilot.answer_script import answer_script
+        from netops_autopilot.autopilot.answer_script import answers_keyed
         # The access-retry prompt is a security decision; the chat supplies an
         # explicit "n" rather than letting it fall through to a silent default.
-        answers = answer_script(access_retry="n",
-                                intent=intent or self.DEFAULT_INTENT)
-        if apply_bond:
-            answers.append("BOND")
-        return answers
+        return answers_keyed(access_retry="n",
+                             intent=intent or self.DEFAULT_INTENT,
+                             apply=apply_bond)
 
     def _pick_diagnostic_source(self):
         """The device to run ping/traceroute/show from: the SEED if present.
@@ -5691,7 +5698,7 @@ allow-transfer { any; };
         probe_factory, mgmt_factory = self._session_factories()
         if self._runner_takes_answers():
             return self._runner.run(port=port, execute=execute, answers=answers)
-        scripted = ScriptedIO(list(answers))
+        scripted = ScriptedIO(dict(answers))
         current_io = getattr(self._runner, "io", None)
         if hasattr(current_io, "set_inner"):
             # A wrapping io (the web stream mirrors every question and phase

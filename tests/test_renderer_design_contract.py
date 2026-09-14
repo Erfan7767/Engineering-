@@ -57,7 +57,7 @@ def _render_matrix():
     store, key_id, _collector, time_authority = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     engine = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=time_authority)
     engine.run(probe_port_session_factory=lambda p: fabric.probe(p),

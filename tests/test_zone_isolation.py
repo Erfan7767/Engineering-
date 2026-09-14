@@ -29,7 +29,7 @@ def _run():
     store, key_id, _c, ta = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     engine = AutopilotEngine(store=store, key_id=key_id, io=io, time_authority=ta)
     report = engine.run(
         probe_port_session_factory=lambda p: fabric.probe(p),

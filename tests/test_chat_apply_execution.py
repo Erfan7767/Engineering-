@@ -30,7 +30,7 @@ from netops_autopilot.chat.operator import (
     _network_type_vocabulary,
     classify_intent,
 )
-from netops_autopilot.autopilot.answer_script import ANSWER_SLOTS, answer_script
+from netops_autopilot.autopilot.answer_script import QUESTION_KEYS
 from netops_autopilot.engines.blueprints import BLUEPRINTS
 from netops_autopilot.engines.discovery_crawl import (
     CrawlReport,
@@ -73,27 +73,38 @@ def test_longest_phrase_wins():
 
 
 # ================================================= 2. answers cannot desync
-def test_answers_are_in_the_order_the_engine_asks():
+def test_answers_are_addressed_to_the_question_they_answer():
+    """Addressed by name, so there is no order left to get wrong.
+
+    This used to assert a positional order against ``ANSWER_SLOTS``. That
+    assertion could only ever check the order the *builder* declared, never
+    the order the orchestrator asks in — and they disagreed, which is how the
+    apply confirmation ended up appended to the end of the list by hand.
+    """
     op = _operator()
     answers = op._autopilot_answers(intent="branch")
-    assert len(answers) == len(ANSWER_SLOTS)
-    assert answers == answer_script(access_retry="n", intent="branch")
-    assert answers[ANSWER_SLOTS.index("intent")] == "branch"
+    assert set(answers) == set(QUESTION_KEYS), "a question is unanswered"
+    assert answers["intent"] == "branch"
     # a security-relevant prompt is answered explicitly, never left to default
-    assert answers[ANSWER_SLOTS.index("access_retry")] == "n"
+    assert answers["access_retry"] == "n"
 
 
-def test_apply_bond_is_appended_only_when_asked():
+def test_apply_bond_is_given_only_when_asked():
     op = _operator()
-    assert "BOND" not in op._autopilot_answers(intent="branch")
-    assert op._autopilot_answers(intent="branch", apply_bond=True)[-1] == "BOND"
+    declined = op._autopilot_answers(intent="branch")
+    assert declined["bond_confirm"] != "BOND"
+    authorised = op._autopilot_answers(intent="branch", apply_bond=True)
+    assert authorised["bond_confirm"] == "BOND"
+    # nothing else about the run changed with it
+    assert {k: v for k, v in authorised.items() if k != "bond_confirm"} == \
+        {k: v for k, v in declined.items() if k != "bond_confirm"}
 
 
 def test_the_requested_type_reaches_the_answer_not_a_hardcoded_one():
     op = _operator()
     for phrase, expected in ChatOperator.NETWORK_TYPES_EN.items():
         answers = op._autopilot_answers(intent=phrase)
-        assert answers[ANSWER_SLOTS.index("intent")] == phrase
+        assert answers["intent"] == phrase
         # and the phrase resolves to the blueprint the table promises
         from netops_autopilot.engines.blueprints import elicit
         assert elicit(expected).blueprint.blueprint_id == expected

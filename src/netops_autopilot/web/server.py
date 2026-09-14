@@ -463,15 +463,16 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
                 previous, self._inner = self._inner, inner
                 return previous
 
-            def ask(self, prompt: str) -> str:
-                events.put({"type": "ask", "prompt": prompt[:200]})
-                a = self._inner.ask(prompt)
-                events.put({"type": "answer", "value": a})
+            def ask(self, prompt: str, key=None) -> str:
+                events.put({"type": "ask", "prompt": prompt[:200], "key": key})
+                a = self._inner.ask(prompt, key=key) if key else self._inner.ask(prompt)
+                events.put({"type": "answer", "value": a, "key": key})
                 return a
 
-            def confirm(self, prompt: str) -> bool:
-                events.put({"type": "confirm", "prompt": prompt[:200]})
-                r = self._inner.confirm(prompt)
+            def confirm(self, prompt: str, key=None) -> bool:
+                events.put({"type": "confirm", "prompt": prompt[:200], "key": key})
+                r = (self._inner.confirm(prompt, key=key) if key
+                     else self._inner.confirm(prompt))
                 events.put({"type": "answer", "value": "y" if r else "n"})
                 return r
 

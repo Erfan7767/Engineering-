@@ -45,7 +45,7 @@ def _run_with_apply_failure(device: str, command: str):
     session = fabric.open(device, ())
     session.fail_times[command] = 1
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     engine = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=ta)
     report = engine.run(
@@ -66,7 +66,7 @@ def _a_late_svi_command() -> str:
     store, key_id, _counters, ta = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     report = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=ta).run(
         probe_port_session_factory=lambda p: fabric.probe(p),
@@ -169,7 +169,7 @@ def test_no_failure_means_no_decisions():
     store, key_id, _c, ta = make_ledger_stack()
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     report = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=ta).run(
         probe_port_session_factory=lambda p: fabric.probe(p),
@@ -238,7 +238,7 @@ def test_a_rollback_that_does_not_restore_the_device_is_not_called_clean():
     session.fail_times[_a_late_svi_command()] = 1   # the apply fails here
     session.fail_times["no vlan 10"] = 1         # and one undo line is dropped
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     report = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=ta).run(
         probe_port_session_factory=lambda p: fabric.probe(p),

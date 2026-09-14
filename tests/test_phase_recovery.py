@@ -38,7 +38,7 @@ def _run(go_silent_at: int):
         return fabric.open(ref, hints)
 
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     report = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=time_authority).run(
         probe_port_session_factory=lambda p: fabric.probe(p),
@@ -118,7 +118,7 @@ def test_a_device_that_answers_on_retry_is_recovered_and_configured():
         return fabric.open(ref, hints)
 
     io = make_scenario_io("branch")
-    io.append_answers(["BOND"])
+    io.append_answers({"bond_confirm": "BOND"})
     report = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=time_authority).run(
         probe_port_session_factory=lambda p: fabric.probe(p),

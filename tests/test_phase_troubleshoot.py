@@ -84,8 +84,8 @@ def test_a_defect_the_platform_cannot_fix_is_declared_not_pretended():
     # dns-server line, and the DNS test fails for a reason no amount of
     # cleverness can fix without a resolver to write.
     io = make_scenario_io("branch")
-    io._answers[7] = ""
-    io.append_answers(["BOND"])
+    io._keyed["dns_servers"] = ""   # was io._answers[7]: an index into a queue
+    io.append_answers({"bond_confirm": "BOND"})
     engine = AutopilotEngine(store=store, key_id=key_id, io=io,
                              time_authority=ta)
     report = engine.run(

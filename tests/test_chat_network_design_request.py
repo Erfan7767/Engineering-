@@ -255,7 +255,7 @@ class _SimRunner:
 
     def run(self, *, port, execute, answers):
         from netops_autopilot.cli import ScriptedIO
-        self._engine.io = ScriptedIO(list(answers))
+        self._engine.io = ScriptedIO(dict(answers))
         return self._engine.run(
             probe_port_session_factory=lambda p: self._fabric.probe(p),
             mgmt_session_factory=self._fabric, port=port, execute=execute)

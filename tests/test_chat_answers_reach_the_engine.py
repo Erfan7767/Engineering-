@@ -192,7 +192,7 @@ class _AnswersRunner:
 
     def run(self, *, port, execute, answers):
         self.calls += 1
-        self.seen = list(answers)
+        self.seen = dict(answers)
         return "ran"
 
 
@@ -219,8 +219,7 @@ def test_the_answers_are_handed_to_a_runner_that_accepts_them():
     runner = _AnswersRunner()
     operator = _operator_with(runner)
     assert operator._run_autopilot(execute=False, intent="campus") == "ran"
-    from netops_autopilot.autopilot.answer_script import ANSWER_SLOTS
-    assert runner.seen[ANSWER_SLOTS.index("intent")] == "campus"
+    assert runner.seen["intent"] == "campus"
 
 
 # ============================== 5. streaming survives the run

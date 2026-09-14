@@ -199,7 +199,7 @@ def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
         # The apply gate demands a typed BOND; the demo answers it so the
         # whole discover → design → render → APPLY → verify → rollback path
         # can be exercised without hardware.
-        io.append_answers(["BOND"])
+        io.append_answers({"bond_confirm": "BOND"})
     engine = AutopilotEngine(store=store, key_id=key_id,
                              io=io, time_authority=time_auth)
     report = engine.run(
@@ -351,7 +351,7 @@ def run_chat(port: Optional[str] = None, message: Optional[str] = None,
                 # intent, WAN, availability, growth); they must actually be
                 # installed on the engine or it falls back to the interactive
                 # console and blocks on a prompt nobody is answering.
-                engine.io = ScriptedIO(list(answers))
+                engine.io = ScriptedIO(dict(answers))
                 return engine.run(probe_port_session_factory=lambda p: fabric.probe(p),
                                   mgmt_session_factory=fabric,
                                   port=port, execute=execute)
@@ -363,7 +363,7 @@ def run_chat(port: Optional[str] = None, message: Optional[str] = None,
         class _RealRunner:
             def run(self, *, port, execute, answers):
                 from .cli import ScriptedIO
-                engine.io = ScriptedIO(list(answers))
+                engine.io = ScriptedIO(dict(answers))
                 return engine.run(probe_port_session_factory=_real_session_factory,
                                   mgmt_session_factory=mgmt,
                                   port=port, execute=execute)

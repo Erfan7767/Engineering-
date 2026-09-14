@@ -67,8 +67,11 @@ class Phase(str, Enum):
 class OperatorIO(Protocol):
     """The human channel — injected (CLI stdin/stdout, scripted in tests)."""
 
-    def ask(self, question: str) -> str: ...
-    def confirm(self, question: str) -> bool: ...
+    #: ``key`` names the question. A human at a terminal ignores it; every
+    #: machine-fed channel needs it, because the question set is
+    #: data-dependent and a positional answer queue cannot know its order.
+    def ask(self, question: str, key: Optional[str] = None) -> str: ...
+    def confirm(self, question: str, key: Optional[str] = None) -> bool: ...
     def show(self, text: str) -> None: ...
 
 
@@ -722,7 +725,8 @@ class AutopilotEngine:
         self._phase(Phase.BOND, "HUMAN_DECISION",
                     f"confirm the physical binding: PC port {port} ↔ the SEED device console/email link "
                     f"(the identity-binding moment, D0-07 §1.4)")
-        ok = self.io.confirm(f"Is port {port} physically connected to the seed device? [y/N] ")
+        ok = self.io.confirm(f"Is port {port} physically connected to the seed device? [y/N] ",
+                             key="bond_physical")
         if not ok:
             raise Failure(cls=FailureClass.BLOCKED, causes=(
                 "OPERATOR_DID_NOT_CONFIRM_BINDING: run cannot start without identity binding (S0)",))
@@ -737,7 +741,8 @@ class AutopilotEngine:
         if not candidates:
             answer = self.io.ask(
                 "Vendor family UNKNOWN from the console banner (never guessed). "
-                "Enter it explicitly [cisco/ios-xe|routeros|junos|fortios|arubaos|unifi]: ")
+                "Enter it explicitly [cisco/ios-xe|routeros|junos|fortios|arubaos|unifi]: ",
+                key="family")
             family = answer.strip().lower()
             if family not in self.catalog_allowlists:
                 raise Failure(cls=FailureClass.BLOCKED, causes=(
@@ -745,7 +750,7 @@ class AutopilotEngine:
         elif len(candidates) > 1:
             answer = self.io.ask(
                 f"Ambiguous banner: candidates {candidates}. Which family is this device? "
-                f"[{ '|'.join(candidates) }]: ")
+                f"[{ '|'.join(candidates) }]: ", key="family")
             family = answer.strip().lower()
             if family not in candidates:
                 raise Failure(cls=FailureClass.BLOCKED, causes=(
@@ -858,7 +863,7 @@ class AutopilotEngine:
                 f"{len(limited)} discovered device(s) could not be reached with the "
                 f"credentials tried: {listing}.\n"
                 f"Retry now with management credentials? Type 'y' to retry, "
-                f"anything else to leave them out: ").strip().lower()
+                f"anything else to leave them out: ", key="access_retry").strip().lower()
             if not grants_access_retry(answer):
                 # No phase record here, deliberately: discovery did not run
                 # again, so writing a second DISCOVERY_A row would put a phase
@@ -937,7 +942,8 @@ class AutopilotEngine:
     def _phase_elicit(self):
         assert self.report.crawl is not None
         answer = self.io.ask("What kind of network do you want to build? "
-                             "(describe it, or pick a blueprint id)\n" + menu() + "\n> ")
+                             "(describe it, or pick a blueprint id)\n" + menu() + "\n> ",
+                             key="intent")
         result = elicit(answer)
         self.report.elicitation = result
         if result.status == "UNKNOWN":
@@ -947,7 +953,7 @@ class AutopilotEngine:
                 "(never defaulted)",))
         if result.status == "BLOCKED":
             self._phase(Phase.INTENT_ELICITATION, "HUMAN_DECISION", "ambiguity — asking to disambiguate")
-            answer = self.io.ask(result.question + "\n> ")
+            answer = self.io.ask(result.question + "\n> ", key="intent")
             result = elicit(answer)
             self.report.elicitation = result
             if result.status != "MATCHED":
@@ -960,16 +966,22 @@ class AutopilotEngine:
         router_default = reachable[0] if reachable else ""
         answers: dict[str, str] = {}
         answers["router_device"] = self.io.ask(
-            f"On which discovered device does the WAN/ISP terminate? [{router_default}]: ").strip() or router_default
-        answers["wan_handoff"] = self.io.ask("Describe the WAN handoff (e.g., 'ISP fiber, dhcp'): ").strip()
-        answers["availability"] = (self.io.ask("Availability class [STANDARD|HIGH]: ").strip() or "STANDARD")
-        answers["growth"] = self.io.ask("Growth plan (e.g., '+25% in 12 months'): ").strip() or "+25% in 12 months"
+            f"On which discovered device does the WAN/ISP terminate? [{router_default}]: ",
+            key="router_device").strip() or router_default
+        answers["wan_handoff"] = self.io.ask(
+            "Describe the WAN handoff (e.g., 'ISP fiber, dhcp'): ",
+            key="wan_handoff").strip()
+        answers["availability"] = (self.io.ask("Availability class [STANDARD|HIGH]: ",
+                                               key="availability").strip() or "STANDARD")
+        answers["growth"] = (self.io.ask("Growth plan (e.g., '+25% in 12 months'): ",
+                                         key="growth").strip() or "+25% in 12 months")
         # Client DNS for the DHCP pools. Deliberately asked and never
         # defaulted: an invented resolver is a silent, hard-to-find outage.
         # Blank is allowed and leaves the pools without a dns-server line,
         # which the design then reports as a visible gap.
         answers["dns_servers"] = self.io.ask(
-            "DNS server(s) handed to clients, comma-separated (blank = none): ").strip()
+            "DNS server(s) handed to clients, comma-separated (blank = none): ",
+            key="dns_servers").strip()
         self._dns_servers = answers["dns_servers"]
         # Keep the whole set. Every one of these was asked of a human, and the
         # design engine is the consumer — handing it a hand-picked subset is how
@@ -1204,11 +1216,11 @@ class AutopilotEngine:
 
         # Execute path. Demand an explicit human confirmation.
         # The gate has a single input (typed BOND); the human types
-        # BOND once to unlock the apply. A second call would consume
-        # the next scripted answer and break scripted tests.
+        # BOND once to unlock the apply.
         typed = self.io.ask(
             f"About to APPLY config to {len(staged)} device(s). "
-            f"Type BOND exactly to confirm (or anything else to abort): "
+            f"Type BOND exactly to confirm (or anything else to abort): ",
+            key="bond_confirm",
         ).strip()
         if typed != "BOND":
             self.report.execution = {

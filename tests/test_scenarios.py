@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from netops_autopilot.autopilot.answer_script import ANSWER_SLOTS, answer_script
+from netops_autopilot.autopilot.answer_script import QUESTION_KEYS, answer_script
 from netops_autopilot.cli.scenarios import (
     SCENARIOS,
     list_scenarios,
@@ -19,14 +19,19 @@ def test_all_scenarios_have_valid_shape():
         assert sc.description
         assert sc.blueprint_hint
         assert sc.answers
-        # First answer must be the binding confirm "y".
-        assert sc.answers[0].strip().lower() in {"y", "yes"}, f"scenario {sid} must start with bond confirm"
-        assert len(sc.answers) == len(ANSWER_SLOTS), (
-            f"scenario {sid} has {len(sc.answers)} answers for "
-            f"{len(ANSWER_SLOTS)} question slots")
-        # intent slot carries the blueprint hint; router slot names a real device.
-        assert sc.answers[ANSWER_SLOTS.index("intent")] == sc.blueprint_hint, sid
-        assert sc.answers[ANSWER_SLOTS.index("router_device")] == "seed-01", sid
+        # Every question the orchestrator can ask is answered — no more, no
+        # less. A positional list could only be checked for length, which is
+        # meaningless when the number of questions depends on the network.
+        assert set(sc.answers) == set(QUESTION_KEYS), (
+            f"scenario {sid} answers {sorted(set(sc.answers) ^ set(QUESTION_KEYS))} "
+            f"wrong")
+        # The physical binding is confirmed; the apply gate is not.
+        assert sc.answers["bond_physical"].strip().lower() in {"y", "yes"}, sid
+        assert sc.answers["bond_confirm"] != "BOND", (
+            f"scenario {sid} authorises an apply it never asked for")
+        # the intent answer carries the blueprint hint; router names a real device
+        assert sc.answers["intent"] == sc.blueprint_hint, sid
+        assert sc.answers["router_device"] == "seed-01", sid
 
 
 def test_list_scenarios_returns_pairs():
@@ -40,7 +45,8 @@ def test_list_scenarios_returns_pairs():
 def test_make_scenario_io_known():
     io = make_scenario_io("branch")
     assert isinstance(io, ScriptedIO)
-    assert io._answers == list(SCENARIOS["branch"].answers)
+    assert io._keyed == dict(SCENARIOS["branch"].answers)
+    assert io._answers == [], "a keyed scenario must not also queue positional answers"
 
 
 def test_make_scenario_io_unknown_raises():
@@ -48,24 +54,32 @@ def test_make_scenario_io_unknown_raises():
         make_scenario_io("nonexistent-scenario-id")
 
 
-def test_scenario_io_consumes_answers_in_order():
+def test_scenario_io_answers_each_question_by_name():
+    """Asked out of order on purpose: the answer follows the question.
+
+    The old test asked in the orchestrator's order and asserted each answer
+    landed where expected. That could not fail for the reason it was written
+    to catch — a question added anywhere shifts every later answer, and the
+    test would have been updated to the new order along with the code. Asking
+    in a scrambled order is only satisfiable if the answers are addressed.
+    """
+    sc = SCENARIOS["hotel"]
     io = make_scenario_io("hotel")
-    bond = io.confirm("bond?")
-    retry = io.ask("retry?")
-    intent = io.ask("intent?")
-    router = io.ask("router?")
-    wan = io.ask("wan?")
-    avail = io.ask("avail?")
-    growth = io.ask("growth?")
-    # The bond confirm is a bool (True if "y" in answer)
+    router = io.ask("router?", key="router_device")
+    intent = io.ask("intent?", key="intent")
+    retry = io.ask("retry?", key="access_retry")
+    bond = io.confirm("bond?", key="bond_physical")
+    wan = io.ask("wan?", key="wan_handoff")
+    avail = io.ask("avail?", key="availability")
+    growth = io.ask("growth?", key="growth")
+
     assert bond is True
-    # Layout: [bond, access_retry, blueprint_hint, router, wan, avail, growth]
-    assert retry == SCENARIOS["hotel"].answers[ANSWER_SLOTS.index("access_retry")]
-    assert intent == SCENARIOS["hotel"].blueprint_hint
-    # Phase V: answers[1] is the ROUTER DEVICE, i.e. a device ref the
-    # simulated fabric actually reports. It used to hold a site name
-    # ("hotel-rtr"), which the orchestrator then fed to the WAN question and
-    # every answer after it landed one slot late.
+    assert retry == sc.answers["access_retry"]
+    assert intent == sc.blueprint_hint
+    # Phase V: the router answer is a device ref the simulated fabric actually
+    # reports. It used to hold a site name ("hotel-rtr"), which the
+    # orchestrator then fed to the WAN question and every answer after it
+    # landed one slot late.
     assert router == "seed-01"
     assert wan == "ISP fiber, static IP /30"
     assert avail == "HIGH"
@@ -91,10 +105,9 @@ def test_every_blueprint_hint_is_unambiguous():
 def test_every_router_answer_is_a_real_device_ref():
     """The router slot must name a device the simulated fabric discovers."""
     for sid, sc in SCENARIOS.items():
-        i = ANSWER_SLOTS.index("router_device")
-        assert sc.answers[i] == "seed-01", (
-            f"scenario {sid!r} router answer {sc.answers[i]!r} is not a device "
-            f"the simulated fabric reports")
+        assert sc.answers["router_device"] == "seed-01", (
+            f"scenario {sid!r} router answer {sc.answers['router_device']!r} is "
+            f"not a device the simulated fabric reports")
 
 
 def test_scenario_io_is_independent():
@@ -103,4 +116,4 @@ def test_scenario_io_is_independent():
     b = make_scenario_io("retail")
     assert a is not b
     # Each has its own answer queue.
-    assert a._answers is not b._answers
+    assert a._keyed is not b._keyed

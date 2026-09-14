@@ -132,7 +132,7 @@ def _design_for(intent: str):
                              time_authority=time_auth)
     fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     operator = ChatOperator(store=store, runner=None)
-    engine.io = ScriptedIO(list(
+    engine.io = ScriptedIO(dict(
         operator._autopilot_answers(intent=intent, apply_bond=True)))
     with contextlib.redirect_stdout(io.StringIO()):
         report = engine.run(
