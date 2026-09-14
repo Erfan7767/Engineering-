@@ -661,73 +661,85 @@ class DiscoveryCrawlEngine:
             result.mgmt_addresses = tuple(hints)
             return result
 
-        allowlist = allowlist_of(family)
-        plan = self.plan_for(family, allowlist)
-        result.mgmt_addresses = tuple(hints)
-        if not plan:
-            result.status = DeviceStatus.NO_PLAN
-            result.rejection_reasons.append(
-                f"NO_CRAWL_PLAN: family={family!r} has no catalog parser with a READ_ONLY allowlisted command")
-            session.close()
-            return result
+        try:
+            allowlist = allowlist_of(family)
+            plan = self.plan_for(family, allowlist)
+            result.mgmt_addresses = tuple(hints)
+            if not plan:
+                result.status = DeviceStatus.NO_PLAN
+                result.rejection_reasons.append(
+                    f"NO_CRAWL_PLAN: family={family!r} has no catalog parser with a READ_ONLY allowlisted command")
+                return result
 
-        observations_all: list[Observation] = []
-        for command, parser in plan:
-            try:
-                outcome = self._collector.collect(
-                    device_ref=device_ref, command=command, session=session,
-                    session_kind="serial" if classification is DeviceClass.SEED else "cli",
-                )
-            except Failure as exc:
-                status = (CommandStatus.RETRYABLE if exc.cls is FailureClass.RETRYABLE
-                          else CommandStatus.BLOCKED)
-                result.commands.append(CommandRecord(command=command, status=status, causes=tuple(exc.causes)))
-                continue
-            except (TimeoutError, ConnectionError) as exc:
-                result.commands.append(CommandRecord(command=command, status=CommandStatus.RETRYABLE,
-                                                     causes=(f"{type(exc).__name__}: {exc}",)))
-                continue
+            observations_all: list[Observation] = []
+            for command, parser in plan:
+                try:
+                    outcome = self._collector.collect(
+                        device_ref=device_ref, command=command, session=session,
+                        session_kind="serial" if classification is DeviceClass.SEED else "cli",
+                    )
+                except Failure as exc:
+                    status = (CommandStatus.RETRYABLE if exc.cls is FailureClass.RETRYABLE
+                              else CommandStatus.BLOCKED)
+                    result.commands.append(CommandRecord(command=command, status=status, causes=tuple(exc.causes)))
+                    continue
+                except (TimeoutError, ConnectionError) as exc:
+                    result.commands.append(CommandRecord(command=command, status=CommandStatus.RETRYABLE,
+                                                         causes=(f"{type(exc).__name__}: {exc}",)))
+                    continue
 
-            observations = parser.parse(outcome.output, raw_id=outcome.artifact.raw_id)
-            for obs in observations:
-                self._store.append_observation(obs)
-            observations_all.extend(observations)
-            result.event_count += 1
-            result.observation_count += len(observations)
-            result.commands.append(CommandRecord(
-                command=command, status=CommandStatus.COLLECTED,
-                event_id=outcome.event.event_id,
-                observation_count=len(observations),
-                ok_field_count=sum(1 for o in observations if o.parse_status is ParseStatus.OK)))
+                observations = parser.parse(outcome.output, raw_id=outcome.artifact.raw_id)
+                for obs in observations:
+                    self._store.append_observation(obs)
+                observations_all.extend(observations)
+                result.event_count += 1
+                result.observation_count += len(observations)
+                result.commands.append(CommandRecord(
+                    command=command, status=CommandStatus.COLLECTED,
+                    event_id=outcome.event.event_id,
+                    observation_count=len(observations),
+                    ok_field_count=sum(1 for o in observations if o.parse_status is ParseStatus.OK)))
 
-        session.close()
 
-        # Claims (T1-strict) → Twin admission.
-        issues = self._claims.issue_for_device(device_ref, observations_all)
-        from ..twin.twin import Admission
-        for issue in issues:
-            if issue.admitted:
-                apply_result = self._twin.apply_claim(
-                    issue.claim,
-                    collected_at=self._collector_now(),
-                )
-                if apply_result.admission is Admission.APPLIED:
-                    result.claim_admitted += 1
+            # Claims (T1-strict) → Twin admission.
+            issues = self._claims.issue_for_device(device_ref, observations_all)
+            from ..twin.twin import Admission
+            for issue in issues:
+                if issue.admitted:
+                    apply_result = self._twin.apply_claim(
+                        issue.claim,
+                        collected_at=self._collector_now(),
+                    )
+                    if apply_result.admission is Admission.APPLIED:
+                        result.claim_admitted += 1
+                    else:
+                        result.claim_rejected += 1
+                        result.rejection_reasons.append(apply_result.reason)
                 else:
                     result.claim_rejected += 1
-                    result.rejection_reasons.append(apply_result.reason)
-            else:
-                result.claim_rejected += 1
-                result.rejection_reasons.extend(issue.reasons)
+                    result.rejection_reasons.extend(issue.reasons)
 
-        result.identity = self._identity_of(device_ref, plan, observations_all)
-        result.interface_table = self._table_of(observations_all, "interface_table")
-        result.arp_table = self._table_of(observations_all, "arp_table")
-        result.mac_table = self._table_of(observations_all, "mac_table")
-        collected, planned = result.counts()
-        result.status = (DeviceStatus.COMPLETE if collected == planned
-                         else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)
-        return result
+            result.identity = self._identity_of(device_ref, plan, observations_all)
+            result.interface_table = self._table_of(observations_all, "interface_table")
+            result.arp_table = self._table_of(observations_all, "arp_table")
+            result.mac_table = self._table_of(observations_all, "mac_table")
+            collected, planned = result.counts()
+            result.status = (DeviceStatus.COMPLETE if collected == planned
+                             else DeviceStatus.PARTIAL if collected else DeviceStatus.BLOCKED)
+            return result
+        finally:
+            # A session to a real device is a scarce resource: VTY lines are
+            # limited, and one left open here is one fewer the operator has
+            # later. Closing has to happen on every exit path, including a
+            # failure raised mid-crawl — a ledger or twin error used to leave
+            # the transport open. And a transport that refuses to close must
+            # not replace the failure already in flight.
+            try:
+                session.close()
+            except Exception as exc:
+                result.rejection_reasons.append(
+                    f"SESSION_CLOSE_FAILED: {type(exc).__name__}: {exc} — the "
+                    f"management session may still be held on the device")
 
     # --------------------------------------------------------------- helpers
     def _collector_now(self):
