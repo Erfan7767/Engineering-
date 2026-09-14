@@ -34,6 +34,10 @@ class SerialPortLike(Protocol):
 
 
 PortFactory = Callable[[str, int, float], SerialPortLike]
+
+# A console banner is a few hundred bytes. This caps how much pre-connect
+# output the transport will hold, so a chatty device cannot exhaust memory.
+_MAX_BANNER_BYTES = 65_536
 Clock = Callable[[], float]
 Sleep = Callable[[float], None]
 
@@ -94,11 +98,27 @@ class SerialConsoleTransport:
         self._sleep = sleep
         self._port: Optional[SerialPortLike] = None
         self._baud: Optional[int] = None
+        self._banner: bytes = b""
         self._prompt = re.compile(profile.prompt_pattern)
 
     @property
     def negotiated_baud(self) -> Optional[int]:
         return self._baud
+
+    @property
+    def banner(self) -> bytes:
+        """What the device said when the console was connected.
+
+        This is the vendor evidence. A console prints its identity once, the
+        moment the line comes up, and never again: asking the device for it
+        afterwards — an empty command, or ``show version`` before the family is
+        known — returns a prompt, and family detection then has nothing to
+        work with. Measured against a real pty-backed console: the bytes read
+        during the baud probe contain "Cisco IOS Software, Catalyst L3 Switch"
+        and resolve to ``cisco/ios-xe``, while the empty-command read returns
+        ``b'\r\nseed-01> '`` and resolves to nothing at all.
+        """
+        return self._banner
 
     # ------------------------------------------------------------------ open
     def open(self) -> None:
@@ -109,6 +129,26 @@ class SerialConsoleTransport:
         for baud in profile.baud_candidates:
             port = self._factory(profile.port, baud, profile.read_slice_timeout_s)
             try:
+                # Read what is already waiting BEFORE clearing the buffer.
+                # Those bytes were sent by the device — on a console that is
+                # the boot banner, which is printed once when the line comes
+                # up and never again. reset_input_buffer() used to discard
+                # them, so the one piece of evidence that names the vendor was
+                # thrown away before anything could read it.
+                # Bounded by the same injected clock and sleep as the baud
+                # probe below. An unbounded `while port.read(4096)` loop here
+                # looked correct on a real pty — a real read returns b"" when
+                # nothing is waiting — and spun forever on any port object
+                # that always has bytes, consuming memory until the process
+                # was killed.
+                pending = bytearray()
+                drain_deadline = self._clock() + profile.baud_probe_window_s
+                while (len(pending) < _MAX_BANNER_BYTES
+                       and self._clock() < drain_deadline):
+                    chunk = port.read(4096)
+                    if not chunk:
+                        break
+                    pending.extend(chunk)
                 port.reset_input_buffer()
                 port.write(b"\r")
                 deadline = self._clock() + profile.baud_probe_window_s
@@ -119,9 +159,15 @@ class SerialConsoleTransport:
                         buf.extend(chunk)
                     else:
                         self._sleep(profile.read_slice_timeout_s)
+                # The baud check still grades only the device's answer to our
+                # carriage return: pending bytes at the wrong baud are garbage
+                # and must not be what makes a candidate look alive.
                 if buf and _decodable(bytes(buf)):
                     self._port = port
                     self._baud = baud
+                    # Keep it: this is the only copy of the connect banner that
+                    # will ever exist, and it is what identifies the device.
+                    self._banner = bytes(pending) + bytes(buf)
                     return
             except Failure:
                 # The factory raised a typed failure (e.g., driver missing,
@@ -169,7 +215,33 @@ class SerialConsoleTransport:
                 if buf and (self._clock() - last_data_at) >= profile.quiet_period_s:
                     break
                 self._sleep(profile.read_slice_timeout_s)
-        return bytes(buf)
+        return self._strip_framing(bytes(buf), command)
+
+    def _strip_framing(self, payload: bytes, command: str) -> bytes:
+        """Remove the channel's own furniture: the echo and the prompt.
+
+        A console hands back three things for one command — the characters it
+        echoed, the device's answer, and the prompt that says it is done. Only
+        the middle one is evidence. Leaving the prompt in was not cosmetic:
+        ``show interfaces status`` came back ending in ``seed-01> ``, the
+        inventory parser read that as one more row, and the design then
+        contained an access port literally named ``seed-01>`` — so the rendered
+        config said ``interface seed-01>`` and the rollback plan said
+        ``default interface seed-01>``. The simulated session serves fixture
+        bytes with no prompt, so no test could ever have seen it; only a real
+        channel produces one.
+        """
+        text = payload.decode("utf-8", errors="replace")
+        match = None
+        for match in self._prompt.finditer(text):
+            pass                                  # the pattern is $-anchored: last wins
+        if match is not None:
+            text = text[: match.start()]
+        if command:
+            lines = text.split("\r\n") if "\r\n" in text else text.split("\n")
+            if lines and lines[0].strip() == command.strip():
+                text = ("\r\n" if "\r\n" in text else "\n").join(lines[1:])
+        return text.encode("utf-8", errors="replace")
 
     # ----------------------------------------------------------------- close
     def close(self) -> None:

@@ -226,12 +226,18 @@ class MgmtSessionFactory:
                  session: ExecSession, expected_serial: Optional[str]) -> IdentityCheck:
         """Prove the session is the device discovery recorded, or refuse."""
         observed: Optional[str] = None
+        read_error: Optional[str] = None
         if vendor_family:
             try:
                 output = session.execute(self._identity_command(vendor_family), timeout_s=20.0)
                 observed = self._read_serial(vendor_family, output)
-            except Exception:  # noqa: BLE001 - unreadable identity is a typed state
+            except Exception as exc:  # noqa: BLE001 - unreadable identity is a typed state
+                # Keep the cause. "serial not readable" on its own sent
+                # operators to --allow-unverified-identity for failures that
+                # were a dead session or a framing timeout — and taking that
+                # flag would not have fixed anything.
                 observed = None
+                read_error = f"{type(exc).__name__}: {exc}"
 
         if expected_serial and observed:
             if expected_serial.strip().lower() == observed.strip().lower():
@@ -243,7 +249,8 @@ class MgmtSessionFactory:
 
         detail = ("expected serial missing from the crawl evidence"
                   if not expected_serial else
-                  f"serial not readable from the session ({self._identity_command(vendor_family)})")
+                  f"serial not readable from the session ({self._identity_command(vendor_family)})"
+                  + (f" — the read failed with {read_error}" if read_error else ""))
         if not self.allow_unverified_identity:
             raise Failure(cls=FailureClass.BLOCKED, causes=(
                 f"IDENTITY_UNVERIFIED:{device_ref} — {detail}. The platform does not "

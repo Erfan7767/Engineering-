@@ -152,9 +152,14 @@ def test_execute_stops_on_prompt_match(clock_sleeper):
     clock.t = 10.0
     port._chunks = [(10.02, b"ok\r\nRouter# ")]
     out = t.execute("show clock", timeout_s=30.0)
-    assert out.endswith(b"Router# ")
     # prompt match ended the read well before the 5s quiet period could
     assert sleeper.calls < 50
+    # ...and the prompt itself is furniture, not evidence. This used to assert
+    # out.endswith(b"Router# "), which locked in the defect: a real console's
+    # trailing prompt reached the parsers, and `show interfaces status` gained
+    # a port named after the prompt.
+    assert b"Router#" not in out
+    assert out.strip() == b"ok"
 
 
 def test_execute_timeout_is_deterministic(clock_sleeper):
@@ -209,3 +214,55 @@ def test_profile_validation():
         st.SerialProfile(port="COM1", quiet_period_s=0)
     with pytest.raises(ValueError):
         st.SerialProfile(port="COM1", prompt_pattern="([")
+
+
+def test_pre_connect_drain_is_bounded_on_a_port_that_never_goes_quiet():
+    """The banner read must not depend on the port ever returning b"".
+
+    A real pty returns b"" when nothing is waiting, so an unbounded
+    ``while port.read(4096)`` looked correct there. A port object that always
+    has bytes — which is what a fixture double does — spun forever and grew
+    memory until the interpreter was killed. The bound is the injected clock,
+    so this test costs no wall time.
+    """
+    class ChattyPort:
+        def __init__(self) -> None:
+            self.closed = False
+            self.reset_called = False
+            self.reads = 0
+
+        def write(self, data: bytes) -> int:
+            return len(data)
+
+        def read(self, size: int = 1) -> bytes:
+            self.reads += 1
+            if self.reads > 100_000:
+                raise AssertionError("the pre-connect drain never stopped")
+            return b"banner line\r\n"      # never quiet
+
+        def reset_input_buffer(self) -> None:
+            self.reset_called = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    port = ChattyPort()
+    fake_t = [0.0]
+
+    def clock() -> float:
+        fake_t[0] += 0.05
+        return fake_t[0]
+
+    transport = st.SerialConsoleTransport(
+        st.SerialProfile(port="/dev/null", baud_candidates=(9600,)),
+        port_factory=lambda p, b, t: port,
+        clock=clock,
+        sleep=lambda _s: None,
+    )
+    transport.open()
+    try:
+        assert transport.banner.startswith(b"banner line")
+        # 0.8 s window / 0.05 s per clock call, for the drain and the probe.
+        assert port.reads < 100, f"the drain read {port.reads} times"
+    finally:
+        transport.close()

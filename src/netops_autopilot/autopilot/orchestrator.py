@@ -100,6 +100,28 @@ class AutopilotReport:
     final: str = "RUNNING"            # COMPLETE-STAGED | BLOCKED-*
 
 
+class _LentSession:
+    """A session the crawl may use but does not own.
+
+    The console session is the operator's cable: it was opened by the boot
+    probe, it is reused for the seed device throughout the run, and closing it
+    ends the run's access to the only device it is physically connected to.
+    Discovery closes every session it collects with — correct for a management
+    session it opened itself, fatal here. The simulated session's ``close()``
+    only sets a flag, so this was invisible until a real transport closed the
+    port for real and the execution gate found ``SESSION_NOT_OPEN``.
+    """
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+
+    def execute(self, command: str, timeout_s: float):
+        return self._inner.execute(command, timeout_s)
+
+    def close(self) -> None:
+        """Deliberately a no-op: the owner closes it, not the borrower."""
+
+
 class AutopilotEngine:
     """Owns one run. All components are real; IO is injected."""
 
@@ -197,13 +219,24 @@ class AutopilotEngine:
         port: str,
         execute: bool = False,
     ) -> AutopilotReport:
+        # Bound before the try: the finally closes the console, and a run that
+        # fails in an early phase must still reach that finally with a name.
+        boot = None
         try:
             self._phase_bond(port)
-            session = self._phase_boot_probe(port, probe_port_session_factory)
-            if session is None:
+            boot = self._phase_boot_probe(port, probe_port_session_factory)
+            if boot is None:
                 return self.report
-            self._phase_discovery(session, mgmt_session_factory)
-            self._phase_access_retry(session, mgmt_session_factory)
+            # ``boot`` is a (session, family) pair. Naming it ``session`` and
+            # passing it on is how the tuple reached the management factory as
+            # a console session: _confirm then called .execute() on a tuple,
+            # swallowed the AttributeError, and reported the device as
+            # IDENTITY_UNVERIFIED — so on real hardware the one device on the
+            # console cable could never be configured, for a reason that had
+            # nothing to do with its identity.
+            console_session = boot[0]
+            self._phase_discovery(boot, mgmt_session_factory)
+            self._phase_access_retry(boot, mgmt_session_factory)
             self._phase_map()
             blueprint = self._phase_elicit()
             if blueprint is None:
@@ -213,13 +246,23 @@ class AutopilotEngine:
                 self.report.final = "BLOCKED-DESIGN"
                 return self.report
             self._phase_render(design)
-            self._bind_mgmt_context(mgmt_session_factory, session)
+            self._bind_mgmt_context(mgmt_session_factory, console_session)
             self._phase_execution_gate(design, execute, mgmt_session_factory)
             if execute:
                 self._phase_verify(design, mgmt_session_factory)
         except Failure as exc:
             self._phase(Phase.REPORT, "TYPED_STOP", "; ".join(exc.causes))
             self.report.final = f"BLOCKED-{exc.cls.value}"
+        finally:
+            # The console port is a scarce resource the operator lent us for
+            # this run. Nothing else closes it, and a serial port left open
+            # cannot be reopened by the next run.
+            closer = getattr(boot[0] if boot else None, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:   # noqa: BLE001 - never mask the run's outcome
+                    pass
         return self.report
 
     # ----------------------------------------------------------------- phases
@@ -744,7 +787,7 @@ class AutopilotEngine:
         class _Factory:
             def open(self, device_ref, hints):
                 if device_ref == "seed-01":
-                    return session
+                    return _LentSession(session)
                 return mgmt_session_factory(device_ref, hints)
 
         plan = self.crawl.plan_for(family, allowlist)
@@ -838,6 +881,8 @@ class AutopilotEngine:
 
             class _Factory:
                 def open(self, device_ref, hints):
+                    if device_ref == "seed-01":
+                        return _LentSession(session)
                     if device_ref == "seed-01":
                         return session
                     return mgmt_session_factory(device_ref, hints)

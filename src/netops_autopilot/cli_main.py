@@ -47,10 +47,17 @@ def _real_session_factory(port: str):
     profile = SerialProfile(port=port)
     transport = SerialConsoleTransport(profile)
     transport.open()
-    try:
-        banner = transport.execute("", 1.5)
-    except (TimeoutError, Failure):
-        banner = b""
+    # The connect banner is the vendor evidence, and it exists only once: it
+    # is whatever the device printed while the line was coming up, which the
+    # transport captured during its baud probe. Reading an empty command
+    # afterwards returns a prompt and identifies nothing, which used to send
+    # every real console run to "FAMILY_UNKNOWN — ask the operator".
+    banner = transport.banner
+    if not banner.strip():
+        try:
+            banner = transport.execute("", 1.5)
+        except (TimeoutError, Failure):
+            banner = b""
     return (transport, banner)
 
 
