@@ -28,6 +28,7 @@ from .fabric import (
     make_ledger_stack,
     seed_session,
 )
+from .large import LargeFabric
 from .loopback import LoopbackSession
 
 def fixtures_dir() -> Path:
@@ -42,6 +43,7 @@ def fixtures_dir() -> Path:
 __all__ = [
     "FIXTURES",
     "fixtures_dir",
+    "LargeFabric",
     "LoopbackSession",
     "SEED_BANNER",
     "SimFabricFactory",
@@ -50,3 +52,4 @@ __all__ = [
     "make_ledger_stack",
     "seed_session",
 ]
+

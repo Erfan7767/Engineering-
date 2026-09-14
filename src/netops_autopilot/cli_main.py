@@ -137,12 +137,22 @@ def _real_mgmt_factory(method: str = "ssh", username: Optional[str] = None,
 
 def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
                   mgmt_method: str = "ssh", mgmt_user: Optional[str] = None,
-                  allow_unverified_identity: bool = False) -> int:
+                  allow_unverified_identity: bool = False,
+                  max_devices: int = 256, max_l3_probes: int = 32) -> int:
+    # A budget of zero would discover nothing and report an empty topology as
+    # though the network were empty — the one answer discovery must never give.
+    if max_devices < 1 or max_l3_probes < 1:
+        print(f"Refusing: --max-devices must be >= 1 (got {max_devices}) and "
+              f"--max-l3-probes must be >= 1 (got {max_l3_probes}). A budget of "
+              f"zero would report an empty network that is not empty.",
+              file=sys.stderr)
+        return 2
     store = LedgerStore("netops-ledger.sqlite3")
     key_id = store.keys.create_key("autopilot-collector")
     engine = AutopilotEngine(
         store=store, key_id=key_id, io=ConsoleIO(),
-        time_authority=TimeAuthority(clock=lambda: datetime.now(timezone.utc)))
+        time_authority=TimeAuthority(clock=lambda: datetime.now(timezone.utc)),
+        max_devices=max_devices, max_l3_probes=max_l3_probes)
     report = engine.run(
         probe_port_session_factory=_real_session_factory,
         mgmt_session_factory=_real_mgmt_factory(
@@ -415,6 +425,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--allow-unverified-identity", action="store_true",
                     help="configure a device whose serial could not be confirmed "
                          "(operator takes responsibility; refused by default)")
+    ap.add_argument("--max-devices", type=int, default=256, metavar="N",
+                    help="discovery device budget (default 256). Neighbours beyond "
+                         "it are recorded NOT_PROBED and get no configuration; "
+                         "raise it for a large campus")
+    ap.add_argument("--max-l3-probes", type=int, default=32, metavar="N",
+                    help="how many L3 endpoints discovery may probe for devices "
+                         "that never advertised themselves (default 32)")
 
     demo = sub.add_parser("demo", help="deterministic simulated fabric, full flow, no hardware")
     demo.add_argument("--scenario", default="branch",
@@ -452,7 +469,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "autopilot":
         return run_autopilot(args.port, args.execute, report_dir=args.report_dir,
                              mgmt_method=args.mgmt_method, mgmt_user=args.mgmt_user,
-                             allow_unverified_identity=args.allow_unverified_identity)
+                             allow_unverified_identity=args.allow_unverified_identity,
+                             max_devices=args.max_devices,
+                             max_l3_probes=args.max_l3_probes)
     if args.command == "demo":
         return run_demo(scenario=args.scenario, report_dir=args.report_dir,
                         execute=args.execute)

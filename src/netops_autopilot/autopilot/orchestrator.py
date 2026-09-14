@@ -110,7 +110,19 @@ class AutopilotEngine:
         key_id: str,
         io: OperatorIO,
         time_authority: Optional[TimeAuthority] = None,
+        max_devices: int = 256,
+        max_l3_probes: int = 32,
     ) -> None:
+        # The discovery budget was a default buried in `crawl()` that nothing
+        # above it could change. A campus larger than the constant stopped at
+        # 256 devices, recorded the rest as NOT_PROBED — honestly, but with no
+        # way for the operator to lift the ceiling short of editing source.
+        if max_devices < 1 or max_l3_probes < 1:
+            raise ValueError(
+                f"discovery budget must be positive (max_devices={max_devices}, "
+                f"max_l3_probes={max_l3_probes})")
+        self.max_devices = max_devices
+        self.max_l3_probes = max_l3_probes
         self.store = store
         #: Per-device ConfigIR from the render phase, kept for the failure
         #: policy (node reversibility is not in the rendered text).
@@ -739,7 +751,8 @@ class AutopilotEngine:
         report = self.crawl.crawl(
             seed_ref="seed-01", seed_family=family,
             session_factory=_Factory(),
-            allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())))
+            allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())),
+            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes)
         self.report.crawl = report
         totals = report.totals
         self._transition(Phase.BOOT_PROBE.value, Phase.DISCOVERY_A.value, "CRAWL",
@@ -747,6 +760,27 @@ class AutopilotEngine:
         self._phase(Phase.DISCOVERY_A, "OK",
                     f"devices={totals['devices']} commands={totals['commands_collected']}/{totals['commands_planned']} "
                     f"statuses={totals['device_status']}")
+        self._report_budget_bound(report)
+
+    def _report_budget_bound(self, report) -> None:
+        """Tell the operator when discovery stopped because of a limit.
+
+        A device left ``NOT_PROBED`` is recorded, never invented — but a count
+        buried in a status map is not an instruction. The operator needs to
+        hear that neighbours exist which were never crawled, and what to do.
+        """
+        unprobed = [d.device_ref for d in report.devices
+                    if d.status.value == "NOT_PROBED"]
+        if not unprobed:
+            return
+        self.io.show(
+            f"!! DISCOVERY BUDGET: {len(unprobed)} device(s) a neighbour named "
+            f"were never crawled, because the device budget is "
+            f"{self.max_devices}. They appear in the topology as evidence only "
+            f"and receive NO configuration: {', '.join(sorted(unprobed)[:8])}"
+            f"{' …' if len(unprobed) > 8 else ''}. Re-run with "
+            f"--max-devices {max(self.max_devices * 2, len(unprobed) + self.max_devices)} "
+            f"to crawl them.")
 
     def _phase_access_retry(self, boot, mgmt_session_factory,
                             max_rounds: int = 2) -> None:
@@ -808,7 +842,8 @@ class AutopilotEngine:
             report = self.crawl.crawl(
                 seed_ref="seed-01", seed_family=family,
                 session_factory=_Factory(),
-                allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())))
+                allowlist_of=lambda fam: self.catalog_allowlists.get(fam, CommandAllowlist(())),
+            max_devices=self.max_devices, max_l3_probes=self.max_l3_probes)
             before, after = set(self._access_limited_refs()), set()
             self.report.crawl = report
             after = set(self._access_limited_refs())

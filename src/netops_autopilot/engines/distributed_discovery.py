@@ -22,9 +22,21 @@ Design contract:
 * **No hallucination** — a device is in the inventory only
   if a real worker reported a banner / CDP / LLDP response.
 
-The engine is a drop-in for the existing
-:class:`DiscoveryCrawlEngine`. The :class:`DistributedDiscovery`
-class implements the same shape.
+Status: this is NOT wired into the shipping run, and it is not a drop-in.
+The claim it used to carry — "a drop-in for the existing
+:class:`DiscoveryCrawlEngine`, implements the same shape" — was false. It
+returns a :class:`DistributedDiscoveryResult` of :class:`DiscoveryEvent`
+objects; :class:`DiscoveryCrawlEngine.crawl` returns a ``CrawlReport`` of
+``DeviceResult`` objects carrying parsed identity, interface, VLAN, ARP and MAC
+tables, which the design engine consumes. Bridging the two means producing all
+of that parsed inventory per device, not renaming a result type.
+
+Measured instead: the shipping crawl is breadth-first and serial, and it does
+scale — 73 devices in 1.28 s, 157 in 5.20 s, 273 in 11.9 s of engine time on
+the simulated transport, every device COMPLETE up to ``max_devices`` and the
+rest recorded ``NOT_PROBED``. What a large *real* network actually needs is
+parallel management sessions, not this module as it stands. See
+``tests/test_large_networks_scale_for_real.py``.
 """
 
 from __future__ import annotations
