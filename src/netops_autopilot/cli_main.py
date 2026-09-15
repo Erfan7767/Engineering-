@@ -299,11 +299,51 @@ def run_health() -> int:
                 f"design={DesignEngine.__name__}"),
         kv_line("Blueprints", ", ".join(sorted(b.blueprint_id for b in BLUEPRINTS))),
         kv_line("Ledger store", f"{LedgerStore.__name__} (sqlite3 backend)"),
-        kv_line("Optional deps",
-                "netmiko (SSH), pyyaml (YAML), fastapi+uvicorn (web) — all optional"),
+        kv_line("Evidence ledger", describe()),
+        kv_line("Device drivers", _driver_status()),
     ]
     print(Panel("NetOps Autopilot · Health", lines, accent="\x1b[36m").render())
     return 0
+
+
+#: What each driver is for, and what is lost without it. The console driver is
+#: first because it is the canonical hardware path: it is how the operator's
+#: one cabled device is reached at all.
+_DRIVERS: tuple[tuple[str, str, str], ...] = (
+    ("serial", "console", "cannot open a serial console port — the cabled device is unreachable"),
+    ("netmiko", "SSH", "cannot open SSH management sessions to discovered devices"),
+    ("telnetlib", "telnet", "telnet management unavailable (stdlib telnetlib was removed in Python 3.13, PEP 594)"),
+    ("yaml", "YAML config", "YAML configuration files cannot be read"),
+    ("fastapi", "web UI", "the web control surface cannot start"),
+)
+
+
+def _driver_status() -> str:
+    """Which device drivers this interpreter can actually import.
+
+    This used to be a fixed string — "netmiko (SSH), pyyaml (YAML),
+    fastapi+uvicorn (web) — all optional" — printed whether or not any of them
+    was installed. A health check that reports availability without checking
+    is worse than no health check: it tells an operator their machine is ready
+    for hardware it cannot talk to. And it never mentioned ``serial``, which is
+    the driver the whole console path depends on.
+
+    Each entry is probed with a real import, so the answer is what this
+    interpreter can do, not what the documentation says it should be able to.
+    """
+    import importlib.util
+
+    parts: list[str] = []
+    consequences: list[str] = []
+    for module, role, consequence in _DRIVERS:
+        if importlib.util.find_spec(module) is None:
+            parts.append(f"{role}: MISSING")
+            consequences.append(consequence)
+        else:
+            parts.append(f"{role}: OK")
+    if consequences:
+        parts.append("— " + "; ".join(consequences))
+    return ", ".join(parts)
 
 
 def _python_version() -> str:
