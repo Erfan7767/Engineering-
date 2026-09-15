@@ -23,6 +23,7 @@ from typing import Optional
 
 from ..core.failures import Failure, FailureClass
 from .keys import KeyRegistry, canonical_bytes
+from .paths import ensure_parent
 from .models import Claim, Event, Observation, RawArtifact, StateTransition
 
 GENESIS_HASH = "0" * 64
@@ -80,6 +81,11 @@ class LedgerStore:
         # from any thread. The per-instance ``_lock`` (RLock) is the
         # actual serializer; SQLite connections themselves are not
         # safe for concurrent use even with that flag.
+        if db_path != ":memory:":
+            # A missing parent directory surfaces from sqlite3 as "unable to
+            # open database file", which does not tell an operator that the
+            # state directory simply does not exist yet.
+            ensure_parent(db_path)
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.executescript(_SCHEMA)
         self.keys = keys or KeyRegistry()

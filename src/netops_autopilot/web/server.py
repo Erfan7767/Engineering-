@@ -47,6 +47,7 @@ from ..autopilot import AutopilotEngine
 from ..cli import ConsoleIO
 from ..core.failures import Failure
 from ..core.timeauth import TimeAuthority
+from ..ledger.paths import ledger_path, run_ledger_path
 from ..ledger.store import LedgerStore
 from ..reporting.html_report import render_html_report, report_from_autopilot
 from ..reporting.json_report import render_json_report
@@ -329,12 +330,11 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
             from netops_autopilot.chat import ChatOperator
             from netops_autopilot.autopilot import AutopilotEngine, OperatorIO
             from netops_autopilot.cli import RefusingIO
+            from netops_autopilot.ledger.paths import ledger_path
             from netops_autopilot.ledger.store import LedgerStore
             import os, tempfile
 
-            db_path = os.environ.get("NETOPS_LEDGER_DB") or os.path.join(
-                tempfile.gettempdir(), "netops_webui_ledger.sqlite")
-            store = LedgerStore(db_path)
+            store = LedgerStore(ledger_path("netops_webui_ledger.sqlite3"))
             key_id = store.keys.create_key("webui-chat")
             runner = AutopilotEngine(store=store, key_id=key_id, io=RefusingIO())
             # Build a DeviceCommandRunner so chat commands like
@@ -658,7 +658,11 @@ def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = Fal
         rec = _RUNS[run_id]
         rec.status = "RUNNING"
     try:
-        store = LedgerStore(f"netops-ledger-{run_id}.sqlite3")
+        # Under the state directory, named after the run. This used to be
+        # ``netops-ledger-<run_id>.sqlite3`` in the *current working
+        # directory*: one file per run, never removed, so a long-running
+        # server littered wherever it was started from.
+        store = LedgerStore(run_ledger_path(run_id))
         key_id = store.keys.create_key("api-runner")
         engine = AutopilotEngine(
             store=store, key_id=key_id, io=ConsoleIO(),

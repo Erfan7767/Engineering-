@@ -36,6 +36,7 @@ from .autopilot import AutopilotEngine, OperatorIO
 from .cli import ConsoleIO, ScriptedIO
 from .core.failures import Failure
 from .core.timeauth import TimeAuthority
+from .ledger.paths import describe, ledger_path
 from .ledger.store import LedgerStore
 from datetime import datetime, timezone
 
@@ -156,7 +157,11 @@ def run_autopilot(port: str, execute: bool, report_dir: Optional[str] = None,
               f"budget of zero would report an empty network that is not empty.",
               file=sys.stderr)
         return 2
-    store = LedgerStore("netops-ledger.sqlite3")
+    store = LedgerStore(ledger_path())
+    # The ledger is the evidence record for this run. An operator who cannot
+    # find it cannot audit what was sent to their devices, so the resolved
+    # path is announced rather than left to be guessed.
+    print(describe())
     key_id = store.keys.create_key("autopilot-collector")
     engine = AutopilotEngine(
         store=store, key_id=key_id, io=ConsoleIO(),
@@ -331,7 +336,8 @@ def run_chat(port: Optional[str] = None, message: Optional[str] = None,
     from .chat.operator import ChatOperator
     from .specs_data import specs_data_dir
 
-    store = LedgerStore("netops-ledger.sqlite3")
+    store = LedgerStore(ledger_path())
+    print(describe())
     key_id = store.keys.create_key("chat-operator")
     time_auth = TimeAuthority(clock=lambda: datetime.now(timezone.utc))
     engine = AutopilotEngine(store=store, key_id=key_id, io=ConsoleIO(),
