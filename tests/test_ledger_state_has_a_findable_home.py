@@ -116,3 +116,47 @@ def test_nothing_in_the_package_writes_a_ledger_into_the_working_directory():
     assert not offenders, (
         "a ledger is being created at a hardcoded relative path, which lands "
         "in the operator's working directory: " + ", ".join(offenders))
+
+
+def test_a_rehearsal_says_it_kept_no_record(isolated, monkeypatch, tmp_path, capsys):
+    """``demo`` printed "Events (ledger): 43 · Chain integrity OK" and kept nothing.
+
+    Both statements were true for the lifetime of the process and false
+    afterwards. An operator reading the summary would have gone looking for a
+    record to audit. The run is a rehearsal and must not quietly imply it
+    persisted evidence — but nor should a rehearsal write into the real
+    evidence store, so the honest fix is to say so.
+    """
+    from netops_autopilot.cli_main import run_demo
+    from netops_autopilot.ledger.paths import IN_MEMORY_NOTICE
+
+    elsewhere = tmp_path / "cwd"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    rc = run_demo(scenario="branch", execute=False)
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert IN_MEMORY_NOTICE in out, "the rehearsal did not say it kept no record"
+    assert "Events (ledger)" in out, out[-400:]
+
+    written = list(elsewhere.rglob("*.sqlite*")) + list(isolated.rglob("*.sqlite*"))
+    assert not written, f"a rehearsal wrote to disk: {written}"
+
+
+def test_the_real_path_does_persist(isolated, monkeypatch, tmp_path):
+    """The contrast that makes the notice meaningful: a real run writes."""
+    from netops_autopilot.ledger.paths import ledger_path
+    from netops_autopilot.ledger.store import LedgerStore
+
+    elsewhere = tmp_path / "cwd2"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    store = LedgerStore(ledger_path())
+    try:
+        store.keys.create_key("probe")
+        assert pathlib.Path(ledger_path()).exists()
+        assert not list(elsewhere.rglob("*.sqlite*")), (
+            "the real ledger landed in the working directory")
+    finally:
+        if hasattr(store, "close"):
+            store.close()

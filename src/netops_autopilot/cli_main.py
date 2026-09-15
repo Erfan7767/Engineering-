@@ -36,7 +36,7 @@ from .autopilot import AutopilotEngine, OperatorIO
 from .cli import ConsoleIO, ScriptedIO
 from .core.failures import Failure
 from .core.timeauth import TimeAuthority
-from .ledger.paths import describe, ledger_path
+from .ledger.paths import IN_MEMORY_NOTICE, describe, ledger_path
 from .ledger.store import LedgerStore
 from datetime import datetime, timezone
 
@@ -194,6 +194,10 @@ def run_demo(scenario: str = "branch", report_dir: Optional[str] = None,
     from .cli.scenarios import make_scenario_io
     from .core.failures import Failure
     store, key_id, _counters, time_auth = make_ledger_stack()
+    # make_ledger_stack builds an in-memory store. The summary at the end of
+    # this run reports a ledger event count and a verified hash chain, which
+    # would read as a record the operator can audit later. It is not one.
+    print(IN_MEMORY_NOTICE)
     try:
         fabric = SimFabricFactory(include_access=True, access_behavior="allow")
     except Failure as exc:

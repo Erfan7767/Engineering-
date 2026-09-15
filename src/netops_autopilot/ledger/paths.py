@@ -95,6 +95,19 @@ def describe() -> str:
     return f"ledger: {ledger_path()} ({source})"
 
 
+#: What a run whose ledger lives only in memory must say about itself.
+#:
+#: ``make_ledger_stack`` builds ``LedgerStore(":memory:")``, which the demo and
+#: the test suite use. The run summary reports a ledger event count and a
+#: verified hash chain, and both are true — for the lifetime of the process.
+#: Saying nothing let an operator read "Events (ledger): 43 · Chain integrity
+#: OK" as a record they could go and audit afterwards. There is no such
+#: record, and a rehearsal must not quietly imply one exists.
+IN_MEMORY_NOTICE = (
+    "ledger: in memory only — this run is a rehearsal and its evidence is "
+    "discarded when the process exits; nothing was written to disk")
+
+
 def ensure_parent(path: str) -> Optional[Path]:
     """Create the directory a database path lives in, if it does not exist.
 
