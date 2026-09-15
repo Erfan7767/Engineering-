@@ -79,7 +79,28 @@ def _pyserial_factory(port: str, baud: int, read_timeout_s: float) -> SerialPort
             cls=FailureClass.BLOCKED,
             causes=("SERIAL_DRIVER_UNAVAILABLE: pySerial not installed (ADR-0008 bundles it in the MSI)",),
         ) from exc
-    return serial.Serial(port=port, baudrate=baud, timeout=read_timeout_s)
+    try:
+        return serial.Serial(port=port, baudrate=baud, timeout=read_timeout_s)
+    except Exception as exc:  # noqa: BLE001 - driver/OS errors are one typed state
+        # This call sits outside the baud probe's try/except, so anything it
+        # raised used to escape as a raw SerialException traceback. An operator
+        # who mistyped a port, or whose USB adapter had not enumerated yet, got
+        # a stack trace instead of an answer. The ports that DO exist are
+        # listed, because "could not open port" without them leaves the
+        # operator guessing at the one thing they needed to know.
+        from .connection import list_serial_ports
+
+        available = list_serial_ports()
+        listing = ", ".join(f"{p_.device} ({p_.description})" for p_ in available) \
+            if available else "none — no serial port is visible to this machine"
+        raise Failure(
+            cls=FailureClass.BLOCKED,
+            causes=(
+                f"SERIAL_PORT_UNAVAILABLE: {port} — {type(exc).__name__}: {exc}. "
+                f"Serial ports present: {listing}. Connect the console cable and "
+                f"re-run; `netops-autopilot ports` lists them.",
+            ),
+        ) from exc
 
 
 class SerialConsoleTransport:

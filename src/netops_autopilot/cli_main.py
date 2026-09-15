@@ -280,6 +280,54 @@ def run_config(*, path: Optional[str], show_defaults: bool) -> int:
     return 0
 
 
+def run_ports() -> int:
+    """List the console ports this machine can actually see.
+
+    ``autopilot --port`` requires a device name, and until now the only help
+    offered was the string "COMx / /dev/ttyUSB0". An operator who has just
+    racked a switch and plugged in a USB console adapter has no way to know
+    what the adapter enumerated as — and on Linux it is not always ttyUSB0.
+    ``access.connection.list_serial_ports`` could already answer this; it was
+    simply never reachable from the command line.
+
+    Exit status is 1 when nothing is visible, because "no port" is a state the
+    operator has to act on (cable, adapter, permission), not a success.
+    """
+    from .access.connection import list_serial_ports
+    from .cli.pretty import Panel, kv_line
+
+    ports = list_serial_ports()
+    if not ports:
+        print(Panel("NetOps Autopilot · Console ports", [
+            kv_line("Ports found", "none"),
+            kv_line("What to check",
+                    "is the console cable plugged in, is the USB adapter "
+                    "enumerated (dmesg / Device Manager), and does this "
+                    "account have permission to open it"),
+            kv_line("Driver", "pySerial " + (
+                "installed" if _module_present("serial") else "MISSING — "
+                "install with `pip install netops-autopilot[hardware]`")),
+        ], accent="\x1b[33m").render())
+        return 1
+
+    lines = [kv_line("Ports found", str(len(ports)))]
+    for port in ports:
+        detail = port.description or "no description"
+        if port.manufacturer and port.manufacturer not in detail:
+            detail = f"{detail} ({port.manufacturer})"
+        lines.append(kv_line(port.device, detail))
+    lines.append(kv_line("Next",
+                         "netops-autopilot autopilot --port <device>"))
+    print(Panel("NetOps Autopilot · Console ports", lines,
+                accent="\x1b[36m").render())
+    return 0
+
+
+def _module_present(name: str) -> bool:
+    import importlib.util
+    return importlib.util.find_spec(name) is not None
+
+
 def run_health() -> int:
     """Print platform health: importable engines, ledger factory, etc."""
     from .cli.pretty import Panel, kv_line
@@ -501,6 +549,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "that to under a minute. Keep it within the VTY limit "
                          "of the gear.")
 
+    sub.add_parser("ports",
+                   help="list the console ports this machine can see, so "
+                        "`autopilot --port` has something real to name")
+
     demo = sub.add_parser("demo", help="deterministic simulated fabric, full flow, no hardware")
     demo.add_argument("--scenario", default="branch",
                       choices=["branch", "leaf-spine", "hotel", "retail"],
@@ -541,6 +593,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                              max_devices=args.max_devices,
                              max_l3_probes=args.max_l3_probes,
                              discovery_workers=args.discovery_workers)
+    if args.command == "ports":
+        return run_ports()
     if args.command == "demo":
         return run_demo(scenario=args.scenario, report_dir=args.report_dir,
                         execute=args.execute)
