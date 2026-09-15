@@ -45,7 +45,7 @@ _sqlite3.connect = _thread_safe_sqlite3_connect  # type: ignore[assignment]
 
 from ..autopilot import AutopilotEngine
 from ..cli import ConsoleIO
-from ..core.failures import Failure
+from ..core.failures import Failure, FailureClass
 from ..core.timeauth import TimeAuthority
 from ..ledger.paths import ledger_path, run_ledger_path
 from ..ledger.store import LedgerStore
@@ -139,6 +139,11 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         # fabric (no real hardware needed). It exists so the operator can
         # rehearse the whole flow from the browser.
         sim = bool(payload.get("sim", False)) or (port or "").upper().startswith("SIM")
+        # What network the operator wants. Without this the worker had no way
+        # to know and built the same blueprint for every request.
+        intent = payload.get("intent")
+        if intent is not None and not isinstance(intent, str):
+            raise HTTPException(status_code=400, detail="`intent` must be a string")
         if not port or not isinstance(port, str):
             raise HTTPException(status_code=400, detail="`port` (string) is required")
         run_id = uuid.uuid4().hex[:12]
@@ -151,7 +156,7 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         # Launch in a daemon thread so the request returns immediately.
         th = threading.Thread(
             target=_run_autopilot_worker,
-            args=(run_id, port, execute, sim),
+            args=(run_id, port, execute, sim, intent),
             daemon=True,
         )
         th.start()
@@ -646,7 +651,51 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
     return app
 
 
-def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = False) -> None:
+class _ConsoleOnlyMgmt:
+    """Management sessions for a web-initiated run on real hardware.
+
+    The device on the console cable is reachable — the operator has it open
+    right now — so it is served from the session the boot probe already
+    established. Opening a second handle on the same serial port would fail,
+    which is why the orchestrator hands the console session back through
+    ``bind_crawl`` rather than letting a factory open its own.
+
+    Every other device is refused, and the reason is the true one. This worker
+    used to refuse *all* devices, seed included, with the text "SSH/telnet
+    management sessions are not enabled in this build" — which was untrue, the
+    CLI enables them. What is actually true is that this run has no
+    credentials: a background worker has no terminal to prompt on and the API
+    does not accept a password. The consequence was that a web-initiated run
+    on real hardware configured nothing at all, and said OK.
+    """
+
+    def __init__(self, port: str) -> None:
+        self._port = port
+        self._console_session = None
+        self._seed_ref = "seed-01"
+
+    def bind_crawl(self, crawl, console_session=None, seed_ref: str = "seed-01"):
+        self._console_session = console_session
+        self._seed_ref = seed_ref
+
+    def __call__(self, device_ref: str, hints):
+        if device_ref == self._seed_ref and self._console_session is not None:
+            return self._console_session
+        raise Failure(
+            cls=FailureClass.BLOCKED,
+            causes=(
+                f"NO_MGMT_CREDENTIALS:{device_ref} — this run was started from "
+                f"the web API, which does not collect management credentials "
+                f"and has no terminal to prompt on. The device on the console "
+                f"cable is configured; this discovered neighbour is not. Run "
+                f"`netops-autopilot autopilot --port {self._port} "
+                f"--mgmt-user <user>` to configure it.",
+            ),
+        )
+
+
+def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = False,
+                          intent: Optional[str] = None) -> None:
     """Background worker: runs the AutopilotEngine and updates the record.
 
     When ``sim=True`` (or ``port`` starts with ``SIM``), the worker uses
@@ -699,12 +748,18 @@ def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = Fal
                 return
             fabric = SimFabricFactory(include_access=True, access_behavior="allow")
             from ..cli import ScriptedIO
-            # Bond + 2 + router + wan + availability + growth
-            engine.io = ScriptedIO([
-                "y", "2", "seed-01",
-                "ISP fiber DHCP handoff",
-                "STANDARD", "+25% in 12 months",
-            ])
+            from ..autopilot.answer_script import answers_keyed
+            # Keyed, and carrying the intent the operator actually sent. This
+            # used to be a six-item positional list whose second slot was the
+            # hard-coded string "2": every run started from the browser built
+            # the same blueprint no matter what the operator had asked for,
+            # and the list was three answers short of the questions the engine
+            # asks, so the rest were answered with "".
+            engine.io = ScriptedIO(dict(answers_keyed(
+                access_retry="n",
+                intent=intent or "branch",
+                apply=execute,
+            )))
             report = engine.run(
                 probe_port_session_factory=lambda p: fabric.probe(p),
                 mgmt_session_factory=fabric.open,
@@ -717,28 +772,28 @@ def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = Fal
                 rec.finished_at = datetime.now(timezone.utc).isoformat()
             return
 
-        # Real hardware path.
-        def _real_session_factory(p: str):
-            from ..access.serial_transport import SerialConsoleTransport, SerialProfile
-            transport = SerialConsoleTransport(SerialProfile(port=p))
-            transport.open()
-            try:
-                banner = transport.execute("", 1.5)
-            except (TimeoutError, Failure):
-                banner = b""
-            return (transport, banner)
+        # Real hardware path. The console factory is the CLI's, not a copy:
+        # this worker used to carry its own, which read the banner with
+        # `execute("", 1.5)`. That returns a prompt, identifies no vendor, and
+        # every web-initiated run on real hardware died at FAMILY_UNKNOWN. The
+        # CLI's copy was fixed to read the connect banner the transport
+        # captured; a duplicate meant the fix never reached here.
+        from ..cli_main import _real_session_factory
 
-        def _refused_mgmt_factory(device_ref, hints):
-            raise Failure(
-                cls=__import__("netops_autopilot.core.failures", fromlist=["FailureClass"]).FailureClass.BLOCKED,
-                causes=("MGMT_PATH_NOT_MODELED: SSH/telnet management sessions are not enabled in this build.",),
-            )
+        mgmt = _ConsoleOnlyMgmt(port)
 
         from ..cli import ScriptedIO
-        engine.io = ScriptedIO(["y"])
+        from ..autopilot.answer_script import answers_keyed
+        # ``execute`` is the caller's authorisation to apply, and the API is
+        # key-protected, so it is honoured. Until now the flag was passed to
+        # the engine while the apply gate was answered with something that was
+        # never the word BOND, so ``execute: true`` staged everything and then
+        # denied — a request that could never do what it asked for.
+        engine.io = ScriptedIO(dict(answers_keyed(
+            access_retry="n", intent=intent or "branch", apply=execute)))
         report = engine.run(
             probe_port_session_factory=_real_session_factory,
-            mgmt_session_factory=_refused_mgmt_factory,
+            mgmt_session_factory=mgmt,
             port=port, execute=execute,
         )
         with _RUNS_LOCK:

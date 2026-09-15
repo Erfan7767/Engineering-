@@ -1386,6 +1386,15 @@ class AutopilotEngine:
             # Nothing was sent to anything. Vacuous success is a lie.
             verdict = "NOTHING_APPLIED"
             self.report.final = "INCOMPLETE-APPLIED"
+        elif all(o == "DRY_RUN" for o in outcomes):
+            # Every device was planned and nothing was sent — the usual shape
+            # is a device that stayed unreachable, where the executor keeps a
+            # dry-run change record so the device is not silently dropped.
+            # This used to fall through to PARTIAL, which reads as "some
+            # devices were configured" when none were, while every summary
+            # field the operator reads was empty and the phase said OK.
+            verdict = "NOTHING_APPLIED"
+            self.report.final = "INCOMPLETE-APPLIED"
         elif "REJECTED" in outcomes:
             verdict = "REJECTED"
             self.report.final = "BLOCKED-APPLY"
@@ -1417,10 +1426,24 @@ class AutopilotEngine:
             "recovery": recovery_attempts,
         }
         self._transition(Phase.RENDER.value, Phase.EXECUTION_GATE.value, "GATE", verdict)
-        self._phase(Phase.EXECUTION_GATE, "OK" if not incomplete else "INCOMPLETE",
-                    f"applied: {sum(o == 'APPLIED' for o in outcomes)}/{len(managed)} "
-                    f"managed device(s)"
-                    + (f" — {len(incomplete)} INCOMPLETE" if incomplete else ""))
+        applied_count = sum(o == "APPLIED" for o in outcomes)
+        # "OK" is a claim that the gate did its job, and a gate that authorised
+        # an apply and then sent nothing to any device did not. Reporting OK
+        # alongside "applied: 0/1" is how a run reads as successful.
+        gate_status = ("OK" if applied_count and not incomplete
+                       else "INCOMPLETE" if incomplete or not applied_count
+                       else "OK")
+        detail = (f"applied: {applied_count}/{len(managed)} managed device(s)"
+                  + (f" — {len(incomplete)} INCOMPLETE" if incomplete else ""))
+        if managed and not applied_count:
+            causes = sorted({
+                cause
+                for rec in records
+                for cause in (rec.get("failure_causes") or ())
+            })
+            detail += " — NOTHING SENT: " + ("; ".join(causes) if causes else
+                                             "no reason was recorded")
+        self._phase(Phase.EXECUTION_GATE, gate_status, detail)
         self._transition(Phase.EXECUTION_GATE.value, Phase.REPORT.value, "REPORT", self.report.final)
 
     def _design_answers(self) -> dict[str, str]:
