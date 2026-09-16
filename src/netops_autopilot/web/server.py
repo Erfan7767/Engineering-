@@ -29,6 +29,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# FastAPI stays an optional dependency — importing this module must work
+# without it — but ``from __future__ import annotations`` turns every
+# annotation into a string that FastAPI resolves against *this module's*
+# globals, not against ``create_app``'s locals. A ``Request`` imported inside
+# ``create_app`` is therefore invisible to it and would be misread as a query
+# parameter, so the one annotation the request guard needs is bound here,
+# guarded, and falls back to ``Any`` when FastAPI is absent (in which case no
+# app can be built at all).
+try:  # pragma: no cover - exercised only without the optional dependency
+    from fastapi import Request as _RequestType
+except ImportError:  # pragma: no cover
+    _RequestType = Any
+
 # --- global sqlite3 thread-safety patch ----------------------------------
 # FastAPI runs sync endpoints in a threadpool; the SSE stream runs the
 # chat in a worker thread. The LedgerStore uses sqlite3 with the
@@ -131,7 +144,8 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         }
 
     @app.post("/runs")
-    def create_run(payload: dict, authorization: Optional[str] = Header(default=None)) -> dict:
+    def create_run(payload: dict, request: _RequestType,
+                   authorization: Optional[str] = Header(default=None)) -> dict:
         _check_key(authorization)
         port = payload.get("port")
         execute = bool(payload.get("execute", False))
@@ -144,6 +158,16 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         intent = payload.get("intent")
         if intent is not None and not isinstance(intent, str):
             raise HTTPException(status_code=400, detail="`intent` must be a string")
+        # Management credentials for the discovered neighbours. Optional:
+        # without them the run configures only the device on the console cable
+        # and says so. Parsed (and validated) here, before the run is created,
+        # so a malformed request fails loudly instead of mid-run.
+        mgmt_credential = _mgmt_credential_from(payload)
+        if mgmt_credential is not None:
+            peer = request.client.host if request.client is not None else None
+            refusal = _plaintext_credential_refusal(peer)
+            if refusal is not None:
+                raise HTTPException(status_code=403, detail=refusal)
         if not port or not isinstance(port, str):
             raise HTTPException(status_code=400, detail="`port` (string) is required")
         run_id = uuid.uuid4().hex[:12]
@@ -156,11 +180,12 @@ def create_app(*, static_dir: Optional[Path] = None) -> Any:
         # Launch in a daemon thread so the request returns immediately.
         th = threading.Thread(
             target=_run_autopilot_worker,
-            args=(run_id, port, execute, sim, intent),
+            args=(run_id, port, execute, sim, intent, mgmt_credential),
             daemon=True,
         )
         th.start()
-        return {"run_id": run_id, "status": rec.status}
+        return {"run_id": run_id, "status": rec.status,
+                "mgmt_credentials": "supplied" if mgmt_credential is not None else "none"}
 
     @app.get("/runs/{run_id}")
     def get_run(run_id: str, authorization: Optional[str] = Header(default=None)) -> dict:
@@ -663,10 +688,13 @@ class _ConsoleOnlyMgmt:
     Every other device is refused, and the reason is the true one. This worker
     used to refuse *all* devices, seed included, with the text "SSH/telnet
     management sessions are not enabled in this build" — which was untrue, the
-    CLI enables them. What is actually true is that this run has no
-    credentials: a background worker has no terminal to prompt on and the API
-    does not accept a password. The consequence was that a web-initiated run
-    on real hardware configured nothing at all, and said OK.
+    CLI enables them. What is actually true is that *this run* has no
+    credentials: a background worker has no terminal to prompt on. The API can
+    now collect them (``{"mgmt": {...}}`` on ``POST /runs``, wired by
+    :func:`_credential_mgmt_factory`); this class is what a run that supplied
+    none falls back to. The consequence of the old unconditional refusal was
+    that a web-initiated run on real hardware configured nothing at all, and
+    said OK.
     """
 
     def __init__(self, port: str) -> None:
@@ -685,17 +713,134 @@ class _ConsoleOnlyMgmt:
             cls=FailureClass.BLOCKED,
             causes=(
                 f"NO_MGMT_CREDENTIALS:{device_ref} — this run was started from "
-                f"the web API, which does not collect management credentials "
-                f"and has no terminal to prompt on. The device on the console "
-                f"cable is configured; this discovered neighbour is not. Run "
+                f"the web API without management credentials, and a background "
+                f"worker has no terminal to prompt on. The device on the "
+                f"console cable is configured; this discovered neighbour is "
+                f"not. Send them with the run "
+                f"(``{{\"mgmt\": {{\"username\": …, \"password\": …}}}}``) or run "
                 f"`netops-autopilot autopilot --port {self._port} "
                 f"--mgmt-user <user>` to configure it.",
             ),
         )
 
 
+#: Client addresses that mean "the same machine". A credential sent from one
+#: of these never crossed a network interface; one sent from anywhere else did,
+#: and this server terminates no TLS of its own.
+#:
+#: ``testclient`` is Starlette's in-process test client: it never opens a
+#: socket, so it is genuinely local. No real peer can present that name.
+_LOOPBACK_CLIENTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+
+
+def _plaintext_credential_refusal(client_host: Optional[str]) -> Optional[str]:
+    """Refuse a password that would cross the network in cleartext.
+
+    ``netops-autopilot webui`` binds ``0.0.0.0`` by default and this app
+    terminates no TLS, so a management password POSTed from another host
+    would travel unencrypted. The server does not accept that silently.
+
+    The check is on the peer address of the request actually received, not on
+    a configuration guess. An operator fronting the app with a TLS-terminating
+    reverse proxy is on the same host as far as this socket is concerned, so
+    loopback is accepted; anything else needs the explicit opt-in, which is a
+    decision the operator makes, not one the platform makes for them.
+    """
+    if client_host in _LOOPBACK_CLIENTS:
+        return None
+    if os.environ.get("NETOPS_ALLOW_PLAINTEXT_MGMT", "") == "1":
+        return None
+    return (
+        "REFUSING_PLAINTEXT_CREDENTIAL: this request came from "
+        f"{client_host or 'an unknown peer'}, which is not this host, and the "
+        "server terminates no TLS — the management password would cross the "
+        "network unencrypted. Send the run from localhost, put a TLS-terminating "
+        "reverse proxy in front, or set NETOPS_ALLOW_PLAINTEXT_MGMT=1 to accept "
+        "the risk explicitly."
+    )
+
+
+def _mgmt_credential_from(payload: dict) -> Optional[Any]:
+    """Read operator-supplied management credentials from a run request.
+
+    Returns ``None`` when the operator supplied none — the worker then keeps
+    the console-only path and reports the true, typed reason for every
+    neighbour it cannot reach. The platform never invents a default account
+    and never reuses a credential from a previous run.
+
+    Passwords are read out of the request body and held only in the
+    ``MgmtCredential`` for the lifetime of the worker thread. They are never
+    written to the run record, never returned by any endpoint, and
+    ``MgmtCredential.__repr__`` masks them so they cannot reach a log line or
+    a traceback.
+    """
+    raw = payload.get("mgmt")
+    if raw is None:
+        return None
+    # Lazy, like every other FastAPI import in this module: the web driver is
+    # optional, so importing it at module scope would make the whole package
+    # unimportable without it. ``create_app`` has already proved it present.
+    from fastapi import HTTPException
+
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="`mgmt` must be an object")
+
+    username = raw.get("username")
+    password = raw.get("password")
+    if not isinstance(username, str) or not username.strip():
+        raise HTTPException(status_code=400,
+                            detail="`mgmt.username` (non-empty string) is required")
+    if not isinstance(password, str) or not password:
+        raise HTTPException(status_code=400,
+                            detail="`mgmt.password` (non-empty string) is required")
+
+    method = raw.get("method", "ssh")
+    if method not in ("ssh", "telnet"):
+        raise HTTPException(status_code=400,
+                            detail="`mgmt.method` must be 'ssh' or 'telnet'")
+
+    enable_secret = raw.get("enable_secret", "")
+    if not isinstance(enable_secret, str):
+        raise HTTPException(status_code=400,
+                            detail="`mgmt.enable_secret` must be a string")
+
+    mgmt_port = raw.get("port")
+    if mgmt_port is not None and (
+            not isinstance(mgmt_port, int) or isinstance(mgmt_port, bool)
+            or not 1 <= mgmt_port <= 65535):
+        raise HTTPException(status_code=400,
+                            detail="`mgmt.port` must be an integer 1-65535")
+
+    from ..access.mgmt_session import MgmtCredential
+    return MgmtCredential(username=username.strip(), password=password,
+                          enable_secret=enable_secret, method=method,
+                          port=mgmt_port)
+
+
+def _credential_mgmt_factory(credential: Any) -> Any:
+    """The real out-of-band path, fed by credentials the API collected.
+
+    This is the same identity-confirming :class:`MgmtSessionFactory` the CLI
+    uses; only the credential source differs. It must not reuse the CLI's
+    ``_make_credential_provider``: that one prompts with ``getpass``, and a
+    background worker has no terminal, so it would block forever.
+
+    The seed device still goes over the console cable — the orchestrator hands
+    that session back through ``bind_crawl`` — and every discovered neighbour
+    is reached at a management address discovery actually observed, with its
+    identity confirmed against the crawl evidence before one line is sent.
+    """
+    from ..access.mgmt_session import MgmtSessionFactory
+
+    def provider(device_ref: str, vendor_family: str):
+        return credential
+
+    return MgmtSessionFactory(credential_provider=provider)
+
+
 def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = False,
-                          intent: Optional[str] = None) -> None:
+                          intent: Optional[str] = None,
+                          mgmt_credential: Optional[Any] = None) -> None:
     """Background worker: runs the AutopilotEngine and updates the record.
 
     When ``sim=True`` (or ``port`` starts with ``SIM``), the worker uses
@@ -780,7 +925,14 @@ def _run_autopilot_worker(run_id: str, port: str, execute: bool, sim: bool = Fal
         # captured; a duplicate meant the fix never reached here.
         from ..cli_main import _real_session_factory
 
-        mgmt = _ConsoleOnlyMgmt(port)
+        # With operator credentials the run reaches every discovered device.
+        # Without them it configures the device on the console cable and
+        # reports the true reason for each neighbour it cannot reach — never a
+        # silent success, never an invented account.
+        if mgmt_credential is not None:
+            mgmt = _credential_mgmt_factory(mgmt_credential)
+        else:
+            mgmt = _ConsoleOnlyMgmt(port)
 
         from ..cli import ScriptedIO
         from ..autopilot.answer_script import answers_keyed
