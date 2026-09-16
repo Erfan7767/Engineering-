@@ -1,0 +1,15 @@
+{
+  "name": "netops-autopilot",
+  "version": "1.0.0",
+  "description": "NetOps Autopilot - نسخة كاملة مطابقة للأصل بدون تغيير - https://netops-autopilot-m6r65hk.rork.app",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "serve": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

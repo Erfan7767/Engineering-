@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head><script data-rork-toolkit-auth="true">(function (scope, config) {
+  if (scope.__rorkToolkitAuthInstalled) return;
+  scope.__rorkToolkitAuthInstalled = true;
+
+  var nativeFetch = scope.fetch.bind(scope);
+  var NativeWebSocket = scope.WebSocket;
+  var authBase = config.authUrl.replace(/\/$/, "");
+  var toolkitBase = new scope.URL(config.toolkitUrl, scope.location.href);
+  var toolkitPath = toolkitBase.pathname.replace(/\/$/, "");
+  var token = null;
+  var expiresAt = 0;
+  var pending = null;
+
+  function isToolkitUrl(value) {
+    try {
+      var url = new scope.URL(
+        typeof value === "string" || value instanceof scope.URL ? value : value.url,
+        scope.location.href,
+      );
+      var path = url.pathname.replace(/\/$/, "");
+      var secureBase = toolkitBase.protocol === "https:";
+      var protocolAllowed = secureBase
+        ? url.protocol === "https:" || url.protocol === "wss:"
+        : url.protocol === "http:" || url.protocol === "ws:";
+      return (
+        protocolAllowed &&
+        url.host === toolkitBase.host &&
+        (path === toolkitPath || path.indexOf(toolkitPath + "/") === 0)
+      );
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function remember(payload) {
+    if (!payload || typeof payload.token !== "string") {
+      throw new Error("Toolkit token response is invalid");
+    }
+    var parsedExpiry = Date.parse(payload.expires_at);
+    expiresAt = Number.isFinite(parsedExpiry)
+      ? parsedExpiry
+      : Date.now() + Number(payload.expires_in || 600) * 1000;
+    token = payload.token;
+    var refreshIn = Math.max(1000, expiresAt - Date.now() - 60000);
+    scope.setTimeout(function () {
+      expiresAt = 0;
+      getToken().catch(function () {});
+    }, refreshIn);
+    return token;
+  }
+
+  function getToken() {
+    if (token && expiresAt > Date.now() + 60000) return Promise.resolve(token);
+    if (pending) return pending;
+    pending = nativeFetch(authBase + "/toolkit/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform: "web" }),
+      credentials: "omit",
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error("Toolkit token request failed: " + response.status);
+        return response.json();
+      })
+      .then(remember)
+      .finally(function () {
+        pending = null;
+      });
+    return pending;
+  }
+
+  scope.__rorkToolkitAuthReady =
+    config.eager === false
+      ? Promise.resolve(null)
+      : getToken().catch(function () {
+          return null;
+        });
+  scope.__rorkGetToolkitToken = getToken;
+  scope.__rorkLoadToolkitModule = function (src) {
+    var previous = scope.__rorkToolkitModuleChain || scope.__rorkToolkitAuthReady;
+    var next = previous
+      .catch(function () {
+        return null;
+      })
+      .then(function () {
+        return import(src);
+      });
+    scope.__rorkToolkitModuleChain = next;
+    return next;
+  };
+
+  scope.fetch = async function (input, init) {
+    if (!isToolkitUrl(input)) return nativeFetch(input, init);
+    var delegatedToken = await getToken();
+    var request = input instanceof scope.Request ? input : null;
+    var headers = new scope.Headers(
+      init && init.headers !== undefined ? init.headers : request ? request.headers : undefined,
+    );
+    headers.set("Authorization", "Bearer " + delegatedToken);
+    var nextInit = Object.assign({}, init || {}, { headers: headers });
+    return request
+      ? nativeFetch(new scope.Request(request, nextInit))
+      : nativeFetch(input, nextInit);
+  };
+
+  function replaceProtocols(protocols) {
+    if (!token) return protocols;
+    function replace(protocol) {
+      if (typeof protocol !== "string") return protocol;
+      if (protocol.indexOf("rork-toolkit-auth.") === 0) {
+        return "rork-toolkit-auth." + token;
+      }
+      if (protocol.indexOf("ai-gateway-auth.") === 0) {
+        return "ai-gateway-auth." + token;
+      }
+      return protocol;
+    }
+    return Array.isArray(protocols) ? protocols.map(replace) : replace(protocols);
+  }
+
+  function RorkToolkitWebSocket(url, protocols) {
+    return new NativeWebSocket(
+      url,
+      isToolkitUrl(url) ? replaceProtocols(protocols) : protocols,
+    );
+  }
+  RorkToolkitWebSocket.prototype = NativeWebSocket.prototype;
+  Object.setPrototypeOf(RorkToolkitWebSocket, NativeWebSocket);
+  scope.WebSocket = RorkToolkitWebSocket;
+})(window, {"authUrl":"https://api.rork.com","toolkitUrl":"https://toolkit.rork.com","sentinel":"rork_web_delegated_auth","eager":false});
+</script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetOps Autopilot</title>
+    <meta name="description" content="Built with Rork" />
+
+    <meta property="og:title" content="NetOps Autopilot" />
+    <meta property="og:description" content="Built with Rork" />
+    <meta property="og:type" content="website" />
+
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="apple-touch-icon" href="icon.png" />
+    <script type="module" crossorigin src="assets/index-BBAnUz2e.js"></script>
+    <link rel="stylesheet" crossorigin href="assets/index-CcGrFIpz.css">
+  </head>
+
+  <body>
+    <div id="root"></div>
+  <script data-rork-watermark="true">(function(){
+  // Preview and published builds are the same artifact, so the badge is injected
+  // into both. Hide it only when this build is embedded in the Rork editor's
+  // preview iframe; a direct visit or a third-party embed still shows it.
+  function isEditorEmbed() {
+    var embedded = false;
+    try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+    if (!embedded) return false;
+    var exactHosts = ["localhost","127.0.0.1"];
+    var hostSuffixes = ["rork.com","rorkdev.link"];
+    function fromEditor(value) {
+      if (!value) return false;
+      var host;
+      try { host = new URL(value).hostname.toLowerCase(); } catch (e) { return false; }
+      if (exactHosts.indexOf(host) !== -1) return true;
+      for (var s = 0; s < hostSuffixes.length; s++) {
+        if (host === hostSuffixes[s] || host.slice(-(hostSuffixes[s].length + 1)) === "." + hostSuffixes[s]) return true;
+      }
+      return false;
+    }
+    try {
+      var ancestors = window.location.ancestorOrigins;
+      if (ancestors) {
+        for (var i = 0; i < ancestors.length; i++) { if (fromEditor(ancestors[i])) return true; }
+      }
+    } catch (e) {}
+    return fromEditor(document.referrer);
+  }
+  if (isEditorEmbed()) return;
+
+  function mountBadge() {
+    if (!document.body || document.getElementById("rork-watermark-badge")) return;
+
+    var host = document.createElement("div");
+    host.id = "rork-watermark-badge";
+    host.style.cssText = "position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));z-index:2147483647";
+
+    var shadow = host.attachShadow({ mode: "closed" });
+    var style = document.createElement("style");
+    style.textContent = [
+      ":host{all:initial;animation:rork-badge-in .1s ease-out both}",
+      ".wrap{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 12px;border-radius:999px;background:rgb(49,49,49);border:1px solid rgba(255,255,255,.08);box-shadow:0 1px 1px rgba(0,0,0,.05);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;font-size:13px;font-weight:500;line-height:1;color:rgba(255,255,255,.7);transition:border-color .15s ease,color .15s ease}",
+      ".wrap:hover{border-color:rgba(255,255,255,.16);color:#fff}",
+      "a{display:inline-flex;align-items:center;gap:7px;color:inherit;text-decoration:none;white-space:nowrap;outline:none}",
+      "a:focus-visible,button:focus-visible{outline:2px solid #d6d6d6;outline-offset:2px}",
+      ".logo{display:block;width:44px;height:auto}",
+      ".logo svg{display:block;width:100%;height:auto}",
+      "button{all:unset;flex:none;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:8px;color:rgba(255,255,255,.5);cursor:pointer;transition:background .15s ease,color .15s ease}",
+      "button:hover{background:rgba(255,255,255,.1);color:#fff}",
+      "button svg{display:block}",
+      "@keyframes rork-badge-in{from{opacity:0;transform:translateY(2px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}",
+      "@media (prefers-reduced-motion:reduce){:host{animation:none}.wrap,button{transition:none}}"
+    ].join("");
+
+    var wrap = document.createElement("div");
+    wrap.className = "wrap";
+
+    var link = document.createElement("a");
+    link.href = "https://rork.com?utm_source=rork_watermark&utm_medium=published_web&utm_campaign=free_tier";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("aria-label", "Built with Rork");
+
+    var built = document.createElement("span");
+    built.className = "built";
+    built.textContent = "Built with";
+
+    var logo = document.createElement("span");
+    logo.className = "logo";
+    logo.innerHTML = "<svg viewBox=\"0 -4 186 54\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M17.9115 40.6707C27.8037 40.6707 35.823 32.6612 35.823 22.7811C35.823 12.9009 27.8037 4.89148 17.9115 4.89148C8.01925 4.89148 0 12.9009 0 22.7811C0 32.6612 8.01925 40.6707 17.9115 40.6707Z\" fill=\"white\"/><path d=\"M81.851 24.98C81.2528 24.3892 80.5916 23.8929 79.8832 23.4675C81.6778 22.5379 83.1576 21.301 84.3069 19.7491C85.7316 17.819 86.4479 15.4241 86.4479 12.5644C86.4479 10.0828 85.8575 7.92425 84.6847 6.07293C83.5512 4.22161 81.914 2.81933 79.773 1.85034C77.6319 0.841958 75.0895 0.337769 72.1535 0.337769H54.8994V44.4544H61.4484V28.8245C61.4484 27.8476 62.2355 27.0598 63.2116 27.0598H72.4683C74.3181 27.0598 75.8294 27.6901 77.0022 28.9505C78.2223 30.1716 78.8914 31.763 79.0173 33.7403L79.8989 44.4544H86.3849L85.5033 33.1731C85.2514 29.8092 84.0314 27.0835 81.851 24.98ZM76.4355 20.2533C75.2627 20.9229 73.7671 21.2616 71.9646 21.2616H63.2116C62.2355 21.2616 61.4484 20.4738 61.4484 19.497V7.78245C61.4484 6.80558 62.2355 6.01778 63.2116 6.01778H71.9646C74.6487 6.01778 76.648 6.73468 77.9468 8.16059C79.2456 9.54711 79.8989 11.3512 79.8989 13.5806C79.8989 14.9671 79.6077 16.2513 79.0173 17.4251C78.4742 18.5989 77.6083 19.5442 76.4355 20.2611V20.2533Z\" fill=\"white\"/><path d=\"M132.086 19.757C132.086 17.4487 132.692 15.6998 133.912 14.526C135.132 13.3049 136.872 12.6983 139.139 12.6983H149.277V18.4965H138.824V44.4622H132.086V19.757Z\" fill=\"white\"/><path d=\"M170.955 30.471C170.538 29.6753 170.034 29.2735 169.444 29.2735C168.94 29.2735 168.436 29.5256 167.932 30.0298L162.391 35.828V44.4622H155.905V0.345648H162.391V27.95L176.748 12.6983H184.746L175.993 21.9628C175.363 22.6324 175.048 23.3099 175.048 23.9795C175.048 24.4443 175.198 24.9485 175.489 25.4921L185.816 44.4622H178.323L170.955 30.471Z\" fill=\"white\"/><path d=\"M109.218 45.2244C100.1 45.2244 92.6807 37.799 92.6807 28.6729C92.6807 19.5468 100.1 12.1213 109.218 12.1213C118.337 12.1213 125.756 19.5468 125.756 28.6729C125.756 37.799 118.337 45.2244 109.218 45.2244ZM109.218 18.1011C103.393 18.1011 98.6555 22.8444 98.6555 28.6729C98.6555 34.5013 103.395 39.2447 109.218 39.2447C115.042 39.2447 119.781 34.5031 119.781 28.6729C119.781 22.8426 115.042 18.1011 109.218 18.1011Z\" fill=\"white\"/></svg>";
+
+    link.appendChild(built);
+    link.appendChild(logo);
+
+    var close = document.createElement("button");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close Rork badge");
+    close.innerHTML = "<svg viewBox=\"0 0 24 24\" width=\"11\" height=\"11\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M5 5l14 14M19 5L5 19\"/></svg>";
+    // Closing only removes the current page's badge; a refresh re-runs this
+    // script and the badge reappears (the dismissal is intentionally not
+    // persisted).
+    close.addEventListener("click", function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      host.remove();
+    });
+
+    wrap.appendChild(link);
+    wrap.appendChild(close);
+    shadow.appendChild(style);
+    shadow.appendChild(wrap);
+    document.body.appendChild(host);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mountBadge, { once: true });
+  } else {
+    mountBadge();
+  }
+})()</script></body>
+</html>
