@@ -266,6 +266,16 @@ def _build_rollback_plan(
     bind by name. A line with no declared inverse yields a
     ``! MANUAL_ROLLBACK_REQUIRED:`` marker — typed, never silently
     skipped, and never issued to a device.
+
+    One exception, and it is not a shortcut: a line that *enters a
+    configuration section* and declares no inverse changed no state, so
+    there is nothing to undo and demanding a manual step would be a false
+    alarm. FortiOS is the only family with such entries today
+    (``config system global``, ``config system interface``), whose allowlist
+    purpose text states they change nothing until a ``set`` runs; every
+    other family declares an inverse for all of its mode entries, so this
+    branch cannot weaken them. A CONFIG line that changes state and
+    declares no inverse still yields the manual marker.
     """
     plan: list[tuple[str, int]] = []
     for line in lines:
@@ -274,6 +284,9 @@ def _build_rollback_plan(
         inverse = allowlist.resolve_inverse(line.stripped)
         if inverse:
             plan.append((inverse, line.depth))
+        elif line.enters_mode:
+            # Section entry: inert, nothing to undo.
+            continue
         else:
             tmpl = line.match.template if line.match else "?"
             plan.append((
