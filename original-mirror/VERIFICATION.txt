@@ -1,0 +1,17 @@
+=== التحقق من المطابقة ===
+المصدر: https://netops-autopilot-m6r65hk.rork.app
+التاريخ: Sun Sep 13 21:32:09 UTC 2026
+
+--- Hashes (SHA256) ---
+949064a851a8bf18a01feef3c9345f43db23f00f524bf9d4655570515b3898a3  NetOps-Autopilot-Complete/index.html
+eaaf4f8d60d66405c0c9c43bd190c4abb89f6fcf910c0802e81a32f6a7583487  NetOps-Autopilot-Complete/assets/index-BBAnUz2e.js
+3b907bd803548e94f6f5caae134ede41380f5837ef886fc4ce95e47266d1204c  NetOps-Autopilot-Complete/assets/index-CcGrFIpz.css
+511f1a619445f5a29b797435a0450c1f3db1e979f1408be7dc23bb6b1b8f463a  NetOps-Autopilot-Complete/favicon.png
+e9dabb419d8dfd43d7b06139f9fa636ccf5d32032fe04b25ba2bca22606d12f9  NetOps-Autopilot-Complete/icon.png
+
+--- File sizes ---
+-rw-r--r-- 1 user user 943K Sep 13 21:31 NetOps-Autopilot-Complete/assets/index-BBAnUz2e.js
+-rw-r--r-- 1 user user  73K Sep 13 21:31 NetOps-Autopilot-Complete/assets/index-CcGrFIpz.css
+-rw-r--r-- 1 user user  13K Sep 13 21:31 NetOps-Autopilot-Complete/index.html
+-rw-r--r-- 1 user user 1.7K Sep 13 21:31 NetOps-Autopilot-Complete/favicon.png
+-rw-r--r-- 1 user user 1.1M Sep 13 21:31 NetOps-Autopilot-Complete/icon.png
