@@ -37,6 +37,7 @@ from typing import Callable, Optional, Protocol
 
 from ..core.failures import Failure, FailureClass
 from ..parsers.catalog import CATALOG_BUILDERS, canonical_families
+from .vendor_detect import detect_family_candidates
 from .transport_factory import TransportSpec, select_transport
 
 
@@ -229,11 +230,40 @@ class MgmtSessionFactory:
         # No recorded serial exists yet for a device discovery is still
         # meeting, so confirmation runs with no expectation: it reports
         # UNVERIFIED, or refuses unless the operator has taken that
-        # responsibility explicitly.
-        return self._dial(device_ref, family_hint, hints, None)
+        # responsibility explicitly. The family came from an advertisement, so
+        # the device's own banner is cross-checked against it before anything
+        # is configured.
+        return self._dial(device_ref, family_hint, hints, None,
+                          cross_check_banner=True)
+
+    def _cross_check_banner(self, device_ref: str, family: str,
+                            session: ExecSession) -> None:
+        """Refuse when the device's own banner contradicts the dialect chosen.
+
+        The family in use here came from an LLDP/CDP advertisement, which can
+        be stale, mis-typed, or simply about a different box than the one at
+        this address. Configuring a Juniper with IOS commands is not a
+        cosmetic mistake, so a contradiction is a refusal rather than a
+        warning. A banner that names no vendor proves nothing either way and
+        is ignored — silence is not evidence of a mismatch.
+        """
+        raw = getattr(session, "banner", None)
+        if not raw:
+            return
+        candidates = tuple(detect_family_candidates(raw))
+        if not candidates:
+            return
+        wanted = set(canonical_families(family)) | {family}
+        if not set(candidates) & wanted:
+            raise Failure(cls=FailureClass.FATAL, causes=(
+                f"IDENTITY_MISMATCH:{device_ref} — discovery advertised "
+                f"{family!r} but the device's own banner identifies it as "
+                f"{candidates[0]!r}. Refusing to configure it in the wrong "
+                f"dialect; the advertisement is stale or points elsewhere.",))
 
     def _dial(self, device_ref: str, family: str, addresses: tuple[str, ...],
-              expected_serial: Optional[str]) -> ExecSession:
+              expected_serial: Optional[str],
+              cross_check_banner: bool = False) -> ExecSession:
         """Connect to ``addresses[0]``, confirm identity, return the session."""
         credential = self.credential_provider(device_ref, family)
         spec_kwargs = dict(
@@ -269,6 +299,8 @@ class MgmtSessionFactory:
                 f"{type(exc).__name__}: {exc}",)) from exc
 
         try:
+            if cross_check_banner:
+                self._cross_check_banner(device_ref, family, session)
             self._confirmed.append(
                 self._confirm(device_ref, family, session, expected_serial))
         except Failure:

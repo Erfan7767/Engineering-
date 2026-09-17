@@ -290,3 +290,95 @@ def test_an_empty_username_is_refused_typed() -> None:
 
     assert "NO_CREDENTIALS" in str(exc.value)
     assert "access-sw1" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# The device's own banner is checked against the advertised dialect
+# --------------------------------------------------------------------------
+
+_JUNOS_BANNER = (
+    b"Juniper Networks, Inc. ex2300-48p internet router, "
+    b"kernel JUNOS 15.1X53-D59.0\n"
+)
+_CISCO_BANNER = (
+    b"Cisco IOS Software [Cupertino], Catalyst L3 Switch Software "
+    b"(CAT3K_CAA-UNIVERSALK9-M), Version 16.9.4, RELEASE SOFTWARE\n"
+)
+
+
+class _BannerSession(_Session):
+    def __init__(self, banner: bytes) -> None:
+        super().__init__()
+        self.banner = banner
+
+
+class _BannerRecorder(_Recorder):
+    def __init__(self, banner: bytes) -> None:
+        super().__init__()
+        self.session = _BannerSession(banner)
+
+
+def test_a_banner_contradicting_the_advertisement_is_a_refusal() -> None:
+    """The family came from an advertisement; the device gets the last word.
+
+    Configuring a Juniper with IOS commands is not a cosmetic mistake, so a
+    contradiction stops the run rather than being logged.
+    """
+    connect = _BannerRecorder(_JUNOS_BANNER)
+    factory = _factory(connect, allow_unverified=True)
+
+    with pytest.raises(Failure) as exc:
+        factory("access-sw1", ("10.99.0.2",), "cisco/ios-xe")
+
+    assert "IDENTITY_MISMATCH:access-sw1" in str(exc.value)
+    assert "junos" in str(exc.value)
+    # the session it opened is not left behind
+    assert connect.session.closed is True
+    # and nothing was configured in the wrong dialect
+    assert factory.confirmed_identities == []
+
+
+def test_a_banner_agreeing_with_the_advertisement_proceeds() -> None:
+    connect = _BannerRecorder(_CISCO_BANNER)
+    factory = _factory(connect, allow_unverified=True)
+
+    session = factory("access-sw1", ("10.99.0.2",), "cisco/ios-xe")
+
+    assert session is connect.session
+    assert len(factory.confirmed_identities) == 1
+
+
+def test_a_banner_that_names_no_vendor_is_not_treated_as_a_mismatch() -> None:
+    """Silence is not evidence of a contradiction."""
+    connect = _BannerRecorder(b"Welcome. Authorised use only.\n")
+    factory = _factory(connect, allow_unverified=True)
+
+    session = factory("access-sw1", ("10.99.0.2",), "cisco/ios-xe")
+
+    assert session is connect.session
+    assert len(factory.confirmed_identities) == 1
+
+
+def test_a_session_with_no_banner_at_all_still_works() -> None:
+    """Most test doubles and some devices send none; absence is not a fault."""
+    connect = _Recorder()
+    factory = _factory(connect, allow_unverified=True)
+
+    assert factory("access-sw1", ("10.99.0.2",), "cisco/ios-xe") is connect.session
+
+
+def test_recorded_identity_is_confirmed_by_serial_not_by_banner() -> None:
+    """The banner check belongs to the advertised path only.
+
+    Once discovery has recorded a serial, that is the stronger evidence and
+    the existing confirmation is unchanged — a banner is not allowed to
+    override a serial match.
+    """
+    connect = _BannerRecorder(_JUNOS_BANNER)
+    factory = _factory(connect, allow_unverified=True)
+    factory.bind_crawl(_bound_crawl("10.0.0.9", _SERIAL))
+
+    session = factory("access-sw1", ("192.0.2.250",), "juniper/junos")
+
+    assert session is connect.session
+    assert factory.confirmed_identities[0].status == "CONFIRMED"

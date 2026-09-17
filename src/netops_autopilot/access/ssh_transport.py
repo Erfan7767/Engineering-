@@ -122,6 +122,33 @@ class SSHConsoleTransport:
     def is_open(self) -> bool:
         return self._ch is not None
 
+    @property
+    def banner(self) -> bytes:
+        """The banner the device sent when this session was established.
+
+        Netmiko does not surface it, but the Paramiko transport underneath
+        does: ``get_banner()`` returns what the server sent during
+        authentication. That text is the device describing itself, and it is
+        the only identity evidence available before a dialect is known — the
+        same class of evidence the console cable gives for the seed device.
+
+        Empty when there is no banner to read: no session yet, a driver that
+        does not expose one, or a device that sends none. An absent banner is
+        reported as absent and never inferred from anything else.
+        """
+        channel = self._ch
+        if channel is None:
+            return b""
+        try:
+            client = getattr(channel, "remote_conn", None)
+            transport = client.get_transport() if client is not None else None
+            raw = transport.get_banner() if transport is not None else None
+        except Exception:  # noqa: BLE001 - a driver without banner support
+            return b""
+        if raw is None:
+            return b""
+        return raw if isinstance(raw, bytes) else str(raw).encode("utf-8", "replace")
+
     def open(self) -> None:
         if self._ch is not None:
             return
