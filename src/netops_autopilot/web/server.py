@@ -706,7 +706,7 @@ class _ConsoleOnlyMgmt:
         self._console_session = console_session
         self._seed_ref = seed_ref
 
-    def __call__(self, device_ref: str, hints):
+    def __call__(self, device_ref: str, hints, family_hint: str = ""):
         if device_ref == self._seed_ref and self._console_session is not None:
             return self._console_session
         raise Failure(

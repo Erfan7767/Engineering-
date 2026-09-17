@@ -137,13 +137,42 @@ def test_a_supplied_credential_builds_the_real_factory() -> None:
 
 
 def test_the_real_factory_refuses_to_act_without_discovery_evidence() -> None:
-    """It must not dial an address it has no evidence for."""
+    """Unbound and unhinted, it refuses — and says why, truthfully.
+
+    This used to report ``CRAWL_NOT_BOUND``, which named an internal ordering
+    fact (discovery asks before the evidence is bound) as though it were a
+    property of the device. The reason now is the real one: nothing has
+    identified this neighbour and management transports expose no banner to
+    read an identity from.
+    """
     cred = _mgmt_credential_from({"mgmt": _GOOD})
     factory = _credential_mgmt_factory(cred)
 
     with pytest.raises(Exception) as exc:
         factory("dev-02", ())
-    assert "CRAWL_NOT_BOUND" in str(exc.value)
+    message = str(exc.value)
+    assert "IDENTITY_INCOMPLETE:dev-02" in message
+    assert "no connect banner" in message
+
+
+def test_an_advertised_address_without_a_vendor_is_still_refused() -> None:
+    """An address alone is not enough to choose a dialect to speak."""
+    cred = _mgmt_credential_from({"mgmt": _GOOD})
+    factory = _credential_mgmt_factory(cred)
+
+    with pytest.raises(Exception) as exc:
+        factory("dev-02", ("10.99.0.2",))
+    assert "IDENTITY_INCOMPLETE:dev-02" in str(exc.value)
+
+
+def test_an_advertised_vendor_without_an_address_is_still_refused() -> None:
+    """And a vendor alone is not enough to know where to connect."""
+    cred = _mgmt_credential_from({"mgmt": _GOOD})
+    factory = _credential_mgmt_factory(cred)
+
+    with pytest.raises(Exception) as exc:
+        factory("dev-02", (), "cisco/ios-xe")
+    assert "ACCESS_LIMITED:dev-02" in str(exc.value)
 
 
 def test_identity_verification_is_not_relaxed_by_supplying_a_password() -> None:

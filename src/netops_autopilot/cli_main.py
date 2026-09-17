@@ -34,7 +34,7 @@ from typing import Any, Optional
 
 from .autopilot import AutopilotEngine, OperatorIO
 from .cli import ConsoleIO, ScriptedIO
-from .core.failures import Failure
+from .core.failures import Failure, FailureClass
 from .core.timeauth import TimeAuthority
 from .ledger.paths import IN_MEMORY_NOTICE, describe, ledger_path
 from .ledger.store import LedgerStore
@@ -73,20 +73,39 @@ def _make_credential_provider(method: str, username: Optional[str] = None):
     import getpass
     cache: dict[str, Any] = {}
 
+    def _prompt(text: str) -> str:
+        """Prompt, or refuse typed when there is no terminal to prompt on.
+
+        Discovery now reaches a management session for neighbours while it is
+        still finding them, so this runs mid-crawl. Under a test runner, a
+        cron job, or a piped session there is no tty, and ``getpass`` answers
+        with a bare ``OSError``/``EOFError`` that names neither the device nor
+        the remedy. The typed failure does both.
+        """
+        try:
+            return getpass.getpass(text)
+        except (EOFError, OSError, ValueError) as exc:
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                "NO_TERMINAL_FOR_CREDENTIALS: this run has no terminal to read "
+                f"a management password from ({type(exc).__name__}). Pass "
+                "`--mgmt-user` and supply the secret through the API "
+                "(`{\"mgmt\": {...}}` on POST /runs), or run this command from "
+                "an interactive shell.",)) from exc
+
     def provider(device_ref: str, vendor_family: str):
         from .access.mgmt_session import MgmtCredential
         if cache:
             base = next(iter(cache.values()))
             return MgmtCredential(username=base.username, password=base.password,
                                   enable_secret=base.enable_secret, method=method)
-        user = username or getpass.getpass(
+        user = username or _prompt(
             f"Management username for {device_ref} ({vendor_family}): ")
         if not user:
             raise Failure(cls=FailureClass.BLOCKED, causes=(
                 f"NO_CREDENTIALS: operator supplied no username for {device_ref}; "
                 f"the platform does not fall back to a default account",))
-        password = getpass.getpass(f"Management password for {user}@{device_ref}: ")
-        secret = getpass.getpass(
+        password = _prompt(f"Management password for {user}@{device_ref}: ")
+        secret = _prompt(
             f"Enable secret for {device_ref} (blank if none): ").strip()
         cred = MgmtCredential(username=user, password=password,
                               enable_secret=secret, method=method)

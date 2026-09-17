@@ -19,6 +19,7 @@ repeats until the frontier is exhausted. Nothing is assumed:
 
 from __future__ import annotations
 
+import inspect
 import ipaddress
 
 from dataclasses import dataclass, field
@@ -186,6 +187,31 @@ class CrawlReport:
     l3_endpoints: tuple[L3Endpoint, ...] = ()
 
 
+def _open_session(factory, device_ref: str, hints: tuple[str, ...],
+                  family: str):
+    """Ask a factory to open a session, passing the family hint if it can take one.
+
+    Discovery talks to many factories: the real management factory needs the
+    neighbour's advertised family to choose a dialect before any evidence is
+    bound, while test and simulated factories take only ``(device_ref, hints)``.
+    The capability is read from the factory's own signature rather than
+    assumed, so no existing factory has to change.
+    """
+    opener = getattr(factory, "open", factory)
+    try:
+        params = inspect.signature(opener).parameters
+    except (TypeError, ValueError):  # pragma: no cover - exotic callables
+        return opener(device_ref, hints)
+    names = list(params)
+    takes_hint = (
+        len(names) >= 3
+        or any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in params.values())
+    )
+    if takes_hint:
+        return opener(device_ref, hints, family)
+    return opener(device_ref, hints)
+
+
 class SessionFactory(Protocol):
     """Reachability oracle: open a session to a device, or refuse TYPED.
 
@@ -193,7 +219,13 @@ class SessionFactory(Protocol):
     which one (if any) is usable is the factory's mechanical knowledge.
     """
 
-    def open(self, device_ref: str, mgmt_hints: tuple[str, ...]) -> ExecSession: ...
+    def open(self, device_ref: str, mgmt_hints: tuple[str, ...],
+             family_hint: str = "") -> ExecSession:
+        """``family_hint`` is the vendor the neighbour's own advertisement
+        stated, or ``""``/``"UNKNOWN"`` when it stated none. Factories that
+        already know the device ignore it; a management factory that has no
+        bound evidence yet needs it to pick a dialect. Optional, so every
+        existing factory keeps working unchanged."""
 
 
 def _link_id(a: EndpointRef, b: EndpointRef) -> str:
@@ -758,7 +790,7 @@ class DiscoveryCrawlEngine:
         observations_all: list[Observation] = []
         plan: list = []
         try:
-            session = session_factory.open(device_ref, hints)
+            session = _open_session(session_factory, device_ref, hints, family)
         except Failure as exc:
             result.status = DeviceStatus.UNREACHABLE
             result.rejection_reasons.extend(exc.causes)

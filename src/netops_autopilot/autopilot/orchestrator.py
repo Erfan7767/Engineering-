@@ -25,7 +25,7 @@ from ..engines.claim_factory import ClaimFactory
 from ..engines.config_renderer import RenderedConfig, render_ir
 from ..engines.day0_bootstrap import Day0BootstrapEngine, load_bootstrap_steps
 from ..engines.design_engine import DesignEngine, SiteDesign
-from ..engines.discovery_crawl import CrawlReport, DeviceClass, DiscoveryCrawlEngine, SessionFactory
+from ..engines.discovery_crawl import CrawlReport, DeviceClass, DiscoveryCrawlEngine, _open_session, SessionFactory
 from ..engines.intent_compiler import IntentCompiler, NetworkIntent
 from ..engines.verification import VerificationEngine, VerificationPlanner
 from ..engines.config_ir import ConfigIR
@@ -790,10 +790,11 @@ class AutopilotEngine:
             parsers=self.registry, link_engine=self.links, claim_factory=self.claims)
 
         class _Factory:
-            def open(self, device_ref, hints):
+            def open(self, device_ref, hints, family_hint=""):
                 if device_ref == "seed-01":
                     return _LentSession(session)
-                return mgmt_session_factory(device_ref, hints)
+                return _open_session(mgmt_session_factory, device_ref, hints,
+                                     family_hint)
 
         plan = self.crawl.plan_for(family, allowlist)
         self.io.show(f"Crawl plan (catalog ∩ READ_ONLY allowlist): "
@@ -885,12 +886,11 @@ class AutopilotEngine:
             allowlist = self.catalog_allowlists[family]
 
             class _Factory:
-                def open(self, device_ref, hints):
+                def open(self, device_ref, hints, family_hint=""):
                     if device_ref == "seed-01":
                         return _LentSession(session)
-                    if device_ref == "seed-01":
-                        return session
-                    return mgmt_session_factory(device_ref, hints)
+                    return _open_session(mgmt_session_factory, device_ref, hints,
+                                     family_hint)
 
             report = self.crawl.crawl(
                 seed_ref="seed-01", seed_family=family,

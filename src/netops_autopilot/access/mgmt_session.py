@@ -152,7 +152,23 @@ class MgmtSessionFactory:
         return None
 
     # ------------------------------------------------------------------ open
-    def __call__(self, device_ref: str, mgmt_hints: tuple = ()) -> ExecSession:
+    def __call__(self, device_ref: str, mgmt_hints: tuple = (),
+                 family_hint: str = "") -> ExecSession:
+        """Open a confirmed session to ``device_ref``, or refuse typed.
+
+        ``family_hint`` is used in exactly one situation: the discovery crawl
+        asks for a neighbour *before* any crawl evidence has been bound, so
+        there is no recorded family or address to consult. In that case the
+        caller's own observations — the family its LLDP/CDP advertisement
+        stated, and the management address it advertised — are the only
+        evidence that exists, and they are discovery evidence rather than a
+        guess. Once a crawl *is* bound, ``family_hint`` and ``mgmt_hints`` are
+        ignored entirely: the recorded evidence wins, because it is what the
+        plan and the serial confirmation were built from.
+        """
+        if self._crawl is None:
+            return self._open_unbound(device_ref, tuple(mgmt_hints or ()),
+                                      family_hint)
         dev = self._device(device_ref)
         family = dev.identity.vendor_family if dev.identity else None
 
@@ -176,6 +192,49 @@ class MgmtSessionFactory:
                 f"for this device. Provide one, or connect it to the managed path. "
                 f"The platform does not guess an address.",))
 
+        return self._dial(device_ref, family, addresses,
+                          dev.identity.serial if dev.identity else None)
+
+    # ------------------------------------------------- the unbound (discovery) path
+    def _open_unbound(self, device_ref: str, hints: tuple[str, ...],
+                      family_hint: str) -> ExecSession:
+        """Reach a neighbour during the crawl that is still finding it.
+
+        Discovery asks this factory to open a session to a device it has not
+        finished recording, so there is no bound evidence to consult. What
+        exists is the advertisement the *device itself* sent: the family its
+        LLDP/CDP entry stated and the management address it advertised. Both
+        are observations, not assumptions, and the hint is used only to pick
+        the dialect to speak — identity is still confirmed from the session
+        before the platform trusts it.
+
+        A neighbour whose advertisement named no vendor cannot be reached
+        here: management transports expose no connect banner, so there is
+        nothing to identify it from, and the platform will not try dialects
+        until one answers.
+        """
+        if not family_hint or family_hint == "UNKNOWN":
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                f"IDENTITY_INCOMPLETE:{device_ref} — this neighbour's "
+                f"advertisement carried no vendor identity, discovery has not "
+                f"recorded one yet, and management transports expose no connect "
+                f"banner to read it from. Connect it to the console cable once "
+                f"so its family can be recorded, or use a seed whose neighbour "
+                f"table advertises the platform (Cisco CDP/LLDP does).",))
+        if not hints:
+            raise Failure(cls=FailureClass.BLOCKED, causes=(
+                f"ACCESS_LIMITED:{device_ref} — its advertisement carried no "
+                f"management address and discovery has not recorded one. The "
+                f"platform does not guess an address.",))
+        # No recorded serial exists yet for a device discovery is still
+        # meeting, so confirmation runs with no expectation: it reports
+        # UNVERIFIED, or refuses unless the operator has taken that
+        # responsibility explicitly.
+        return self._dial(device_ref, family_hint, hints, None)
+
+    def _dial(self, device_ref: str, family: str, addresses: tuple[str, ...],
+              expected_serial: Optional[str]) -> ExecSession:
+        """Connect to ``addresses[0]``, confirm identity, return the session."""
         credential = self.credential_provider(device_ref, family)
         spec_kwargs = dict(
             ssh_username=credential.username,
@@ -211,8 +270,7 @@ class MgmtSessionFactory:
 
         try:
             self._confirmed.append(
-                self._confirm(device_ref, family, session,
-                              dev.identity.serial if dev.identity else None))
+                self._confirm(device_ref, family, session, expected_serial))
         except Failure:
             try:
                 session.close()
