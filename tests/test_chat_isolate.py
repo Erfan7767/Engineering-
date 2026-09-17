@@ -78,13 +78,47 @@ def test_an_isolation_already_in_force_is_reported_not_resent(rig):
     assert _written(rig.fabric) == before
 
 
-def test_an_unenforceable_pair_is_refused_with_the_designs_own_reason(rig):
-    """`wan` takes its address from the provider, so a deny naming it matches
-    nothing. The design already said so; the chat must not quietly disagree."""
+def test_a_provider_addressed_zone_is_isolated_with_any_not_a_dead_rule(rig):
+    """`wan` takes its address from the provider, so the subnet on record
+    never reaches the wire. Naming it would produce a rule that reads as
+    protection and protects nothing; ``any`` on that side is one that works.
+
+    This pair used to be refused outright, which was honest but left the
+    isolation unconfigured. It is enforceable, so it is now enforced.
+    """
     reply = rig.op.handle("اعزل المستخدمين عن wan")
-    assert reply.status is ReplyStatus.BLOCKED
-    assert "provider" in reply.detail or "المزوّد" in reply.detail
-    assert "match nothing" in reply.detail or "لا تطابق شيئاً" in reply.detail
+    assert reply.status is ReplyStatus.OK, reply.detail
+
+
+def test_the_planned_rule_covers_the_unknown_side_with_any():
+    """The exact lines the chat would send, checked for the wildcard form."""
+    from netops_autopilot.chat.targeted_change import plan_isolate_zones
+
+    plan = plan_isolate_zones(
+        change_id="c1", request="isolate users from wan", device_ref="seed-01",
+        vendor_os="ios-xe", src_zone="users", dst_zone="wan",
+        src_subnet="10.240.0.0/25", dst_subnet="10.240.0.208/29", vlan_id=10,
+        dst_provider_assigned=True)
+
+    denies = [c.strip() for c in plan.commands if c.strip().startswith("deny ip")]
+    assert denies == ["deny ip 10.240.0.0 0.0.0.127 0.0.0.0 255.255.255.255"], denies
+    # the allocated provider subnet must not appear anywhere in the rule
+    assert not any("10.240.0.208" in c for c in plan.commands), plan.commands
+    # and the permit that keeps the zone alive is still there
+    assert any(c.strip() == "permit ip any any" for c in plan.commands)
+
+
+def test_a_pair_with_both_ends_known_is_still_written_exactly():
+    """The substitution must not leak into ordinary pairs."""
+    from netops_autopilot.chat.targeted_change import plan_isolate_zones
+
+    plan = plan_isolate_zones(
+        change_id="c1", request="isolate users from mgmt", device_ref="seed-01",
+        vendor_os="ios-xe", src_zone="users", dst_zone="mgmt",
+        src_subnet="10.240.0.0/25", dst_subnet="10.240.0.192/28", vlan_id=10)
+
+    denies = [c.strip() for c in plan.commands if c.strip().startswith("deny ip")]
+    assert denies == ["deny ip 10.240.0.0 0.0.0.127 10.240.0.192 0.0.0.15"], denies
 
 
 def test_an_unresolved_pair_asks_instead_of_picking(rig):

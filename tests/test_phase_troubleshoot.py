@@ -107,19 +107,22 @@ def test_a_defect_the_platform_cannot_fix_is_declared_not_pretended():
         assert item["evidence_id"], "a diagnosis must be traceable to evidence"
 
 
-def test_on_a_healthy_run_phase_8_finds_nothing_and_fixes_nothing():
-    """The demo ends INCOMPLETE (four WAN pairs cannot be enforced), so phase 8
-    does run — and must come back empty rather than invent work."""
+def test_on_a_fully_verified_run_phase_8_does_not_run_at_all():
+    """A run whose verification passed has nothing to diagnose.
+
+    This demo used to end INCOMPLETE because four WAN isolation pairs were
+    declared unenforceable, so phase 8 ran and — correctly — came back empty.
+    Those pairs are enforced now, the verdict is PASS, and the strongest form
+    of "finds nothing and fixes nothing" is not running: inventing a
+    diagnostic pass over a clean network is theatre, and inventing findings
+    for it to fix would be worse.
+    """
     _store, _fabric, report = _run()
     phases = [p.phase for p in report.phases]
     assert Phase.VERIFY in phases
-    ts = report.troubleshooting
-    assert ts is not None, "verdict was not PASS, so phase 8 had to run"
-    assert ts["findings"] == [], ts["findings"]
-    assert ts["repaired"] == []
-    assert ts["open"] == [], "no defect was found, so none may be declared"
-    assert ts["reverified"] is None, (
-        "nothing was sent, so a second verification pass would be theatre")
+    assert report.verification["verdict"] == "PASS", report.verification["unrun"]
+    assert report.troubleshooting is None, (
+        "phase 8 ran over a run that had already passed verification")
 
 
 # ---------------------------------------------------------------------------

@@ -1362,7 +1362,15 @@ class AutopilotEngine:
                             | {ref for ref, _ in skipped}
                             | {ref for ref, _ in partial}
                             | {ref for ref, _ in halted}
-                            | {d["device_ref"] for d in failure_decisions})
+                            | {d["device_ref"] for d in failure_decisions}
+                            # A device discovery learned the name of and never
+                            # crawled is not part of what this run covered.
+                            # Configuring the ten it did reach and reporting
+                            # COMPLETE would claim a whole network was built
+                            # when eleven named devices were never even looked
+                            # at — the budget refusal is honest in the crawl
+                            # record, and the verdict must not contradict it.
+                            | {d.device_ref for d in _not_probed(self.report.crawl)})
         for ref, why in skipped:
             self.io.show(f"!! NOT_SENT {ref}: {why}")
         if "PERSIST_FAILED" in outcomes:
@@ -1492,6 +1500,19 @@ class AutopilotEngine:
 
     def _run_id_safe(self) -> str:
         return f"run-{datetime.now(timezone.utc).strftime('%H%M%S')}"
+
+
+def _not_probed(crawl) -> tuple:
+    """Devices discovery was told about and never crawled.
+
+    Empty when there is no crawl, or when the crawl reached everything it was
+    allowed to. These are recorded in the crawl with their reason; this is
+    only the list of them, so the verdict can refuse to claim a completeness
+    the run did not achieve.
+    """
+    if crawl is None:
+        return ()
+    return tuple(d for d in crawl.devices if d.status.value == "NOT_PROBED")
 
 
 def _all_commands(rendered) -> tuple[str, ...]:

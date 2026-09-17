@@ -376,6 +376,26 @@ class VerificationExecutor:
 
         src_net = str(ipaddress.ip_network(za.subnet, strict=False))
         dst_net = str(ipaddress.ip_network(zb.subnet, strict=False))
+        # A zone whose address came from the provider is on the wire under the
+        # provider's network, not the one this platform allocated. Grading
+        # reachability against the allocated block would find no route and
+        # pass the pair for "no L3 path" — a green tick that proves nothing
+        # about the ACL. Ask the routing table what is actually connected.
+        provider_assigned = set(getattr(design, "provider_assigned_zones", ()) or ())
+        for zone in (za, zb):
+            if zone.zone not in provider_assigned:
+                # Deliberately narrow. For a zone this platform addressed, the
+                # allocated block *is* the truth and the routing table is only
+                # a cross-check; trusting the table there would make the grade
+                # depend on the device having already converged.
+                continue
+            on_wire = self._connected_network(ev_route.text, zone)
+            allocated = str(ipaddress.ip_network(zone.subnet, strict=False))
+            if on_wire is not None and on_wire != allocated:
+                if zone is za:
+                    src_net = on_wire
+                else:
+                    dst_net = on_wire
         reachable = (src_net in ev_route.text and dst_net in ev_route.text)
 
         if not reachable:
@@ -385,7 +405,8 @@ class VerificationExecutor:
 
         denied = False
         if ev_acl is not None:
-            denied = self._acl_denies(ev_acl.text, za, zb)
+            denied = self._acl_denies(ev_acl.text, za, zb,
+                                      src_on_wire=src_net, dst_on_wire=dst_net)
         if denied:
             return (TestResult(test_id=spec.test_id, outcome=Outcome.PASS,
                                evidence_id=ev_acl.raw_id), "")
@@ -420,16 +441,58 @@ class VerificationExecutor:
         return "ip address dhcp" in body.lower()
 
     @staticmethod
-    def _acl_denies(acl_text: str, src: ZoneAssignment, dst: ZoneAssignment) -> bool:
-        """An explicit `deny ip <src> <wc> <dst> <wc>` covering the pair."""
-        s_net, s_mask = VerificationExecutor._network_of(src.subnet)
-        d_net, d_mask = VerificationExecutor._network_of(dst.subnet)
+    def _connected_network(route_text: str,
+                           zone: ZoneAssignment) -> Optional[str]:
+        """The network the routing table says is connected to this zone's SVI.
+
+        For a zone this platform addressed, that is the allocated block. For a
+        zone whose address came from the provider it is the provider's block —
+        which is the one that is actually on the wire and the only one a
+        reachability question can be asked about. ``None`` when the routing
+        table names no connected network for the SVI at all.
+        """
+        m = re.search(
+            rf"(\d+\.\d+\.\d+\.\d+/\d+)\s+is directly connected,\s*"
+            rf"Vlan{re.escape(str(zone.vlan_id))}\b",
+            route_text)
+        if m is None:
+            return None
+        return str(ipaddress.ip_network(m.group(1), strict=False))
+
+    @staticmethod
+    def _acl_denies(acl_text: str, src: ZoneAssignment, dst: ZoneAssignment,
+                    src_on_wire: Optional[str] = None,
+                    dst_on_wire: Optional[str] = None) -> bool:
+        """An explicit ``deny ip <src> <wc> <dst> <wc>`` covering the pair.
+
+        Either side may be written ``0.0.0.0 255.255.255.255``, which means
+        *any* — and any covers the zone. A rule denying any source to the
+        destination network denies this pair whatever the source turns out to
+        be, which is exactly how the design expresses a deny whose far end is
+        provider-assigned and therefore never known. Grading only the exact
+        form would report as unenforced an isolation the device is enforcing.
+        """
+        # Judge the rule against the networks that are actually on the wire.
+        # A deny naming a zone's *allocated* block when the provider supplied a
+        # different address matches no packet at all: it reads as protection,
+        # passes review, and protects nothing. Grading the text alone cannot
+        # tell those two apart, so the on-wire network is what is compared.
+        s_net, s_mask = VerificationExecutor._network_of(
+            src_on_wire or src.subnet)
+        d_net, d_mask = VerificationExecutor._network_of(
+            dst_on_wire or dst.subnet)
         s_wc = str(ipaddress.ip_network(f"0.0.0.0/{s_mask}").hostmask)
         d_wc = str(ipaddress.ip_network(f"0.0.0.0/{d_mask}").hostmask)
-        pattern = re.compile(
-            rf"^\s*deny\s+ip\s+{re.escape(s_net)}\s+{re.escape(s_wc)}"
-            rf"\s+{re.escape(d_net)}\s+{re.escape(d_wc)}\b", re.MULTILINE)
-        return bool(pattern.search(acl_text))
+        any_wc = str(ipaddress.ip_network("0.0.0.0/0").hostmask)
+        for s_form in ((s_net, s_wc), ("0.0.0.0", any_wc)):
+            for d_form in ((d_net, d_wc), ("0.0.0.0", any_wc)):
+                pattern = re.compile(
+                    rf"^\s*deny\s+ip\s+{re.escape(s_form[0])}\s+{re.escape(s_form[1])}"
+                    rf"\s+{re.escape(d_form[0])}\s+{re.escape(d_form[1])}\b",
+                    re.MULTILINE)
+                if pattern.search(acl_text):
+                    return True
+        return False
 
     # -- SERVICE_UP --------------------------------------------------------
     def _grade_service(self, spec: TestSpec,

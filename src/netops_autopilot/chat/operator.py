@@ -2222,12 +2222,15 @@ class ChatOperator:
         existing = (_tchange.read_acl_denies(table.output_text)
                     if table.success else {})
         try:
+            provider_assigned = set(getattr(design, "provider_assigned_zones", ()) or ())
             plan = _tchange.plan_isolate_zones(
                 change_id=new_id(), request=message, device_ref=target,
                 vendor_os=vendor_os, src_zone=src_zone.zone,
                 dst_zone=dst_zone.zone, src_subnet=src_zone.subnet,
                 dst_subnet=dst_zone.subnet, vlan_id=src_zone.vlan_id,
-                existing=existing)
+                existing=existing,
+                src_provider_assigned=src_zone.zone in provider_assigned,
+                dst_provider_assigned=dst_zone.zone in provider_assigned)
         except Failure as exc:
             return self._reply(IntentVerb.ISOLATE, ReplyStatus.BLOCKED,
                 summary=("already in force" if "ALREADY_ISOLATED" in "".join(exc.causes)

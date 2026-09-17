@@ -179,7 +179,12 @@ def test_full_run_over_a_real_serial_channel_applies_and_verifies() -> None:
     assert (report.execution or {}).get("outcome") == "APPLIED"
     verification = report.verification or {}
     assert not verification.get("failed"), verification.get("reasons")
-    assert len(verification.get("passed") or []) == 15
+    # 19, not 15: the four WAN isolation pairs that used to be reported
+    # unenforceable are enforced with `any` on the provider-addressed side,
+    # so they are graded rather than left unrun.
+    assert len(verification.get("passed") or []) == 19
+    assert verification.get("unrun") == {}
+    assert any("wan" in tid for tid in verification.get("passed") or ())
     # The device really was configured, not just planned.
     sent = [c for c in device.received]
     assert "configure terminal" in sent

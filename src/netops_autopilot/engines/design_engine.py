@@ -36,6 +36,10 @@ from .ipam import gateway_address, parse_network, subnet_for_hosts
 
 import ipaddress
 
+#: The wildcard form of "any" in IOS ACL syntax. Used on the side of a deny
+#: rule whose address is chosen by the provider and therefore never known.
+_ANY_NETWORK = ipaddress.ip_network("0.0.0.0/0")
+
 #: FSM-4 grade quality for uplink selection (better = lower index).
 _GRADE_RANK = (
     lf.PHYSICAL_PATH_VERIFIED,
@@ -170,6 +174,13 @@ class SiteDesign:
     #: review, and protects nothing. Emitting it would be worse than not
     #: emitting it, so the pair is reported instead (L01, T2).
     unenforceable_isolation: tuple[tuple[str, str, str], ...] = ()
+    #: Zones whose address is chosen by the provider rather than by this
+    #: platform (a WAN under a DHCP handoff). The subnet recorded for such a
+    #: zone is a plan, not a fact about the wire, so anything that names it in
+    #: a filter would match nothing. Every consumer — the design's own ACLs,
+    #: the chat's targeted changes, the verifier — reads this one list rather
+    #: than re-deriving the answer and risking a different one.
+    provider_assigned_zones: tuple[str, ...] = ()
 
 
 # ------------------------------------------------------------------ harvest
@@ -361,6 +372,9 @@ class DesignEngine:
             denied_pairs=effective_denied_pairs(intent),
             unenforceable_isolation=_unenforceable_isolation(
                 intent, zone_assigns, answers.get("wan_handoff")),
+            provider_assigned_zones=tuple(sorted(
+                z.zone for z in zone_assigns
+                if z.kind == "WAN" and handoff_is_dhcp(answers.get("wan_handoff")))),
             blocked=blocked,
             blocked_reasons=tuple(reasons + ([f"HQ-PENDING: {q}" for q in questions] if questions else [])),
         )
@@ -797,16 +811,24 @@ class DesignEngine:
             os_name = vendor_os_of.get(target, "UNKNOWN")
             nodes = list(out[target].nodes) if target in out else []
             acl_name = f"ACL_{src.upper()}_IN"
-            src_net = ipaddress.ip_network(src_zone.subnet, strict=False)
             for dst in sorted(by_src[src]):
                 dst_zone = zone_by_name.get(dst)
                 if dst_zone is None:
                     continue
-                if src in provider_assigned or dst in provider_assigned:
-                    # Not emitted. See SiteDesign.unenforceable_isolation: a
-                    # deny naming a provider-chosen subnet matches nothing.
-                    continue
-                dst_net = ipaddress.ip_network(dst_zone.subnet, strict=False)
+                # A side whose address comes from the provider is never on the
+                # wire, so naming its allocated subnet would match nothing.
+                # What does express the requirement is *any* on that side:
+                # "deny any -> the internal network" inbound on the WAN gateway
+                # blocks inbound from the provider whatever address it handed
+                # out, and "deny the internal network -> any" outbound blocks
+                # that zone's egress. Both are ordinary IOS wildcard syntax,
+                # not a weaker rule than the pair asked for.
+                src_any = src in provider_assigned
+                dst_any = dst in provider_assigned
+                src_net = (_ANY_NETWORK if src_any
+                           else ipaddress.ip_network(src_zone.subnet, strict=False))
+                dst_net = (_ANY_NETWORK if dst_any
+                           else ipaddress.ip_network(dst_zone.subnet, strict=False))
                 nodes.append(IRNode(
                     node_id=f"acl-deny-{src}-{dst}", target=_REF(target),
                     operation=Operation.CREATE, feature="acl_deny", vendor_os=os_name,
@@ -1010,23 +1032,26 @@ def _unenforceable_isolation(intent, zones, wan_handoff) -> tuple[tuple[str, str
     """Denied pairs the platform cannot express as a real ACL, and why.
 
     A DHCP-handoff WAN takes its address from the provider, so the subnet this
-    platform allocated for it is never on the wire. Any deny rule naming it
-    would match nothing, so the pair is reported rather than misconfigured.
+    platform allocated for it is never on the wire and a deny rule *naming* it
+    would match nothing. That used to make every WAN pair unenforceable, and
+    every DHCP-WAN site permanently INCOMPLETE at verification. It is not: the
+    unknown side is written as ``any`` and the pair is enforced normally, so
+    only a pair with both ends provider-chosen is reported here.
     """
     if not handoff_is_dhcp(wan_handoff):
         return ()
     provider = {z.zone for z in zones if z.kind == "WAN"}
     out: list[tuple[str, str, str]] = []
     for src, dst in effective_denied_pairs(intent):
-        for z in (src, dst):
-            if z in provider:
-                out.append((src, dst,
-                            f"zone {z!r} takes its address from the provider (WAN "
-                            f"handoff {wan_handoff!r}), so the allocated subnet is "
-                            f"not on the wire and a deny rule naming it would match "
-                            f"nothing — enforce this pair at the firewall or with a "
-                            f"reflexive ACL"))
-                break
+        # One provider-assigned side is expressible as `any` on that side, so
+        # the pair is enforced rather than reported. Only a pair whose *both*
+        # ends are provider-chosen has nothing to name at all.
+        if src in provider and dst in provider:
+            out.append((src, dst,
+                        f"both {src!r} and {dst!r} take their addresses from the "
+                        f"provider (WAN handoff {wan_handoff!r}), so neither end "
+                        f"of the pair can be named — not even as `any`, which "
+                        f"would deny everything"))
     return tuple(out)
 
 

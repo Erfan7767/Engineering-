@@ -29,6 +29,10 @@ wire" can never be collapsed into one word.
 from __future__ import annotations
 
 import ipaddress
+
+#: The wildcard form of "any" in IOS ACL syntax, for a side of a deny rule
+#: whose address the provider chooses and this platform therefore never knows.
+_ANY_NETWORK = ipaddress.ip_network("0.0.0.0/0")
 import re
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence
@@ -606,6 +610,8 @@ def plan_isolate_zones(
     dst_subnet: str,
     vlan_id: int,
     existing: Optional[Mapping[str, set]] = None,
+    src_provider_assigned: bool = False,
+    dst_provider_assigned: bool = False,
 ) -> ChangePlan:
     """Render a one-way isolation (``src`` may not reach ``dst``) and send nothing.
 
@@ -618,6 +624,12 @@ def plan_isolate_zones(
     deny is already in force the change is refused as a no-op rather than sent
     again: on IOS re-entering a named ACL appends, so a second identical deny
     is harmless but a duplicate rule is a lie about what changed.
+    
+    A side flagged ``provider_assigned`` takes its address from the provider,
+    so the subnet on record is a plan that never reaches the wire. Naming it
+    would produce a rule that reads as protection and protects nothing, so
+    that side is written as ``any`` — ``0.0.0.0 255.255.255.255`` — which
+    covers the zone whatever address the provider handed out.
     """
     try:
         src_net = ipaddress.ip_network(src_subnet, strict=False)
@@ -625,6 +637,10 @@ def plan_isolate_zones(
     except ValueError as exc:
         raise Failure(cls=FailureClass.BLOCKED, causes=(
             f"SUBNET_UNPARSEABLE: {src_subnet!r}/{dst_subnet!r} ({exc})",)) from exc
+    if src_provider_assigned:
+        src_net = _ANY_NETWORK
+    if dst_provider_assigned:
+        dst_net = _ANY_NETWORK
     for net, label in ((src_net, "source"), (dst_net, "destination")):
         if net.version != 4:
             raise Failure(cls=FailureClass.BLOCKED, causes=(
